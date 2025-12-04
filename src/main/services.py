@@ -1,7 +1,7 @@
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
-from configs import (
+from .configs import (
     SYSTEM_PROMPT, 
     OPENAI_MODEL, 
     OPENAI_TEMPERATURE, 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from models import RewriteRequest
-from services import OpenAIService
-from security import verify_shopify_session
+from .models import RewriteRequest
+from .services import OpenAIService
+from .security import verify_shopify_session
 
 router = APIRouter()
 openai_service = OpenAIService()
