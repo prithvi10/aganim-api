@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from controller import router
+from .controller import router
 
 try:
     import truststore
