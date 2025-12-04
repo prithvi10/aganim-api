@@ -25,6 +25,8 @@ async def generate_copy(
         }
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"DEBUG - ACTUAL ERROR: {type(e).__name__} - {e}")
+        print(f"DEBUG - ROOT CAUSE: {e.__cause__}")
+        #print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
