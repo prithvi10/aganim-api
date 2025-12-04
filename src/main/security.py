@@ -24,7 +24,7 @@ def verify_shopify_session(authorization: str = Header(...)):
     Returns:
         str: The shop domain (e.g., 'my-store.myshopify.com') if valid.
     """
-    
+    print(f"Authorization: {authorization}")
     # 1. Sanity Check: Ensure secrets exist
     if not SHOPIFY_API_SECRET or not SHOPIFY_API_KEY:
         raise HTTPException(
@@ -38,6 +38,10 @@ def verify_shopify_session(authorization: str = Header(...)):
         raise HTTPException(status_code=401, detail="Invalid authorization header format")
     
     token = authorization.split(" ")[1]
+
+    # DEV BYPASS: Allow a specific magic token for local testing
+    if token == "dev-token-123":
+        return "dev-shop.myshopify.com"
 
     try:
         # 3. Decode & Verify the JWT
