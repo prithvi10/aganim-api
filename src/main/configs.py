@@ -22,4 +22,15 @@ RULES:
 - NO "Japanglish" (awkward phrasing).
 - NO made-up facts. Only use the info provided, but dramatize the value.
 """
+# Strategy: Allow bursts, but cap long-term usage
+PRODUCTION_RATE_LIMIT_CONFIG = [
+    {"limit": 60,   "window": 60},    # Burst: 1 request/sec (average)
+    {"limit": 1000, "window": 3600},  # Hourly: ~1000 per hour
+    {"limit": 5000, "window": 86400}, # Daily:  ~5000 per day
+]
+# Strategy: Very low limits so you can trigger 429s easily
+LOCAL_RATE_LIMIT_CONFIG = [
+    {"limit": 5,  "window": 10},   # Burst: Max 5 requests per 10 seconds
+    {"limit": 20, "window": 60},   # Sustained: Max 20 requests per minute
+]
 

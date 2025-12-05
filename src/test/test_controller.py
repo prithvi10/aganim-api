@@ -1,8 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
-from main import app
-from security import verify_shopify_session
+from src.main.main import app
+from src.main.security import verify_shopify_session
 
 # Initialize Test Client
 client = TestClient(app)

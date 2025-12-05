@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from services import OpenAIService
+from src.main.services import OpenAIService
 
 @pytest.fixture
 def mock_openai_client():
