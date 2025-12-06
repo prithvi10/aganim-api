@@ -35,7 +35,7 @@ async def generate_copy(
         )
         # TODO : Remove before going to PROD
         # english_copy = "Test Copy"
-
+        logger.info(f"✅ English copy generated for product: {request.product_name}")
         return {
             "status": "success",
             "english_copy": english_copy
@@ -43,6 +43,7 @@ async def generate_copy(
 
     except Exception as e:
         logger.error(f"❌ Error calling OpenAI API - ACTUAL ERROR: {type(e).__name__} - {e}")
-        logger.error(f"❌ Error calling OpenAI API - ROOT CAUSE: {e.__cause__}")
+        if e.__cause__:
+            logger.error(f"❌ Error calling OpenAI API - ROOT CAUSE: {e.__cause__}")
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -37,7 +37,7 @@ class OpenAIService:
         {japanese_description}
         """
         
-        logger.info(f"Genering copy for product: {product_name}")
+        logger.info(f"Rewriting description using AI for product: {product_name}")
         logger.debug(f"User Content: {user_content}")
         
         response = self.client.chat.completions.create(
