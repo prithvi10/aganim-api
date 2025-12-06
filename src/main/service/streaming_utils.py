@@ -27,23 +27,19 @@ async def stream_openai_response(
     """
     
     # 1. Call OpenAI in streaming mode
-    # Note: We need to modify OpenAIService to expose a streaming method 
-    # or call the client directly here. For better separation, let's assume
-    # we add a method `generate_copy_stream` to OpenAIService.
-    
-    stream = openai_service.generate_copy_stream(
-        product_name=product_name,
-        category=category,
-        japanese_description=japanese_description
-    )
-
-    # Accumulate content to count tokens (or use stream usage if available in future SDKs)
-    # Currently, OpenAI streaming response doesn't always give total usage easily 
-    # without "stream_options={'include_usage': True}".
-    full_content = ""
-    total_usage = 0
-    
     try:
+        stream = openai_service.generate_copy_stream(
+            product_name=product_name,
+            category=category,
+            japanese_description=japanese_description
+        )
+
+        # Accumulate content to count tokens (or use stream usage if available in future SDKs)
+        # Currently, OpenAI streaming response doesn't always give total usage easily 
+        # without "stream_options={'include_usage': True}".
+        full_content = ""
+        total_usage = 0
+        
         for chunk in stream:
             # Ensure we have content to yield
             if chunk.choices and chunk.choices[0].delta.content:
