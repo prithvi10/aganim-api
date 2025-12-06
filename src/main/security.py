@@ -42,8 +42,8 @@ def verify_shopify_session(authorization: str = Header(...)):
     token = authorization.split(" ")[1]
 
     # DEV BYPASS: Allow a specific magic token for local testing
-    # if token == "dev-token-123":
-    #     return "dev-shop.myshopify.com"
+    if token == "dev-token-123":
+        return "dev-shop.myshopify.com"
 
     try:
         # 3. Decode & Verify the JWT

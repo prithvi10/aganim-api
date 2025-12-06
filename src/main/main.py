@@ -8,11 +8,11 @@ logger = get_logger(__name__)
 try:
     import truststore
     truststore.inject_into_ssl() # to connect through venv/proxy
-    logger.info("Truststore injection successful")
+    logger.debug("Truststore injection successful")
 except ImportError:
     pass # truststore not installed or not needed
 except Exception as e:
-    logger.warning(f"Truststore injection failed: {e}")
+    logger.debug(f"Truststore injection failed: {e}")
 
 # 1. Setup
 load_dotenv() # Load your .env file with API keys
