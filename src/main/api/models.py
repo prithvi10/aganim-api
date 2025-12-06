@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from .configs import DEFAULT_PRODUCT_CATEGORY
+from src.main.config.configs import DEFAULT_PRODUCT_CATEGORY
 
 class RewriteRequest(BaseModel):
     product_name: str

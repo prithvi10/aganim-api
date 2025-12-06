@@ -1,10 +1,10 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from src.main.services import OpenAIService
+from src.main.service.services import OpenAIService
 
 @pytest.fixture
 def mock_openai_client():
-    with patch("services.OpenAI") as mock_openai:
+    with patch("src.main.service.services.OpenAI") as mock_openai:
         yield mock_openai
 
 def test_generate_copy_success(mock_openai_client):
@@ -24,7 +24,9 @@ def test_generate_copy_success(mock_openai_client):
         japanese_description="Japanese Text"
     )
 
-    assert result == "Generated Copy"
+    # The service now returns the full response object
+    assert result == mock_response
+    assert result.choices[0].message.content == "Generated Copy"
     
     # Verify calls
     mock_instance.chat.completions.create.assert_called_once()

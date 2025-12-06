@@ -1,5 +1,5 @@
-from src.main.database import SessionLocal
-from src.main.db_models import Plan
+from src.main.db.database import SessionLocal
+from src.main.db.db_models import Plan
 
 def enable_streaming():
     db = SessionLocal()

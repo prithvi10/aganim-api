@@ -3,8 +3,8 @@ from fastapi import HTTPException
 from unittest.mock import patch, MagicMock
 import jwt
 import os
-import security
-from security import verify_shopify_session
+import src.main.security.security as security
+from src.main.security.security import verify_shopify_session
 
 # Mock Environment Variables
 @pytest.fixture
