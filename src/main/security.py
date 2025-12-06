@@ -1,5 +1,6 @@
 import os
 import jwt  # pip install pyjwt
+import hashlib
 from fastapi import Header, HTTPException, Depends
 from dotenv import load_dotenv
 from .logger import get_logger
@@ -9,24 +10,43 @@ logger = get_logger(__name__)
 # Load environment variables
 load_dotenv()
 
-# 1. Configuration
+# Configuration
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET")
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY")
 
-#Verification Logic
-#   Security (HMAC/JWT): To prove the request actually came from a paying Shopify merchant (and not a hacker).
-#   Shopify sends a "Session Token" (JWT) with every request. 
-#   Your Python backend must verify this token using your App Secret.
+# ---------------------------------------------------------
+# 1. API Key Logic (For Billing/Quota Checks)
+# ---------------------------------------------------------
+def hash_api_key(api_key: str) -> str:
+    """
+    Hashes the API key using SHA-256.
+    """
+    return hashlib.sha256(api_key.encode()).hexdigest()
 
+def get_api_key_hash(authorization: str = Header(...)):
+    """
+    Extracts the Bearer token (API Key) and returns its hash.
+    This is used for the generation endpoint to check usage quota.
+    """
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+    
+    token = authorization.split(" ")[1]
+    return hash_api_key(token)
+
+# ---------------------------------------------------------
+# 2. Shopify JWT Logic (For App Identity/Setup)
+# ---------------------------------------------------------
 def verify_shopify_session(authorization: str = Header(...)):
     """
     Dependency to verify the Shopify Session Token (JWT).
     Usage: async def endpoint(shop: str = Depends(verify_shopify_session))
     
+    Used for administrative requests, app setup, webhooks, etc.
+    
     Returns:
         str: The shop domain (e.g., 'my-store.myshopify.com') if valid.
     """
-    # print(f"Authorization: {authorization}") # Don't log sensitive headers in prod, or log masked
     # 1. Sanity Check: Ensure secrets exist
     if not SHOPIFY_API_SECRET or not SHOPIFY_API_KEY:
         raise HTTPException(
@@ -35,7 +55,6 @@ def verify_shopify_session(authorization: str = Header(...)):
         )
 
     # 2. Parse the Header
-    # Format should be: "Bearer <token_string>"
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header format")
     
@@ -48,8 +67,8 @@ def verify_shopify_session(authorization: str = Header(...)):
     try:
         # 3. Decode & Verify the JWT
         # - We use the 'HS256' algorithm (standard for Shopify).
-        # - We verify the signature using your App Secret (only you and Shopify know this).
-        # - We verify the 'audience' matches your specific App API Key (prevents token reuse).
+        # - We verify the signature using your App Secret.
+        # - We verify the 'audience' matches your specific App API Key.
         payload = jwt.decode(
             token, 
             SHOPIFY_API_SECRET, 
@@ -58,12 +77,11 @@ def verify_shopify_session(authorization: str = Header(...)):
         )
 
         # 4. Extract the Shop Domain
-        # The payload 'dest' field contains the shop URL (e.g., https://store.myshopify.com)
         dest = payload.get("dest")
         if not dest:
             raise HTTPException(status_code=401, detail="Invalid token payload: missing 'dest'")
 
-        # Clean the URL to just the domain (remove https://)
+        # Clean the URL to just the domain
         shop_domain = dest.replace("https://", "").replace("http://", "")
         
         return shop_domain

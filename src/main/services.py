@@ -29,7 +29,7 @@ class OpenAIService:
         )
         self.system_prompt = SYSTEM_PROMPT
 
-    def generate_copy(self, product_name: str, category: str, japanese_description: str) -> str:
+    def generate_copy(self, product_name: str, category: str, japanese_description: str) -> object:
         user_content = f"""
         Product Name: {product_name}
         Category: {category}
@@ -40,6 +40,7 @@ class OpenAIService:
         logger.info(f"Rewriting description using AI for product: {product_name}")
         logger.debug(f"User Content: {user_content}")
         
+        # Non-streaming call
         response = self.client.chat.completions.create(
             model=OPENAI_MODEL, 
             messages=[
@@ -50,4 +51,32 @@ class OpenAIService:
             max_tokens=OPENAI_MAX_TOKENS
         )
         
-        return response.choices[0].message.content
+        return response # Return full object to access usage stats
+
+    def generate_copy_stream(self, product_name: str, category: str, japanese_description: str):
+        """
+        Returns a generator (stream) from OpenAI.
+        """
+        user_content = f"""
+        Product Name: {product_name}
+        Category: {category}
+        Original Japanese Text:
+        {japanese_description}
+        """
+        
+        logger.info(f"Stream-Rewriting description for product: {product_name}")
+        
+        # Streaming call
+        stream = self.client.chat.completions.create(
+            model=OPENAI_MODEL, 
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            temperature=OPENAI_TEMPERATURE,
+            max_tokens=OPENAI_MAX_TOKENS,
+            stream=True,
+            stream_options={"include_usage": True} # Critical for accurate billing in streams
+        )
+        
+        return stream
