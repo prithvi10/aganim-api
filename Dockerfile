@@ -21,12 +21,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the current directory contents into the container at /app
 COPY . .
 
-# Make port 8000 available to the world outside this container
+# Grant execution permissions to the entrypoint script
+RUN chmod +x scripts/entrypoint.sh
+
+# Make port 8000 available (documentation only, app listens on $PORT)
 EXPOSE 8000
 
 # Define environment variable
 ENV PYTHONUNBUFFERED=1
 
-# Run app.py when the container launches
-CMD ["uvicorn", "src.main.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the entrypoint script
+CMD ["./scripts/entrypoint.sh"]
 
