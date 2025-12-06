@@ -5,3 +5,4 @@ class RewriteRequest(BaseModel):
     product_name: str
     japanese_description: str
     category: str = DEFAULT_PRODUCT_CATEGORY # e.g., "Kitchenware", "Apparel"
+    stream: bool = False # New flag for streaming requests

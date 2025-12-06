@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from datetime import datetime
 from .models import RewriteRequest
 from .services import OpenAIService
-from .security import verify_shopify_session
+from .security import get_api_key_hash, verify_shopify_session
 from .ratelimiter import InMemoryRateLimiter
 from .configs import LOCAL_RATE_LIMIT_CONFIG
 from .logger import get_logger
 from .database import get_db
-from .db_models import User, Usage
+from .db_transactions import verify_api_key_and_quota, update_token_usage
+from .streaming_utils import create_streaming_response
 
 logger = get_logger(__name__)
 
@@ -17,67 +17,80 @@ router = APIRouter()
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
 openai_service = OpenAIService()
 
-def get_or_create_user(db: Session, shop_domain: str):
-    user = db.query(User).filter(User.username == shop_domain).first()
-    if not user:
-        user = User(username=shop_domain)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
-def check_quota(db: Session, user: User):
-    current_month = datetime.now().strftime("%Y-%m")
-    usage = db.query(Usage).filter(Usage.user_id == user.id, Usage.month == current_month).first()
-    
-    if not usage:
-        usage = Usage(user_id=user.id, month=current_month, usage_count=0)
-        db.add(usage)
-        db.commit()
-        db.refresh(usage)
-    
-    if usage.usage_count >= user.monthly_quota:
-         raise HTTPException(status_code=403, detail="Monthly quota exceeded.")
-    
-    return usage
-
+# ------------------------------------------------------------------
+# 1. PUBLIC/CLIENT ENDPOINT (Uses API Key for Billing/Quota)
+# ------------------------------------------------------------------
 @router.post("/api/generate-copy")
 async def generate_copy(
     request: RewriteRequest,
-    shop: str = Depends(verify_shopify_session),
+    key_hash: str = Depends(get_api_key_hash),
     db: Session = Depends(get_db)
 ):
+    # 1. Verify API Key and Quota (Read Operation)
+    # This returns a context dict with user, plan, etc.
+    auth_context = verify_api_key_and_quota(db, key_hash)
+    
+    user = auth_context["user"]
+    shop = user.username # Assuming username is shop domain
+    api_key_id = auth_context["api_key_id"]
+    billing_cycle_start = auth_context["billing_cycle_start"]
+    plan = auth_context["plan"]
+
     logger.info(f"✅ Verified request from: {shop}")
 
-    # 1. Check Database Quota
-    user = get_or_create_user(db, shop)
-    usage_record = check_quota(db, user)
-
     # 2. Check Rate Limit
-    # We pass the 'shop' ID we just got from the security check
     if not limiter.is_allowed(shop):
-        # Return 429 Error
         logger.warning(f"Rate limit exceeded for shop: {shop}")
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
     
     logger.info(f"✅ Rate limit check passed for shop: {shop}")
+
+    # 3. Check for Streaming Capability (Optional Gate)
+    if request.stream and not plan.can_stream_responses:
+        # If user requests stream but plan doesn't support it
+        logger.warning(f"Shop {shop} requested streaming but plan {plan.name} does not support it.")
+        # We can either fail or fallback to non-streaming. Let's fail for clarity.
+        raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
+    
     try:
-        english_copy = openai_service.generate_copy(
+        # 4. Handle Streaming Request
+        if request.stream:
+             logger.info(f"🌊 Initiating Streaming Response for: {shop}")
+             return create_streaming_response(
+                openai_service=openai_service,
+                product_name=request.product_name,
+                category=request.category,
+                japanese_description=request.japanese_description,
+                db=db,
+                api_key_id=api_key_id,
+                billing_cycle_start=billing_cycle_start
+             )
+
+        # 5. Handle Standard Request (Legacy/Non-Stream)
+        openai_response = openai_service.generate_copy(
             product_name=request.product_name,
             category=request.category,
             japanese_description=request.japanese_description
         )
         
-        # Increment Usage
-        usage_record.usage_count += 1
-        db.commit()
+        # 3. Update Token Usage (CRITICAL FIX)
+        # --- A. Safely extract usage ---
+        total_tokens_used = 0
+        
+        # This structure works for non-streaming calls:
+        if hasattr(openai_response, 'usage') and openai_response.usage:
+            total_tokens_used = openai_response.usage.total_tokens
+        
+        # --- B. Execute Atomic Update ---
+        # The database handles the atomic increment based on the final, known token count
+        if total_tokens_used > 0:
+            update_token_usage(db, api_key_id, total_tokens_used, billing_cycle_start)
 
-        logger.info(f"✅ English copy generated for product: {request.product_name}")
+        logger.info(f"✅ Translated description. Tokens used: {total_tokens_used}")
         return {
             "status": "success",
-            "english_copy": english_copy
+            "english_copy": openai_response.choices[0].message.content # Return content from the object
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -86,3 +99,11 @@ async def generate_copy(
             logger.error(f"❌ Error calling OpenAI API - ROOT CAUSE: {e.__cause__}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ------------------------------------------------------------------
+# 2. ADMIN/SETUP ENDPOINT (Uses Shopify JWT)
+# ------------------------------------------------------------------
+@router.get("/api/admin/me")
+async def get_admin_info(
+    shop: str = Depends(verify_shopify_session)
+):
+    return {"status": "authenticated", "shop": shop, "message": "Welcome to the Admin API"}
