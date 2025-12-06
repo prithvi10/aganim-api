@@ -2,7 +2,9 @@ import os
 import jwt  # pip install pyjwt
 from fastapi import Header, HTTPException, Depends
 from dotenv import load_dotenv
+from .logger import get_logger
 
+logger = get_logger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -24,7 +26,7 @@ def verify_shopify_session(authorization: str = Header(...)):
     Returns:
         str: The shop domain (e.g., 'my-store.myshopify.com') if valid.
     """
-    print(f"Authorization: {authorization}")
+    # print(f"Authorization: {authorization}") # Don't log sensitive headers in prod, or log masked
     # 1. Sanity Check: Ensure secrets exist
     if not SHOPIFY_API_SECRET or not SHOPIFY_API_KEY:
         raise HTTPException(
@@ -40,8 +42,8 @@ def verify_shopify_session(authorization: str = Header(...)):
     token = authorization.split(" ")[1]
 
     # DEV BYPASS: Allow a specific magic token for local testing
-    if token == "dev-token-123":
-        return "dev-shop.myshopify.com"
+    # if token == "dev-token-123":
+    #     return "dev-shop.myshopify.com"
 
     try:
         # 3. Decode & Verify the JWT
@@ -69,10 +71,11 @@ def verify_shopify_session(authorization: str = Header(...)):
     except HTTPException:
         raise
     except jwt.ExpiredSignatureError:
+        logger.warning("Token has expired")
         raise HTTPException(status_code=401, detail="Token has expired. Please refresh the page.")
     except jwt.InvalidTokenError as e:
-        print(f"⚠️ Security Alert: Invalid Token Attempt: {e}")
+        logger.warning(f"⚠️ Security Alert: Invalid Token Attempt: {e}")
         raise HTTPException(status_code=401, detail="Invalid Shopify Token")
     except Exception as e:
-        print(f"⚠️ Unknown Security Error: {e}")
+        logger.error(f"⚠️ Unknown Security Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Authentication Error")
