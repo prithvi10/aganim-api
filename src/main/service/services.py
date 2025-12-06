@@ -2,13 +2,13 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 import httpx,truststore
-from .configs import (
+from src.main.config.configs import (
     SYSTEM_PROMPT, 
     OPENAI_MODEL, 
     OPENAI_TEMPERATURE, 
     OPENAI_MAX_TOKENS
 )
-from .logger import get_logger
+from src.main.logging.logger import get_logger
 
 logger = get_logger(__name__)
 

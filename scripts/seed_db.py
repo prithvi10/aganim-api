@@ -1,9 +1,9 @@
 import sys
 import os
 from sqlalchemy.orm import Session
-from src.main.database import SessionLocal, engine, Base
-from src.main.db_models import Plan, User, APIKey
-from src.main.security import hash_api_key
+from src.main.db.database import SessionLocal, engine, Base
+from src.main.db.db_models import Plan, User, APIKey
+from src.main.security.security import hash_api_key
 
 def seed_data():
     db = SessionLocal()

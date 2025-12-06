@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 load_dotenv() 
 
 from .controller import router
-from .logger import get_logger
-from .database import engine, Base
-from . import db_models # Import models to ensure they are registered with Base
+from src.main.logging.logger import get_logger
+from src.main.db.database import engine, Base
+from src.main.db import db_models # Import models to ensure they are registered with Base
 
 logger = get_logger(__name__)
 

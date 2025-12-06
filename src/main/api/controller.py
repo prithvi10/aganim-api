@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from .models import RewriteRequest
-from .services import OpenAIService
-from .security import get_api_key_hash, verify_shopify_session
-from .ratelimiter import InMemoryRateLimiter
-from .configs import LOCAL_RATE_LIMIT_CONFIG
-from .logger import get_logger
-from .database import get_db
-from .db_transactions import verify_api_key_and_quota, update_token_usage
-from .streaming_utils import create_streaming_response
+from src.main.service.services import OpenAIService
+from src.main.security.security import get_api_key_hash, verify_shopify_session
+from src.main.security.ratelimiter import InMemoryRateLimiter
+from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG
+from src.main.logging.logger import get_logger
+from src.main.db.database import get_db
+from src.main.db.db_transactions import verify_api_key_and_quota, update_token_usage
+from src.main.service.streaming_utils import create_streaming_response
 
 logger = get_logger(__name__)
 

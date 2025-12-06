@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from datetime import date
 
 from .services import OpenAIService
-from .db_transactions import update_token_usage
-from .logger import get_logger
+from src.main.db.db_transactions import update_token_usage
+from src.main.logging.logger import get_logger
 
 logger = get_logger(__name__)
 
