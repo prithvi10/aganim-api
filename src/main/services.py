@@ -8,6 +8,9 @@ from .configs import (
     OPENAI_TEMPERATURE, 
     OPENAI_MAX_TOKENS
 )
+from .logger import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 ## For NETSKOPE ##
@@ -34,7 +37,8 @@ class OpenAIService:
         {japanese_description}
         """
         
-        print("User Content: ", user_content)
+        logger.info(f"Genering copy for product: {product_name}")
+        logger.debug(f"User Content: {user_content}")
         
         response = self.client.chat.completions.create(
             model=OPENAI_MODEL, 
