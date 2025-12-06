@@ -1,3 +1,5 @@
+import os
+
 # OpenAI Configuration
 OPENAI_MODEL = "gpt-4o-mini"
 OPENAI_TEMPERATURE = 0.7
@@ -33,4 +35,7 @@ LOCAL_RATE_LIMIT_CONFIG = [
     {"limit": 5,  "window": 10},   # Burst: Max 5 requests per 10 seconds
     {"limit": 20, "window": 60},   # Sustained: Max 20 requests per minute
 ]
+
+# Database
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/shopify_translator")
 

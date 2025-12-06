@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: shopify-translator-api
+    command: uvicorn src.main.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/shopify_translator
+      # Add other environment variables here or use env_file
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - SHOPIFY_API_SECRET=${SHOPIFY_API_SECRET}
+      # - SHOPIFY_API_KEY=${SHOPIFY_API_KEY}
+    env_file:
+      - .env
+
+  db:
+    image: postgres:15
+    container_name: shopify-translator-db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=shopify_translator
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+

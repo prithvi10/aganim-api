@@ -7,3 +7,5 @@ pytest
 httpx
 truststore
 pyjwt
+sqlalchemy
+psycopg2-binary
