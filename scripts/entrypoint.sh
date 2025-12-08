@@ -1,8 +1,13 @@
 #!/bin/bash
 set -e
 
-# 1. Run Database Seeding (Idempotent)
-# This ensures plans and initial data exist before the app takes traffic
+# 1. Wait for Database to be Ready
+# This prevents the app from crashing if the DB isn't up yet (common in Docker Compose)
+echo "⏳ Checking database connection..."
+python -m scripts.wait_for_db
+
+# 2. Run Database Seeding (Idempotent)
+# This creates tables (if missing) and ensures plans/initial data exist
 echo "🌱 Seeding database..."
 python -m scripts.seed_db
 

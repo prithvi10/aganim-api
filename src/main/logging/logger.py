@@ -4,43 +4,56 @@ import os
 from logging.handlers import TimedRotatingFileHandler
 
 # Configure Log Directory
-LOG_DIR = "logs"
+# Allow overriding via environment variable (useful for Render Disks or specific paths)
+LOG_DIR = os.getenv("LOG_PATH", "logs")
+
 if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+    try:
+        os.makedirs(LOG_DIR)
+    except OSError as e:
+        # Fallback if we can't create the directory (e.g. permission issues)
+        print(f"⚠️ Could not create log directory '{LOG_DIR}': {e}. Logging to files will be disabled.")
+        LOG_DIR = None
 
 # Formatters
 detailed_formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-# 1. Info Logger (Everything INFO and above, written to application.log)
-# Rotate every 24 hours (midnight), keep 3 days backup
-info_handler = TimedRotatingFileHandler(
-    f"{LOG_DIR}/application.log", 
-    when="midnight", 
-    interval=1, 
-    backupCount=3,
-    encoding='utf-8'
-)
-info_handler.setLevel(logging.INFO)
-info_handler.setFormatter(detailed_formatter)
+handlers = []
 
-# 2. Error Logger (Only ERROR and CRITICAL, written to error.log)
-# Rotate every 24 hours (midnight), keep 7 days backup
-error_handler = TimedRotatingFileHandler(
-    f"{LOG_DIR}/error.log", 
-    when="midnight", 
-    interval=1, 
-    backupCount=7,
-    encoding='utf-8'
-)
-error_handler.setLevel(logging.ERROR)
-error_handler.setFormatter(detailed_formatter)
-
-# 3. Console Handler (Optional: to see logs in Render console / stdout)
+# 1. Console Handler (CRITICAL for Render)
+# Render captures stdout/stderr automatically.
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(detailed_formatter)
+handlers.append(console_handler)
+
+# 2. File Handlers (Only if directory exists/was created)
+if LOG_DIR:
+    # Info Logger (application.log)
+    info_handler = TimedRotatingFileHandler(
+        f"{LOG_DIR}/application.log", 
+        when="midnight", 
+        interval=1, 
+        backupCount=3,
+        encoding='utf-8'
+    )
+    info_handler.setLevel(logging.INFO)
+    info_handler.setFormatter(detailed_formatter)
+    handlers.append(info_handler)
+
+    # Error Logger (error.log)
+    error_handler = TimedRotatingFileHandler(
+        f"{LOG_DIR}/error.log", 
+        when="midnight", 
+        interval=1, 
+        backupCount=7,
+        encoding='utf-8'
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(detailed_formatter)
+    handlers.append(error_handler)
 
 def get_logger(name: str):
     """
@@ -52,8 +65,7 @@ def get_logger(name: str):
     
     # Avoid adding duplicate handlers if get_logger is called multiple times
     if not logger.handlers:
-        logger.addHandler(info_handler)
-        logger.addHandler(error_handler)
-        logger.addHandler(console_handler)
+        for handler in handlers:
+            logger.addHandler(handler)
         
     return logger
