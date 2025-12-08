@@ -135,3 +135,23 @@ src/test/test_db_transactions.py::test_verify_api_key_valid PASSED
 src/test/test_db_transactions.py::test_verify_quota_exceeded PASSED
 src/test/test_integration.py::test_integration_generate_copy_flow PASSED
 ```
+### CICD
+A. The CI Job (test)
+This job runs on a fresh virtual machine hosted by GitHub (the Runner).
+
+* `actions/checkout@v4`: Downloads your code from the repository.
+
+* `actions/setup-python@v5`: Configures the Python environment.
+
+* `pip install -r requirements.txt`: Installs your dependencies (FastAPI, SQLAlchemy, etc.).
+
+* `pytest`: Executes all your unit tests (e.g., test_rate_limiter.py). If any test fails, the workflow stops immediately.
+
+B. The CD Job (deploy)
+This job is very simple because Render handles the heavy lifting.
+
+* `needs: test`: Ensures this job only starts if the test job passed successfully.
+
+* `if: github.ref == 'refs/heads/main'`: Prevents deployment when someone just opens a Pull Request; deployment only happens when the final code is merged into main.
+
+* `curl`: Sends a POST request to your secret RENDER_DEPLOY_HOOK_URL. This signal tells Render: "A new version of the code is ready, please pull the latest changes, build, and deploy."

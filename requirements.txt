@@ -9,3 +9,4 @@ truststore
 pyjwt
 sqlalchemy
 psycopg2-binary
+pytest-asyncio
