@@ -1,66 +1,44 @@
-from fastapi import FastAPI
-from dotenv import load_dotenv
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+import uvicorn
 from contextlib import asynccontextmanager
 
-# 1. Load Environment Variables FIRST
-load_dotenv() 
-
-from .controller import router
-from src.main.logging.logger import get_logger
-from src.main.db.database import engine, Base
-from src.main.db import db_models # Import models to ensure they are registered with Base
-from scripts.wait_for_db import wait_for_db
-from scripts.seed_db import seed_data
-
-logger = get_logger(__name__)
+from src.main.config.configs import DATABASE_URL
+from src.main.db.database import engine, Base, get_db
+from src.main.api.controller import router as api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Lifecycle manager for the FastAPI app.
-    Executes startup and shutdown logic.
-    """
-    try:
-        logger.info("🚀 Starting Application Lifecycle...")
-        
-        # 1. Wait for DB Connection
-        logger.info("⏳ Checking database connection...")
-        wait_for_db()
-        
-        # 2. Create Tables (Idempotent)
-        # SQLAlchemy's create_all checks for existence first, but let's be explicit in logs.
-        # It DOES NOT recreate tables if they exist.
-        logger.info("🛠️ Verifying database schema...")
-        Base.metadata.create_all(bind=engine)
-        
-        # 3. Seed Initial Data (Idempotent)
-        # The seed_data function checks if records exist before adding them.
-        logger.info("🌱 Verifying initial data...")
-        seed_data()
-        
-        logger.info("✅ Application startup complete.")
-        yield
-    except Exception as e:
-        logger.error(f"❌ Application startup failed: {e}")
-        raise e
-    finally:
-        logger.info("🛑 Application shutting down...")
-
-try:
-    import truststore
-    truststore.inject_into_ssl() # to connect through venv/proxy
-    logger.debug("Truststore injection successful")
-except ImportError:
-    pass # truststore not installed or not needed
-except Exception as e:
-    logger.debug(f"Truststore injection failed: {e}")
+    # Startup: Create tables
+    Base.metadata.create_all(bind=engine)
+    yield
+    # Shutdown: (Cleanup if needed)
 
 app = FastAPI(lifespan=lifespan)
 
-logger.info("Starting Shopify Translator API...")
+# Include the API router
+app.include_router(api_router)
 
-# 3. Include the router from controller.py
-app.include_router(router)
+# Health Check Endpoint
+@app.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    """
+    Health check endpoint for cloud providers.
+    Checks:
+    1. App is running (returns 200)
+    2. Database connection is active
+    """
+    try:
+        # Simple query to verify DB connection
+        db.execute(text("SELECT 1"))
+        return JSONResponse(status_code=200, content={"status": "healthy", "database": "connected"})
+    except Exception as e:
+        return JSONResponse(
+            status_code=503, 
+            content={"status": "unhealthy", "database": "disconnected", "error": str(e)}
+        )
 
-
-# To run this: uvicorn main:app --reload
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
