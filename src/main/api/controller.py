@@ -7,8 +7,9 @@ from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG
 from src.main.logging.logger import get_logger
 from src.main.db.database import get_db
-from src.main.db.db_transactions import verify_api_key_and_quota, update_token_usage
+from src.main.db.db_transactions import update_token_usage
 from src.main.service.streaming_utils import create_streaming_response
+from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request
 
 logger = get_logger(__name__)
 
@@ -26,9 +27,12 @@ async def generate_copy(
     key_hash: str = Depends(get_api_key_hash),
     db: Session = Depends(get_db)
 ):
+    # 0. Validate Request Body
+    validate_rewrite_request(request.model_dump())
+
     # 1. Verify API Key and Quota (Read Operation)
     # This returns a context dict with user, plan, etc.
-    auth_context = verify_api_key_and_quota(db, key_hash)
+    auth_context = validate_api_key_and_quota(db, key_hash)
     
     user = auth_context["user"]
     shop = user.username # Assuming username is shop domain

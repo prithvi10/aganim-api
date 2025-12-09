@@ -47,8 +47,8 @@ def test_generate_copy_endpoint_success(mock_auth_context):
     mock_openai_response.choices = [MagicMock(message=MagicMock(content=mock_response_text))]
     mock_openai_response.usage.total_tokens = 10
 
-    # Patch the verification function
-    with patch("src.main.api.controller.verify_api_key_and_quota", return_value=mock_auth_context) as mock_verify:
+    # Patch the validation function
+    with patch("src.main.api.controller.validate_api_key_and_quota", return_value=mock_auth_context) as mock_validate:
         # Patch the update usage function
         with patch("src.main.api.controller.update_token_usage") as mock_update:
             # Patch the OpenAI service instance
@@ -69,12 +69,13 @@ def test_generate_copy_endpoint_success(mock_auth_context):
                     "english_copy": mock_response_text
                 }
                 
+                mock_validate.assert_called_once()
                 mock_generate.assert_called_once()
                 mock_update.assert_called_once()
 
 def test_generate_copy_endpoint_service_error(mock_auth_context):
     """Test the API endpoint when service raises an exception."""
-    with patch("src.main.api.controller.verify_api_key_and_quota", return_value=mock_auth_context):
+    with patch("src.main.api.controller.validate_api_key_and_quota", return_value=mock_auth_context):
         with patch("src.main.api.controller.openai_service.generate_copy", side_effect=Exception("Service Error")):
             response = client.post(
                 "/api/generate-copy",

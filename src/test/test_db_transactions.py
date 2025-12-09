@@ -2,11 +2,10 @@ import pytest
 from datetime import date
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from fastapi import HTTPException
 
 from src.main.db.database import Base
 from src.main.db.db_models import User, Plan, APIKey, UsageRecord
-from src.main.db.db_transactions import verify_api_key_and_quota, update_token_usage
+from src.main.db.db_transactions import get_user_quota_context, update_token_usage
 from src.main.security.security import hash_api_key
 
 # Use in-memory SQLite for testing transactions
@@ -39,42 +38,40 @@ def db_session():
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
-def test_verify_api_key_valid(db_session):
-    """Should return context when key is valid and within quota."""
+def test_get_user_quota_context_valid(db_session):
+    """Should return context when key is valid."""
     key_hash = hash_api_key("valid_key")
-    context = verify_api_key_and_quota(db_session, key_hash)
+    context = get_user_quota_context(db_session, key_hash)
     
+    assert context is not None
     assert context["user"].username == "test_user"
     assert context["plan"].name == "Test Plan"
     assert context["current_usage"] == 0
 
-def test_verify_api_key_invalid(db_session):
-    """Should raise 401 for invalid key."""
-    with pytest.raises(HTTPException) as exc:
-        verify_api_key_and_quota(db_session, "invalid_hash")
-    assert exc.value.status_code == 401
+def test_get_user_quota_context_invalid(db_session):
+    """Should return None for invalid key."""
+    context = get_user_quota_context(db_session, "invalid_hash")
+    assert context is None
 
-def test_verify_quota_exceeded(db_session):
-    """Should raise 429 when usage exceeds quota."""
+def test_get_user_quota_context_usage_data(db_session):
+    """Should return correct current usage."""
     key_hash = hash_api_key("valid_key")
     
-    # Manually insert high usage
+    # Manually insert usage
     api_key = db_session.query(APIKey).filter_by(key_hash=key_hash).first()
     today = date.today()
     cycle_start = date(today.year, today.month, 1)
     
-    # Plan quota is 1000
     usage = UsageRecord(
         api_key_id=api_key.id,
         billing_cycle_start=cycle_start,
-        token_count=1001
+        token_count=500
     )
     db_session.add(usage)
     db_session.commit()
     
-    with pytest.raises(HTTPException) as exc:
-        verify_api_key_and_quota(db_session, key_hash)
-    assert exc.value.status_code == 429
+    context = get_user_quota_context(db_session, key_hash)
+    assert context["current_usage"] == 500
 
 def test_update_token_usage_new_record(db_session):
     """Should create a new usage record if none exists."""
@@ -113,4 +110,3 @@ def test_update_token_usage_existing_record(db_session):
     # Verify
     db_session.refresh(usage)
     assert usage.token_count == 150
-
