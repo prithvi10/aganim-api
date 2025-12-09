@@ -1,26 +1,17 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import update
-from fastapi import HTTPException
 from datetime import date
 from .db_models import User, APIKey, UsageRecord, Plan
 
-def verify_api_key_and_quota(db: Session, key_hash: str) -> dict:
+def get_user_quota_context(db: Session, key_hash: str) -> dict | None:
     """
-    1. Lookup APIKey by hash.
-    2. Verify Key is Active.
-    3. Join User and Plan to get Quota.
-    4. Join/Fetch UsageRecord for current billing cycle.
-    5. Check if Usage < Quota.
+    Retrieves user, plan, and usage information based on the API Key hash.
+    Returns None if the key is invalid or not found.
+    Does NOT verify quota limits or raise HTTP exceptions.
     """
-    # We'll assume billing cycle starts on the 1st of the month for simplicity
-    # In a real app, this might be user-specific based on subscription date.
     today = date.today()
     cycle_start = date(today.year, today.month, 1)
 
-    # Perform a joined query to fetch everything in one go if possible, 
-    # or use relationship loading. 
-    # Here we query APIKey and eagerly load user, plan, and current usage.
-    
     # Query for the key
     api_key_record = (
         db.query(APIKey)
@@ -29,20 +20,16 @@ def verify_api_key_and_quota(db: Session, key_hash: str) -> dict:
     )
 
     if not api_key_record:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-
-    if not api_key_record.is_active:
-        raise HTTPException(status_code=403, detail="API Key is inactive")
+        return None
 
     user = api_key_record.user
     if not user:
-         raise HTTPException(status_code=500, detail="Orphaned API Key (No User)")
+         # Orphaned key scenario
+         return None
 
     plan = user.plan
     if not plan:
-         # Fallback or error if no plan assigned. 
-         # Assuming a default plan should exist or user must have one.
-         raise HTTPException(status_code=403, detail="No subscription plan found")
+         return None
 
     # Fetch current usage record
     usage_record = (
@@ -55,18 +42,14 @@ def verify_api_key_and_quota(db: Session, key_hash: str) -> dict:
     )
 
     current_usage = usage_record.token_count if usage_record else 0
-    quota_limit = plan.monthly_token_quota
 
-    if current_usage >= quota_limit:
-        raise HTTPException(status_code=429, detail="Monthly token quota exceeded")
-
-    # Return context for the controller (e.g. to use in write operation)
     return {
         "user": user,
         "plan": plan,
         "api_key_id": api_key_record.id,
         "current_usage": current_usage,
-        "billing_cycle_start": cycle_start
+        "billing_cycle_start": cycle_start,
+        "is_active": api_key_record.is_active
     }
 
 def update_token_usage(db: Session, api_key_id: int, token_usage: int, billing_cycle_start: date):
@@ -110,4 +93,3 @@ def update_token_usage(db: Session, api_key_id: int, token_usage: int, billing_c
             db.commit()
     else:
         db.commit()
-
