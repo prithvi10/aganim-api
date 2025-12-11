@@ -1,15 +1,16 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from sqlalchemy.orm import Session
-from .models import RewriteRequest
+from .models import RewriteRequest, OnboardingRequest
 from src.main.service.services import OpenAIService
-from src.main.security.security import get_api_key_hash, verify_shopify_session
+from src.main.security.security import get_api_key_hash, verify_shopify_session, verify_webhook_signature
 from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG
 from src.main.logging.logger import get_logger
 from src.main.db.database import get_db
-from src.main.db.db_transactions import update_token_usage
+from src.main.db.db_transactions import update_token_usage, get_plan_by_name
 from src.main.service.streaming_utils import create_streaming_response
 from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request
+from src.main.service.onboarding import onboard_user
 
 logger = get_logger(__name__)
 
@@ -111,3 +112,62 @@ async def get_admin_info(
     shop: str = Depends(verify_shopify_session)
 ):
     return {"status": "authenticated", "shop": shop, "message": "Welcome to the Admin API"}
+
+@router.post("/webhooks/subscription-activated")
+async def handle_subscription_activated(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Shopify Webhook for subscription activation.
+    Triggers the onboarding process for the merchant.
+    """
+    # 1. Shopify Webhook Verification
+    await verify_webhook_signature(request)
+    
+    # 2. Extract Merchant and Subscription data
+    try:
+        payload = await request.json()
+        shop_domain = payload.get('myshopify_domain')
+        # Note: 'billing_plan' might be nested or named differently depending on the specific webhook topic
+        # For 'app_subscriptions/update', it's often in the 'name' field of the plan object
+        # We'll stick to the user's provided structure for now, but fail gracefully.
+        plan_name = payload.get('billing_plan') 
+        
+        if not shop_domain or not plan_name:
+            logger.warning("Webhook payload missing 'myshopify_domain' or 'billing_plan'")
+            return Response(status_code=200) # Return 200 to acknowledge receipt
+
+        # 3. Resolve Plan
+        plan = get_plan_by_name(db, plan_name)
+        if not plan:
+            logger.warning(f"Webhook received for unknown plan: {plan_name}")
+            return Response(status_code=200)
+
+        # 4. Call Core Onboarding Service
+        onboarding_req = OnboardingRequest(
+            username=shop_domain,
+            plan_id=plan.id,
+            email=payload.get('email') # Optional: try to get email if available
+        )
+        
+        # We catch exceptions because we want to acknowledge the webhook with 200 OK 
+        # even if our logic fails (e.g. duplicate user), to stop Shopify from retrying.
+        try:
+            onboard_user(db, onboarding_req)
+            logger.info(f"Webhook successfully onboarded user: {shop_domain}")
+        except HTTPException as e:
+            if e.status_code == 409:
+                logger.info(f"User {shop_domain} already exists. Skipping creation.")
+            else:
+                logger.error(f"Onboarding error processing webhook: {e.detail}")
+        except Exception as e:
+            logger.error(f"Unexpected error processing webhook: {e}")
+
+    except Exception as e:
+        logger.error(f"Error parsing webhook payload: {e}")
+        # Still return 200 to prevent retry storms if payload is malformed
+        return Response(status_code=200)
+
+    # 5. Success response
+    return Response(status_code=200)
