@@ -6,3 +6,14 @@ class RewriteRequest(BaseModel):
     japanese_description: str
     category: str = DEFAULT_PRODUCT_CATEGORY # e.g., "Kitchenware", "Apparel"
     stream: bool = False # New flag for streaming requests
+
+class OnboardingRequest(BaseModel):
+    username: str # This will be the shop domain
+    email: str | None = None
+    plan_id: int
+
+class OnboardingResponse(BaseModel):
+    user_id: int
+    username: str
+    plan_name: str
+    api_key: str # The raw API key (shown only once)

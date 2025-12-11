@@ -1,7 +1,9 @@
 import os
 import jwt  # pip install pyjwt
 import hashlib
-from fastapi import Header, HTTPException, Depends
+import hmac
+import base64
+from fastapi import Header, HTTPException, Request, Depends
 from dotenv import load_dotenv
 from src.main.logging.logger import get_logger
 
@@ -97,3 +99,36 @@ def verify_shopify_session(authorization: str = Header(...)):
     except Exception as e:
         logger.error(f"⚠️ Unknown Security Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Authentication Error")
+
+# ---------------------------------------------------------
+# 3. Shopify Webhook Verification
+# ---------------------------------------------------------
+async def verify_webhook_signature(request: Request):
+    """
+    Verifies that the incoming webhook request is from Shopify.
+    """
+    if not SHOPIFY_API_SECRET:
+        logger.error("Missing SHOPIFY_API_SECRET")
+        raise HTTPException(status_code=500, detail="Server Configuration Error")
+
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+    if not hmac_header:
+        logger.warning("Missing X-Shopify-Hmac-Sha256 header")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    body = await request.body()
+    
+    # Calculate HMAC
+    digest = hmac.new(
+        SHOPIFY_API_SECRET.encode('utf-8'),
+        body,
+        hashlib.sha256
+    ).digest()
+    
+    computed_hmac = base64.b64encode(digest).decode('utf-8')
+
+    if not hmac.compare_digest(computed_hmac, hmac_header):
+        logger.warning("Invalid webhook signature")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    return True
