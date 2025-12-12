@@ -3,9 +3,10 @@ import jwt  # pip install pyjwt
 import hashlib
 import hmac
 import base64
-from fastapi import Header, HTTPException, Request, Depends
+from fastapi import Header, HTTPException, Request, Depends, Query
 from dotenv import load_dotenv
 from src.main.logging.logger import get_logger
+from urllib.parse import urlencode
 
 logger = get_logger(__name__)
 
@@ -130,5 +131,41 @@ async def verify_webhook_signature(request: Request):
     if not hmac.compare_digest(computed_hmac, hmac_header):
         logger.warning("Invalid webhook signature")
         raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    return True
+
+# ---------------------------------------------------------
+# 4. Shopify OAuth Redirect Verification
+# ---------------------------------------------------------
+def verify_shopify_redirect(query_params: dict):
+    """
+    Verifies the HMAC signature for Shopify OAuth redirects.
+    """
+    if not SHOPIFY_API_SECRET:
+        raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
+
+    received_hmac = query_params.get("hmac")
+    if not received_hmac:
+        raise HTTPException(status_code=400, detail="Missing HMAC parameter")
+
+    # Remove hmac from params
+    params_copy = query_params.copy()
+    del params_copy["hmac"]
+    
+    # Sort and encode
+    # Note: query_params might contain list values in some frameworks, but FastAPI's Request.query_params
+    # is usually flat or we handle it as such. Shopify sends standard scalar params for OAuth.
+    sorted_params = urlencode(sorted(params_copy.items()))
+    
+    # Calculate HMAC
+    digest = hmac.new(
+        SHOPIFY_API_SECRET.encode('utf-8'),
+        sorted_params.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(digest, received_hmac):
+        logger.warning("Invalid OAuth redirect signature")
+        raise HTTPException(status_code=400, detail="Invalid HMAC signature")
     
     return True

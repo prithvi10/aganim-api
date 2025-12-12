@@ -42,3 +42,15 @@ LOCAL_RATE_LIMIT_CONFIG = [
 # Database
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/shopify_translator")
 
+# CORS Configuration
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",      # Local React/Frontend
+    "http://localhost:8000",      # Local API/Swagger UI
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+]
+
+# Add deployed URL from env if available
+DEPLOYED_APP_URL = os.getenv("DEPLOYED_APP_URL")
+if DEPLOYED_APP_URL:
+    ALLOWED_ORIGINS.append(DEPLOYED_APP_URL)
