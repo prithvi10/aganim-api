@@ -173,36 +173,53 @@ def verify_shopify_redirect(query_params: dict):
 # ---------------------------------------------------------
 # 5. Shopify App Proxy Verification
 # ---------------------------------------------------------
-def verify_shopify_proxy_request(query_params: dict):
+async def verify_shopify_proxy_request(request: Request):
     """
     Verifies the signature for Shopify App Proxy requests.
-    See: https://shopify.dev/docs/apps/online-store/app-proxies#signature-calculation
+    This function should be used as a FastAPI Dependency.
     """
+    # 1. Access the query parameters
+    query_params = dict(request.query_params)
+
     if not SHOPIFY_API_SECRET:
          raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
 
+    # 2. Extract and remove signature
     received_signature = query_params.get("signature")
     if not received_signature:
         raise HTTPException(status_code=400, detail="Missing signature parameter")
 
-    # Remove signature
-    params_copy = query_params.copy()
-    if "signature" in params_copy:
-        del params_copy["signature"]
+    params_for_hmac = query_params.copy()
+    if "signature" in params_for_hmac:
+        del params_for_hmac["signature"]
+        
+    # Shopify also removes 'action' and 'controller' parameters if present, 
+    # but they are usually not present in the final proxy query string.
+    # We rely on the core six: shop, path_prefix, timestamp, etc.
 
-    # Sort and concatenate key=value
-    # Note: No separator for App Proxy signatures (Liquid/Proxy)
-    sorted_params = "".join([f"{key}={value}" for key, value in sorted(params_copy.items())])
+    # 3. Construct the canonical query string
+    # We use urlencode on the sorted parameters list.
+    # Note: urlencode on a list of tuples automatically sorts them.
+    
+    # We must ensure the parameters are processed correctly for the HMAC:
+    
+    # Convert dict items to a list of tuples, sort them, and encode with '&'
+    sorted_items = sorted(params_for_hmac.items())
 
-    # Calculate HMAC
-    digest = hmac.new(
+    # We use urlencode() to get the string: key1=value1&key2=value2...
+    canonical_string = urlencode(sorted_items)
+
+    # 4. Calculate HMAC
+    calculated_signature = hmac.new(
         SHOPIFY_API_SECRET.encode('utf-8'),
-        sorted_params.encode('utf-8'),
+        canonical_string.encode('utf-8'), # <--- Use the correctly encoded string
         hashlib.sha256
     ).hexdigest()
 
-    if not hmac.compare_digest(digest, received_signature):
-        logger.warning(f"Invalid App Proxy signature. Calculated: {digest}, Received: {received_signature}")
+    # 5. Compare
+    if not hmac.compare_digest(calculated_signature, received_signature):
+        logger.warning(f"Invalid App Proxy signature. Calculated: {calculated_signature}, Received: {received_signature}")
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    return True
+    # 6. Success: return the shop domain for use in the controller
+    return query_params.get("shop")
