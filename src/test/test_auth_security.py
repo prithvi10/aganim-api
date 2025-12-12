@@ -2,8 +2,8 @@ import pytest
 import hmac
 import hashlib
 from urllib.parse import urlencode
-from fastapi import HTTPException
-from unittest.mock import patch
+from fastapi import HTTPException, Request
+from unittest.mock import patch, MagicMock
 from src.main.security.security import verify_shopify_redirect, verify_shopify_proxy_request
 
 # Mock Secret
@@ -20,6 +20,7 @@ def valid_params():
 
 def generate_hmac(secret, params):
     # Sort and encode
+    # Note: query_params might contain list values in some frameworks, but here we assume flat
     sorted_params = urlencode(sorted(params.items()))
     digest = hmac.new(
         secret.encode('utf-8'),
@@ -29,16 +30,24 @@ def generate_hmac(secret, params):
     return digest
 
 def generate_proxy_signature(secret, params):
-    # Sort and concatenate key=value WITHOUT separators (for Proxy)
-    # Filter out 'signature' if present
-    params_to_sign = {k: v for k, v in params.items() if k != "signature"}
-    sorted_params = "".join([f"{key}={value}" for key, value in sorted(params_to_sign.items())])
+    # 1. Remove signature if present
+    params_to_sign = params.copy()
+    if "signature" in params_to_sign:
+        del params_to_sign["signature"]
+        
+    # 2. Sort and Encode (using & separator as per security.py implementation)
+    sorted_items = sorted(params_to_sign.items())
+    canonical_string = urlencode(sorted_items)
+    
+    # 3. Sign
     digest = hmac.new(
         secret.encode('utf-8'),
-        sorted_params.encode('utf-8'),
+        canonical_string.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
     return digest
+
+# --- verify_shopify_redirect Tests (Synchronous) ---
 
 def test_verify_shopify_redirect_success(valid_params):
     """Test valid HMAC verification."""
@@ -80,7 +89,7 @@ def test_verify_shopify_redirect_missing_config():
         assert exc_info.value.status_code == 500
         assert "Server Configuration Error" in exc_info.value.detail
 
-# --- New Tests for verify_shopify_proxy_request ---
+# --- verify_shopify_proxy_request Tests (Async) ---
 
 @pytest.fixture
 def valid_proxy_params():
@@ -91,32 +100,64 @@ def valid_proxy_params():
         "logged_in_customer_id": "123"
     }
 
-def test_verify_shopify_proxy_success(valid_proxy_params):
+@pytest.mark.asyncio
+async def test_verify_shopify_proxy_success(valid_proxy_params):
     """Test valid App Proxy signature verification."""
     valid_signature = generate_proxy_signature(MOCK_SECRET, valid_proxy_params)
     params = valid_proxy_params.copy()
     params["signature"] = valid_signature
     
+    # Mock Request
+    mock_request = MagicMock(spec=Request)
+    mock_request.query_params = params
+    
     with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SECRET):
-        assert verify_shopify_proxy_request(params) is True
+        result = await verify_shopify_proxy_request(mock_request)
+        assert result == valid_proxy_params["shop"]
 
-def test_verify_shopify_proxy_missing_signature(valid_proxy_params):
+@pytest.mark.asyncio
+async def test_verify_shopify_proxy_missing_signature(valid_proxy_params):
     """Test failure when signature param is missing."""
+    # Mock Request
+    mock_request = MagicMock(spec=Request)
+    mock_request.query_params = valid_proxy_params # No signature
+    
     with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SECRET):
         with pytest.raises(HTTPException) as exc_info:
-            verify_shopify_proxy_request(valid_proxy_params)
+            await verify_shopify_proxy_request(mock_request)
         
         assert exc_info.value.status_code == 400
         assert "Missing signature parameter" in exc_info.value.detail
 
-def test_verify_shopify_proxy_invalid_signature(valid_proxy_params):
+@pytest.mark.asyncio
+async def test_verify_shopify_proxy_invalid_signature(valid_proxy_params):
     """Test failure when signature is incorrect."""
     params = valid_proxy_params.copy()
     params["signature"] = "invalid_signature"
     
+    # Mock Request
+    mock_request = MagicMock(spec=Request)
+    mock_request.query_params = params
+    
     with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SECRET):
         with pytest.raises(HTTPException) as exc_info:
-            verify_shopify_proxy_request(params)
+            await verify_shopify_proxy_request(mock_request)
         
         assert exc_info.value.status_code == 401
         assert "Invalid signature" in exc_info.value.detail
+
+@pytest.mark.asyncio
+async def test_verify_shopify_proxy_missing_config(valid_proxy_params):
+    """Test failure when secret is missing."""
+    params = valid_proxy_params.copy()
+    params["signature"] = "something"
+    
+    mock_request = MagicMock(spec=Request)
+    mock_request.query_params = params
+
+    with patch("src.main.security.security.SHOPIFY_API_SECRET", None):
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_shopify_proxy_request(mock_request)
+        
+        assert exc_info.value.status_code == 500
+        assert "Server Configuration Error" in exc_info.value.detail
