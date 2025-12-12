@@ -1,5 +1,10 @@
 # export PYTHONPATH=$PYTHONPATH:$(pwd)/src/main && ./venv/bin/python src/test/test_local_limiter.py
 import time
+import sys
+import os
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ratelimiter import InMemoryRateLimiter
 

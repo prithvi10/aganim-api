@@ -1,12 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from sqlalchemy.orm import Session
 from .models import RewriteRequest, OnboardingRequest
+from src.main.db.db_models import User
 from src.main.service.services import OpenAIService
 from src.main.security.security import (
     get_api_key_hash, 
     verify_shopify_session, 
     verify_webhook_signature, 
     verify_shopify_redirect,
+    verify_shopify_proxy_request, # <--- NEW IMPORT
     SHOPIFY_API_KEY,
     SHOPIFY_API_SECRET
 )
@@ -16,57 +18,44 @@ from src.main.logging.logger import get_logger
 from src.main.db.database import get_db
 from src.main.db.db_transactions import update_token_usage, get_plan_by_name
 from src.main.service.streaming_utils import create_streaming_response
-from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request
+from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota # <--- NEW VALIDATION HELPER
 from src.main.service.onboarding import onboard_user
 import httpx
 
 logger = get_logger(__name__)
 
 router = APIRouter()
-#Initialize the Limiter GLOBALLY
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
 openai_service = OpenAIService()
 
-# ------------------------------------------------------------------
-# 1. PUBLIC/CLIENT ENDPOINT (Uses API Key for Billing/Quota)
-# ------------------------------------------------------------------
-@router.post("/api/generate-copy")
-async def generate_copy(
+# ==============================================================================
+#  SHARED CORE LOGIC (Refactored to avoid duplication)
+# ==============================================================================
+async def _process_generation_request(
+    db: Session,
     request: RewriteRequest,
-    key_hash: str = Depends(get_api_key_hash),
-    db: Session = Depends(get_db)
+    user: User,
+    plan,
+    api_key_id: int,
+    billing_cycle_start
 ):
-    # 0. Validate Request Body
-    validate_rewrite_request(request.model_dump())
+    """
+    Common logic for both API Key and Proxy endpoints.
+    Handles Rate Limiting, Streaming checks, OpenAI calls, and Usage Metering.
+    """
+    shop = user.username
 
-    # 1. Verify API Key and Quota (Read Operation)
-    # This returns a context dict with user, plan, etc.
-    auth_context = validate_api_key_and_quota(db, key_hash)
-    
-    user = auth_context["user"]
-    shop = user.username # Assuming username is shop domain
-    api_key_id = auth_context["api_key_id"]
-    billing_cycle_start = auth_context["billing_cycle_start"]
-    plan = auth_context["plan"]
-
-    logger.info(f"✅ Verified request from: {shop}")
-
-    # 2. Check Rate Limit
+    # 1. Check Rate Limit
     if not limiter.is_allowed(shop):
         logger.warning(f"Rate limit exceeded for shop: {shop}")
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
     
-    logger.info(f"✅ Rate limit check passed for shop: {shop}")
-
-    # 3. Check for Streaming Capability (Optional Gate)
+    # 2. Check Streaming Capability
     if request.stream and not plan.can_stream_responses:
-        # If user requests stream but plan doesn't support it
-        logger.warning(f"Shop {shop} requested streaming but plan {plan.name} does not support it.")
-        # We can either fail or fallback to non-streaming. Let's fail for clarity.
         raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
-    
+
     try:
-        # 4. Handle Streaming Request
+        # 3. Handle Streaming
         if request.stream:
              logger.info(f"🌊 Initiating Streaming Response for: {shop}")
              return create_streaming_response(
@@ -79,41 +68,100 @@ async def generate_copy(
                 billing_cycle_start=billing_cycle_start
              )
 
-        # 5. Handle Standard Request (Legacy/Non-Stream)
+        # 4. Handle Standard Request
         openai_response = openai_service.generate_copy(
             product_name=request.product_name,
             category=request.category,
             japanese_description=request.japanese_description
         )
         
-        # 3. Update Token Usage (CRITICAL FIX)
-        # --- A. Safely extract usage ---
+        # 5. Usage Metering (Atomic Update)
         total_tokens_used = 0
-        
-        # This structure works for non-streaming calls:
         if hasattr(openai_response, 'usage') and openai_response.usage:
             total_tokens_used = openai_response.usage.total_tokens
         
-        # --- B. Execute Atomic Update ---
-        # The database handles the atomic increment based on the final, known token count
         if total_tokens_used > 0:
             update_token_usage(db, api_key_id, total_tokens_used, billing_cycle_start)
 
-        logger.info(f"✅ Translated description. Tokens used: {total_tokens_used}")
+        logger.info(f"✅ Translated for {shop}. Tokens: {total_tokens_used}")
         return {
             "status": "success",
-            "english_copy": openai_response.choices[0].message.content # Return content from the object
+            "english_copy": openai_response.choices[0].message.content
         }
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error calling OpenAI API - ACTUAL ERROR: {type(e).__name__} - {e}")
-        if e.__cause__:
-            logger.error(f"❌ Error calling OpenAI API - ROOT CAUSE: {e.__cause__}")
+        logger.error(f"❌ Error processing request for {shop}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ------------------------------------------------------------------
-# 2. ADMIN/SETUP ENDPOINT (Uses Shopify JWT)
+
+# ==============================================================================
+#  1. APP PROXY ENDPOINT (Securely used by Shopify Theme Frontend)
+#     - No API Key required from client (HMAC verified).
+#     - Uses the User's primary active key for metering.
+# ==============================================================================
+@router.post("/api/proxy/generate-copy")
+async def proxy_generate_copy(
+    request: Request,
+    # This dependency validates the HMAC signature and returns the shop domain
+    shop_domain: str = Depends(verify_shopify_proxy_request), 
+    db: Session = Depends(get_db)
+):
+    # 1. Parse Body manually (FastAPI Request object) or use pydantic model if JSON matches
+    # Proxy requests are JSON, so we can parse it.
+    try:
+        body = await request.json()
+        rewrite_request = RewriteRequest(**body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    validate_rewrite_request(rewrite_request.model_dump())
+
+    # 2. Lookup User & Quota using just the Shop Domain
+    # (You need to implement validate_shop_and_quota in your validation.py)
+    auth_context = validate_shop_and_quota(db, shop_domain)
+    
+    # 3. Process
+    return await _process_generation_request(
+        db=db,
+        request=rewrite_request,
+        user=auth_context["user"],
+        plan=auth_context["plan"],
+        api_key_id=auth_context["api_key_id"], # The system picks the user's active key ID automatically
+        billing_cycle_start=auth_context["billing_cycle_start"]
+    )
+
+
+# ==============================================================================
+#  2. DIRECT API ENDPOINT (Legacy/Custom Clients)
+#     - Requires X-API-Key header.
+# ==============================================================================
+@router.post("/api/generate-copy")
+async def generate_copy(
+    request: RewriteRequest,
+    key_hash: str = Depends(get_api_key_hash),
+    db: Session = Depends(get_db)
+):
+    validate_rewrite_request(request.model_dump())
+
+    # 1. Verify via Key Hash
+    auth_context = validate_api_key_and_quota(db, key_hash)
+
+    # 2. Process
+    return await _process_generation_request(
+        db=db,
+        request=request,
+        user=auth_context["user"],
+        plan=auth_context["plan"],
+        api_key_id=auth_context["api_key_id"],
+        billing_cycle_start=auth_context["billing_cycle_start"]
+    )
+
+
+# ==============================================================================
+#  3. WEBHOOKS & AUTH (Shopify Admin)
+#  4. ADMIN/SETUP ENDPOINT (Uses Shopify JWT)
 # ------------------------------------------------------------------
 @router.get("/api/admin/me")
 async def get_admin_info(

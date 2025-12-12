@@ -1,4 +1,5 @@
-ab -n 100 -c 5 -H "Authorization: Bearer dev-token-123" -p payload.json -T application/json http://localhost:8000/api/generate-copy
+PORT=${1:-8000}
+ab -n 100 -c 5 -H "Authorization: Bearer dev-token-123" -p payload.json -T application/json http://localhost:$PORT/api/generate-copy
 
 : << 'COMMENT_BLOCK_START'
 This is ApacheBench, Version 2.3 <$Revision: 1913912 $>

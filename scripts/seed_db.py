@@ -1,5 +1,9 @@
 import sys
 import os
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from sqlalchemy.orm import Session
 from src.main.db.database import SessionLocal, engine, Base
 from src.main.db.db_models import Plan, User, APIKey
