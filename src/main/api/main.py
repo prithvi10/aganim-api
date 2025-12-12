@@ -1,11 +1,13 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import uvicorn
+import os
 from contextlib import asynccontextmanager
 
-from src.main.config.configs import DATABASE_URL
+from src.main.config.configs import DATABASE_URL, ALLOWED_ORIGINS
 from src.main.db.database import engine, Base, get_db
 from src.main.api.controller import router as api_router
 
@@ -17,6 +19,19 @@ async def lifespan(app: FastAPI):
     # Shutdown: (Cleanup if needed)
 
 app = FastAPI(lifespan=lifespan)
+
+# ------------------------------------------------------------------
+# CORS Configuration
+# ------------------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    # Regex to allow any Shopify store domain (e.g., https://my-store.myshopify.com)
+    allow_origin_regex=r"https://.*\.myshopify\.com",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include the API router
 app.include_router(api_router)
