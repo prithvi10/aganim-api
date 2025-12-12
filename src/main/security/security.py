@@ -169,3 +169,40 @@ def verify_shopify_redirect(query_params: dict):
         raise HTTPException(status_code=400, detail="Invalid HMAC signature")
     
     return True
+
+# ---------------------------------------------------------
+# 5. Shopify App Proxy Verification
+# ---------------------------------------------------------
+def verify_shopify_proxy_request(query_params: dict):
+    """
+    Verifies the signature for Shopify App Proxy requests.
+    See: https://shopify.dev/docs/apps/online-store/app-proxies#signature-calculation
+    """
+    if not SHOPIFY_API_SECRET:
+         raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
+
+    received_signature = query_params.get("signature")
+    if not received_signature:
+        raise HTTPException(status_code=400, detail="Missing signature parameter")
+
+    # Remove signature
+    params_copy = query_params.copy()
+    if "signature" in params_copy:
+        del params_copy["signature"]
+
+    # Sort and concatenate key=value
+    # Note: No separator for App Proxy signatures (Liquid/Proxy)
+    sorted_params = "".join([f"{key}={value}" for key, value in sorted(params_copy.items())])
+
+    # Calculate HMAC
+    digest = hmac.new(
+        SHOPIFY_API_SECRET.encode('utf-8'),
+        sorted_params.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(digest, received_signature):
+        logger.warning(f"Invalid App Proxy signature. Calculated: {digest}, Received: {received_signature}")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    return True

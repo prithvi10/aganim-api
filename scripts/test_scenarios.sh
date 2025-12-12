@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-API_URL="http://localhost:8000"
+API_URL="http://localhost:8001"
 ADMIN_TOKEN="dev-token-123"
 
 # Define Users to Test
@@ -31,28 +31,33 @@ run_user_tests() {
 
     # 1. HAPPY PATH: Standard Generation
     echo -e "\n🔹 [Happy Path] Standard Copy Generation"
+    # Use printf to format JSON properly, escaping newlines and tabs
+    JSON_BODY=$(printf '{
+        "product_name": "一点物・昭和レトロ】正絹 訪問着（ほうもんぎ）- 寿ぎの鶴亀模様",
+        "category": "General",
+        "japanese_description": "商品タイトル\\t【一点物・昭和レトロ】正絹 訪問着（ほうもんぎ）- 寿ぎの鶴亀模様\\n商品説明\\t纏う芸術品： 昭和時代に丁寧に織り上げられた、**正絹（しょうけん）**のアンティーク訪問着です。着物全体に広がる柄は、鶴亀（つるかめ）という日本で長寿と慶びを象徴する大変縁起の良い吉祥文様であり、その繊細な刺繍はまさに芸術。\\n状態\\t古着としての美品(コンディションA) 日本国内の専門オークションより厳選して仕入れた、次世代へ繋ぐリユース品です。目立たない程度の経年劣化はございますが、着用には全く問題なく、当時の鮮やかな色彩を保っています。\\nスタイリング\\t伝統的なフォーマルな場はもちろん、ベルト（帯）を締めてモダンなガウンコートや羽織として日常のファッションに取り入れることで、唯一無二の存在感を放ちます。",
+        "stream": false
+      }')
+
     curl -s -X POST "$API_URL/api/generate-copy" \
       -H "Authorization: Bearer $API_KEY" \
       -H "Content-Type: application/json" \
-      -d '{
-        "product_name": "一点物・昭和レトロ】正絹 訪問着（ほうもんぎ）- 寿ぎの鶴亀模様",
-        "category": "General",
-        "japanese_description": "商品タイトル	【一点物・昭和レトロ】正絹 訪問着（ほうもんぎ）- 寿ぎの鶴亀模様\n商品説明	纏う芸術品： 昭和時代に丁寧に織り上げられた、**正絹（しょうけん）**のアンティーク訪問着です。着物全体に広がる柄は、鶴亀（つるかめ）という日本で長寿と慶びを象徴する大変縁起の良い吉祥文様であり、その繊細な刺繍はまさに芸術。\n状態	古着としての美品(コンディションA) 日本国内の専門オークションより厳選して仕入れた、次世代へ繋ぐリユース品です。目立たない程度の経年劣化はございますが、着用には全く問題なく、当時の鮮やかな色彩を保っています。\nスタイリング	伝統的なフォーマルな場はもちろん、ベルト（帯）を締めてモダンなガウンコートや羽織として日常のファッションに取り入れることで、唯一無二の存在感を放ちます。",
-        "stream": false
-      }' | python3 -m json.tool
+      -d "$JSON_BODY" | python3 -m json.tool
 
     # 2. STREAMING TEST (Conditional)
     if [ "$CAN_STREAM" == "true" ]; then
         echo -e "\n🔹 [Happy Path] Streaming Copy Generation (Should SUCCEED)"
+        JSON_STREAM_BODY=$(printf '{
+            "product_name": "Stream Item",
+            "category": "General",
+            "japanese_description": "\\n商品タイトル\\t【本場・常滑焼】横手急須(300ml)- 日本の緑茶を極めるための逸品\\n商品説明\\t日常の儀式を格上げする： この急須は、日本茶を淹れるのに欠かせない横手（よこで）スタイルで、特に煎茶や玉露の風味を最大限に引き出すように設計されています。愛知県常滑の伝統を受け継ぐ職人が一つひとつ手作業で仕上げた、日本六古窯の技術が詰まった逸品です。\\n機能\\t目詰まりしない特製メッシュ： 特徴的なのは、注ぎ口に組み込まれた極めて目の細かい**帯アミ（おびあみ）**フィルターです。これにより、深蒸し茶など細かな茶葉でも詰まることなく、最後までクリアで雑味のないお茶を注ぎ切ることができます。\\n素材\\t鉄分を豊富に含む常滑の朱泥（しゅでい）土を使用しており、この素材が持つ自然な作用によりお湯がまろやかになり、茶葉本来の旨味を深めます。ご使用後は水洗いをおすすめします。",
+            "stream": true
+          }')
+        
         curl -N -X POST "$API_URL/api/generate-copy" \
           -H "Authorization: Bearer $API_KEY" \
           -H "Content-Type: application/json" \
-          -d '{
-            "product_name": "Stream Item",
-            "category": "General",
-            "japanese_description": "\n商品タイトル\t【本場・常滑焼】横手急須(300ml)- 日本の緑茶を極めるための逸品\n商品説明\t日常の儀式を格上げする： この急須は、日本茶を淹れるのに欠かせない横手（よこで）スタイルで、特に煎茶や玉露の風味を最大限に引き出すように設計されています。愛知県常滑の伝統を受け継ぐ職人が一つひとつ手作業で仕上げた、日本六古窯の技術が詰まった逸品です。\n機能\t目詰まりしない特製メッシュ： 特徴的なのは、注ぎ口に組み込まれた極めて目の細かい**帯アミ（おびあみ）**フィルターです。これにより、深蒸し茶など細かな茶葉でも詰まることなく、最後までクリアで雑味のないお茶を注ぎ切ることができます。\n素材\t鉄分を豊富に含む常滑の朱泥（しゅでい）土を使用しており、この素材が持つ自然な作用によりお湯がまろやかになり、茶葉本来の旨味を深めます。ご使用後は水洗いをおすすめします。",
-            "stream": true
-          }'
+          -d "$JSON_STREAM_BODY"
         echo "" 
     else
         echo -e "\n🔻 [Unhappy Path] Streaming Copy Generation (Should FAIL 403)"

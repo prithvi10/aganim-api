@@ -52,6 +52,64 @@ def get_user_quota_context(db: Session, key_hash: str) -> dict | None:
         "is_active": api_key_record.is_active
     }
 
+def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
+    """
+    Retrieves user, plan, and usage information based on the Shop Domain (username).
+    Returns None if the user/shop is not found or has no active API key.
+    """
+    today = date.today()
+    cycle_start = date(today.year, today.month, 1)
+
+    # 1. Find User by shop_domain (username)
+    user = (
+        db.query(User)
+        .filter(User.username == shop_domain)
+        .first()
+    )
+
+    if not user:
+        return None
+
+    # 2. Find ACTIVE API Key
+    # We prioritize finding *any* active key.
+    api_key_record = (
+        db.query(APIKey)
+        .filter(
+            APIKey.user_id == user.id,
+            APIKey.is_active == True
+        )
+        .order_by(APIKey.created_at.desc()) # Use most recent if multiple
+        .first()
+    )
+
+    if not api_key_record:
+        return None
+
+    plan = user.plan
+    if not plan:
+        return None
+
+    # 3. Fetch current usage record
+    usage_record = (
+        db.query(UsageRecord)
+        .filter(
+            UsageRecord.api_key_id == api_key_record.id,
+            UsageRecord.billing_cycle_start == cycle_start
+        )
+        .first()
+    )
+
+    current_usage = usage_record.token_count if usage_record else 0
+
+    return {
+        "user": user,
+        "plan": plan,
+        "api_key_id": api_key_record.id,
+        "current_usage": current_usage,
+        "billing_cycle_start": cycle_start,
+        "is_active": api_key_record.is_active
+    }
+
 def update_token_usage(db: Session, api_key_id: int, token_usage: int, billing_cycle_start: date):
     """
     Atomic update of the usage record.
