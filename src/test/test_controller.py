@@ -98,3 +98,60 @@ def test_generate_copy_validation_error():
         }
     )
     assert response.status_code == 422
+
+# --- NEW PROXY TESTS ---
+
+def test_proxy_generate_copy_endpoint_success(mock_auth_context):
+    """Test the Proxy API endpoint success path without HMAC validation."""
+    mock_response_text = "Generated English Copy"
+    mock_openai_response = MagicMock()
+    mock_openai_response.choices = [MagicMock(message=MagicMock(content=mock_response_text))]
+    mock_openai_response.usage.total_tokens = 10
+
+    with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
+        with patch("src.main.api.controller.update_token_usage"):
+            with patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response):
+                
+                # We do NOT pass the signature query param anymore, as we disabled validation.
+                # However, we DO pass 'shop' to mock the new fallback logic in controller.
+                response = client.post(
+                    "/api/proxy/generate-copy?shop=test-shop.myshopify.com",
+                    json={
+                        "product_name": "Proxy Product",
+                        "japanese_description": "Proxy Desc",
+                        "category": "Proxy Cat"
+                    }
+                )
+
+                assert response.status_code == 200
+                assert response.json()["english_copy"] == mock_response_text
+                
+                # Check that validate_shop_and_quota was called with the shop from query param
+                mock_validate.assert_called_once()
+                args, _ = mock_validate.call_args
+                assert args[1] == "test-shop.myshopify.com" 
+
+def test_proxy_generate_copy_fallback_shop(mock_auth_context):
+    """Test proxy endpoint fallback when shop param is missing."""
+    mock_response_text = "Generated English Copy"
+    mock_openai_response = MagicMock()
+    mock_openai_response.choices = [MagicMock(message=MagicMock(content=mock_response_text))]
+    mock_openai_response.usage.total_tokens = 10
+    
+    with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
+        with patch("src.main.api.controller.update_token_usage"):
+            with patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response):
+                
+                response = client.post(
+                    "/api/proxy/generate-copy", # No query params
+                    json={
+                        "product_name": "Proxy Product",
+                        "japanese_description": "Proxy Desc"
+                    }
+                )
+
+                assert response.status_code == 200
+                # Should fallback to 'dev-shop.myshopify.com'
+                mock_validate.assert_called_once()
+                args, _ = mock_validate.call_args
+                assert args[1] == "dev-shop.myshopify.com"
