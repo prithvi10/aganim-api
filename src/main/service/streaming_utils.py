@@ -15,7 +15,7 @@ async def stream_openai_response(
     category: str,
     japanese_description: str,
     db: Session,
-    api_key_id: int,
+    user_id: int, # Changed from api_key_id
     billing_cycle_start: date
 ):
     """
@@ -61,7 +61,7 @@ async def stream_openai_response(
         # 2. Atomic DB Update after stream ends
         if total_usage > 0:
             logger.info(f"📝 Stream complete. Updating usage: {total_usage} tokens.")
-            update_token_usage(db, api_key_id, total_usage, billing_cycle_start)
+            update_token_usage(db, user_id, total_usage, billing_cycle_start)
             
     except Exception as e:
         logger.error(f"❌ Error during streaming: {e}")
@@ -75,7 +75,7 @@ def create_streaming_response(
     category: str,
     japanese_description: str,
     db: Session,
-    api_key_id: int,
+    user_id: int, # Changed from api_key_id
     billing_cycle_start: date
 ):
     return StreamingResponse(
@@ -85,7 +85,7 @@ def create_streaming_response(
             category, 
             japanese_description, 
             db, 
-            api_key_id, 
+            user_id, 
             billing_cycle_start
         ),
         media_type="text/event-stream" 

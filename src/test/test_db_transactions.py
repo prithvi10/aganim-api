@@ -4,9 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.main.db.database import Base
-from src.main.db.db_models import User, Plan, APIKey, UsageRecord
-from src.main.db.db_transactions import get_user_quota_context, update_token_usage, get_shop_quota_context
-from src.main.security.security import hash_api_key
+from src.main.db.db_models import User, Plan, UsageRecord
+from src.main.db.db_transactions import update_token_usage, get_shop_quota_context
 
 # Use in-memory SQLite for testing transactions
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -27,62 +26,22 @@ def db_session():
     db.add(user)
     db.commit()
     
-    raw_key = "valid_key"
-    key_hash = hash_api_key(raw_key)
-    api_key = APIKey(user_id=user.id, key_hash=key_hash, is_active=True)
-    db.add(api_key)
-    db.commit()
+    # No API Key setup needed anymore
     
     yield db
     db.close()
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
-def test_get_user_quota_context_valid(db_session):
-    """Should return context when key is valid."""
-    key_hash = hash_api_key("valid_key")
-    context = get_user_quota_context(db_session, key_hash)
-    
-    assert context is not None
-    assert context["user"].username == "test_user"
-    assert context["plan"].name == "Test Plan"
-    assert context["current_usage"] == 0
-
-def test_get_user_quota_context_invalid(db_session):
-    """Should return None for invalid key."""
-    context = get_user_quota_context(db_session, "invalid_hash")
-    assert context is None
-
-def test_get_user_quota_context_usage_data(db_session):
-    """Should return correct current usage."""
-    key_hash = hash_api_key("valid_key")
-    
-    # Manually insert usage
-    api_key = db_session.query(APIKey).filter_by(key_hash=key_hash).first()
-    today = date.today()
-    cycle_start = date(today.year, today.month, 1)
-    
-    usage = UsageRecord(
-        api_key_id=api_key.id,
-        billing_cycle_start=cycle_start,
-        token_count=500
-    )
-    db_session.add(usage)
-    db_session.commit()
-    
-    context = get_user_quota_context(db_session, key_hash)
-    assert context["current_usage"] == 500
-
 def test_update_token_usage_new_record(db_session):
     """Should create a new usage record if none exists."""
-    key_hash = hash_api_key("valid_key")
-    api_key = db_session.query(APIKey).filter_by(key_hash=key_hash).first()
+    user = db_session.query(User).filter_by(username="test_user").first()
     cycle_start = date(2023, 1, 1)
     
-    update_token_usage(db_session, api_key.id, 50, cycle_start)
+    update_token_usage(db_session, user.id, 50, cycle_start)
     
     record = db_session.query(UsageRecord).filter_by(
-        api_key_id=api_key.id, 
+        user_id=user.id, 
         billing_cycle_start=cycle_start
     ).first()
     
@@ -91,13 +50,12 @@ def test_update_token_usage_new_record(db_session):
 
 def test_update_token_usage_existing_record(db_session):
     """Should increment existing usage record."""
-    key_hash = hash_api_key("valid_key")
-    api_key = db_session.query(APIKey).filter_by(key_hash=key_hash).first()
+    user = db_session.query(User).filter_by(username="test_user").first()
     cycle_start = date(2023, 1, 1)
     
     # Initial
     usage = UsageRecord(
-        api_key_id=api_key.id,
+        user_id=user.id,
         billing_cycle_start=cycle_start,
         token_count=100
     )
@@ -105,7 +63,7 @@ def test_update_token_usage_existing_record(db_session):
     db_session.commit()
     
     # Update
-    update_token_usage(db_session, api_key.id, 50, cycle_start)
+    update_token_usage(db_session, user.id, 50, cycle_start)
     
     # Verify
     db_session.refresh(usage)
@@ -114,7 +72,7 @@ def test_update_token_usage_existing_record(db_session):
 # --- New Tests for get_shop_quota_context ---
 
 def test_get_shop_quota_context_valid(db_session):
-    """Should return context when shop exists and has active key."""
+    """Should return context when shop exists."""
     context = get_shop_quota_context(db_session, "test_user")
     
     assert context is not None
@@ -127,43 +85,34 @@ def test_get_shop_quota_context_invalid_shop(db_session):
     context = get_shop_quota_context(db_session, "non_existent_shop")
     assert context is None
 
-def test_get_shop_quota_context_no_active_key(db_session):
-    """Should return None if shop exists but has no active key."""
-    # Create user without key
-    plan = db_session.query(Plan).first()
-    user_no_key = User(username="user_no_key", plan_id=plan.id)
-    db_session.add(user_no_key)
-    db_session.commit()
-    
-    context = get_shop_quota_context(db_session, "user_no_key")
-    assert context is None
-    
-    # Create user with INACTIVE key
-    user_inactive = User(username="user_inactive", plan_id=plan.id)
-    db_session.add(user_inactive)
-    db_session.commit()
-    
-    api_key = APIKey(user_id=user_inactive.id, key_hash="inactive", is_active=False)
-    db_session.add(api_key)
-    db_session.commit()
-    
-    context = get_shop_quota_context(db_session, "user_inactive")
-    assert context is None
-
-# --- New Tests for store_shop_access_token ---
-
 def test_store_shop_access_token_create(db_session):
-    """Should create a new Shop record if it doesn't exist."""
+    """
+    Should create a new Shop record AND a User record if they don't exist.
+    """
     from src.main.db.db_transactions import store_shop_access_token
+    from src.main.db.db_models import User, Plan
     
+    # Ensure default plan exists for the auto-creation logic
+    if not db_session.query(Plan).filter_by(name="Basic Agent").first():
+        db_session.add(Plan(name="Basic Agent", monthly_token_quota=1000, max_request_rate=10))
+        db_session.commit()
+
     shop_domain = "new-shop.myshopify.com"
     token = "new_token_123"
     
+    # Execute
     shop = store_shop_access_token(db_session, shop_domain, token)
     
+    # 1. Verify Shop
     assert shop.domain == shop_domain
     assert shop.access_token == token
     assert shop.id is not None
+    
+    # 2. Verify User Created
+    user = db_session.query(User).filter_by(username=shop_domain).first()
+    assert user is not None
+    assert user.plan is not None
+    # No API Key check anymore
 
 def test_store_shop_access_token_update(db_session):
     """Should update the access token if the Shop record exists."""

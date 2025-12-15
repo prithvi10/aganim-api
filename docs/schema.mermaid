@@ -1,0 +1,40 @@
+erDiagram
+    %% Core Tables
+    SHOPS {
+        int id PK
+        string domain UK "Unique shopify domain"
+        string access_token "OAuth token for Shopify API"
+        datetime created_at
+        datetime updated_at
+    }
+
+    USERS {
+        int id PK
+        string username UK "Mapped to SHOPS.domain"
+        string email
+        int plan_id FK "Active subscription plan"
+        datetime created_at
+    }
+
+    PLANS {
+        int id PK
+        string name UK "Basic Agent, Pro, etc."
+        decimal price_usd_monthly
+        bigint monthly_token_quota "Hard limit for generation"
+        int max_request_rate "Rate limit per minute"
+        boolean can_stream_responses "Feature gate"
+        boolean is_active
+    }
+
+    USAGE_RECORDS {
+        int user_id PK, FK "Links to USERS"
+        date billing_cycle_start PK "Month of usage"
+        bigint token_count "Accumulated usage"
+        datetime last_updated
+    }
+
+    %% Relationships
+    USERS ||--|| SHOPS : "Logically linked by domain/username"
+    PLANS ||--|{ USERS : "Subscribed by"
+    USERS ||--|{ USAGE_RECORDS : "Accumulates"
+

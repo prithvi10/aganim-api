@@ -41,8 +41,7 @@ def test_onboard_user_success(mock_db_session, valid_request, mock_plan, mock_us
     # Mock DB transactions
     with patch("src.main.service.onboarding.db_transactions.get_plan_by_id", return_value=mock_plan) as mock_get_plan, \
          patch("src.main.service.onboarding.db_transactions.get_user_by_username", return_value=None) as mock_get_user, \
-         patch("src.main.service.onboarding.db_transactions.create_user", return_value=mock_user) as mock_create_user, \
-         patch("src.main.service.onboarding.db_transactions.create_api_key_record") as mock_create_key:
+         patch("src.main.service.onboarding.db_transactions.create_user", return_value=mock_user) as mock_create_user:
 
         response = onboard_user(mock_db_session, valid_request)
 
@@ -51,7 +50,8 @@ def test_onboard_user_success(mock_db_session, valid_request, mock_plan, mock_us
         assert response.user_id == 123
         assert response.username == "test-shop.myshopify.com"
         assert response.plan_name == "Basic Plan"
-        assert len(response.api_key) > 0
+        # API Key is deprecated but returned as placeholder
+        assert response.api_key == "deprecated"
 
         # Verify DB calls
         mock_get_plan.assert_called_once_with(mock_db_session, 1)
@@ -62,7 +62,6 @@ def test_onboard_user_success(mock_db_session, valid_request, mock_plan, mock_us
             email="test@example.com",
             plan_id=1
         )
-        mock_create_key.assert_called_once()
 
 def test_onboard_user_plan_not_found(mock_db_session, valid_request):
     """Test onboarding fails when plan ID is invalid."""
@@ -95,17 +94,4 @@ def test_onboard_user_creation_failure(mock_db_session, valid_request, mock_plan
         
         assert exc_info.value.status_code == 500
         assert "Failed to create user record" in exc_info.value.detail
-
-def test_onboard_user_apikey_creation_failure(mock_db_session, valid_request, mock_plan, mock_user):
-    """Test onboarding handles DB error during API key creation."""
-    with patch("src.main.service.onboarding.db_transactions.get_plan_by_id", return_value=mock_plan), \
-         patch("src.main.service.onboarding.db_transactions.get_user_by_username", return_value=None), \
-         patch("src.main.service.onboarding.db_transactions.create_user", return_value=mock_user), \
-         patch("src.main.service.onboarding.db_transactions.create_api_key_record", side_effect=Exception("DB Error")):
-        
-        with pytest.raises(HTTPException) as exc_info:
-            onboard_user(mock_db_session, valid_request)
-        
-        assert exc_info.value.status_code == 500
-        assert "Failed to generate API key" in exc_info.value.detail
 

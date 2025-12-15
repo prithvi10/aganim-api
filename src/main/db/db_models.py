@@ -16,7 +16,8 @@ class User(Base):
     
     # Relationships
     plan = relationship("Plan", back_populates="users")
-    api_keys = relationship("APIKey", back_populates="user")
+    # DIRECT relationship to usage records (No more API Keys)
+    usage_records = relationship("UsageRecord", back_populates="user")
 
 class Shop(Base):
     """
@@ -31,33 +32,18 @@ class Shop(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
-class APIKey(Base):
-    __tablename__ = "api_keys"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    key_hash = Column(String, unique=True, index=True) 
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relationship to user
-    user = relationship("User", back_populates="api_keys")
-    
-    # Relationship to usage records
-    usage_records = relationship("UsageRecord", back_populates="api_key")
-
 class UsageRecord(Base):
     __tablename__ = "usage_records"
 
-    # Composite Primary Key: api_key_id + billing_cycle_start
-    api_key_id = Column(Integer, ForeignKey("api_keys.id"), primary_key=True) 
+    # Composite Primary Key: user_id + billing_cycle_start
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True) 
     billing_cycle_start = Column(Date, primary_key=True) 
     
     token_count = Column(BigInteger, default=0)
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
-    # Relationship back to the API Key
-    api_key = relationship("APIKey", back_populates="usage_records")
+    # Relationship back to the User
+    user = relationship("User", back_populates="usage_records")
 
 class Plan(Base):
     __tablename__ = "plans"
