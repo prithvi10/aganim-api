@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from sqlalchemy.orm import Session
 from .models import RewriteRequest, OnboardingRequest
-from src.main.db.db_models import User
+from src.main.db.db_models import User, Shop
 from src.main.service.services import OpenAIService
 from src.main.security.security import (
     get_api_key_hash, 
@@ -229,7 +229,7 @@ async def handle_subscription_activated(
     return Response(status_code=200)
 
 @router.get("/api/auth/callback")
-async def auth_callback(request: Request):
+async def auth_callback(request: Request, db: Session = Depends(get_db)):
     """
     Shopify OAuth Redirect Handler.
     Validates HMAC and exchanges code for access token.
@@ -272,6 +272,11 @@ async def auth_callback(request: Request):
             logger.info(f"Successfully exchanged token for shop: {shop}")
             
             # 3. Session Creation / Redirect
+            from src.main.db.db_transactions import store_shop_access_token
+            store_shop_access_token(db, shop, access_token)
+            
+            logger.info(f"Access token successfully stored/updated for shop: {shop}")
+            
             # In a full app, you would:
             # - Store the access_token in the DB (encrypted) associated with the shop
             # - Create a user session (cookie/JWT)
