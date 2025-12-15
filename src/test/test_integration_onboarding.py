@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
 from src.main.api.main import app
 from src.main.db.database import Base
-from src.main.db.db_models import User, Plan, APIKey
+from src.main.db.db_models import User, Plan
 
 # Setup In-Memory Integration DB
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -24,7 +24,6 @@ def test_integration_onboarding_webhook_flow():
     1. Seed 'Basic Plan' in DB.
     2. Send valid Webhook request with HMAC.
     3. Verify User is created in DB.
-    4. Verify API Key is created in DB.
     """
     
     # 1. Setup DB
@@ -90,10 +89,7 @@ def test_integration_onboarding_webhook_flow():
             assert user.email == "integration@example.com"
             assert user.plan_id == plan_id
             
-            # Check API Key
-            api_key = db.query(APIKey).filter_by(user_id=user.id).first()
-            assert api_key is not None
-            assert api_key.key_hash is not None # Should be hashed
+            # No API Key check anymore
             
             db.close()
     

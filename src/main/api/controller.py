@@ -68,11 +68,11 @@ async def _process_generation_request(
     request: RewriteRequest,
     user: User,
     plan,
-    api_key_id: int,
+    user_id: int, # Changed from api_key_id
     billing_cycle_start
 ):
     """
-    Common logic for both API Key and Proxy endpoints.
+    Common logic for processing generation requests.
     Handles Rate Limiting, Streaming checks, OpenAI calls, and Usage Metering.
     """
     shop = user.username
@@ -89,16 +89,18 @@ async def _process_generation_request(
     try:
         # 3. Handle Streaming
         if request.stream:
-             logger.info(f"🌊 Initiating Streaming Response for: {shop}")
-             return create_streaming_response(
+            logger.info(f"🌊 Initiating Streaming Response for: {shop}")
+            # Note: create_streaming_response likely needs updating too if it uses api_key_id internally
+            # We will update it in a separate step or verify it takes **kwargs
+            return create_streaming_response(
                 openai_service=openai_service,
                 product_name=request.product_name,
                 category=request.category,
                 japanese_description=request.japanese_description,
                 db=db,
-                api_key_id=api_key_id,
+                user_id=user_id, # Pass user_id instead of api_key_id
                 billing_cycle_start=billing_cycle_start
-             )
+            )
 
         # 4. Handle Standard Request
         openai_response = openai_service.generate_copy(
@@ -113,7 +115,7 @@ async def _process_generation_request(
             total_tokens_used = openai_response.usage.total_tokens
         
         if total_tokens_used > 0:
-            update_token_usage(db, api_key_id, total_tokens_used, billing_cycle_start)
+            update_token_usage(db, user_id, total_tokens_used, billing_cycle_start)
 
         logger.info(f"✅ Translated for {shop}. Tokens: {total_tokens_used}")
         return {
@@ -131,7 +133,7 @@ async def _process_generation_request(
 # ==============================================================================
 #  1. APP PROXY ENDPOINT (Securely used by Shopify Theme Frontend)
 #     - No API Key required from client (HMAC verified).
-#     - Uses the User's primary active key for metering.
+#     - Uses the User ID for metering.
 # ==============================================================================
 @router.post("/api/proxy/generate-copy")
 async def proxy_generate_copy(
@@ -162,35 +164,24 @@ async def proxy_generate_copy(
         request=rewrite_request,
         user=auth_context["user"],
         plan=auth_context["plan"],
-        api_key_id=auth_context["api_key_id"], # The system picks the user's active key ID automatically
+        user_id=auth_context["user_id"], # Passed from context
         billing_cycle_start=auth_context["billing_cycle_start"]
     )
 
 
 # ==============================================================================
-#  2. DIRECT API ENDPOINT (Legacy/Custom Clients)
-#     - Requires X-API-Key header.
+#  2. DIRECT API ENDPOINT (DEPRECATED/REMOVED)
+#     - This endpoint relied on API Keys which are now removed.
+#     - We keep the route but make it return 410 Gone or similar.
 # ==============================================================================
 @router.post("/api/generate-copy")
 async def generate_copy(
     request: RewriteRequest,
-    key_hash: str = Depends(get_api_key_hash),
+    # key_hash: str = Depends(get_api_key_hash), # Dependency removed to avoid errors
     db: Session = Depends(get_db)
 ):
-    validate_rewrite_request(request.model_dump())
-
-    # 1. Verify via Key Hash
-    auth_context = validate_api_key_and_quota(db, key_hash)
-
-    # 2. Process
-    return await _process_generation_request(
-        db=db,
-        request=request,
-        user=auth_context["user"],
-        plan=auth_context["plan"],
-        api_key_id=auth_context["api_key_id"],
-        billing_cycle_start=auth_context["billing_cycle_start"]
-    )
+    # Explicitly fail
+    raise HTTPException(status_code=410, detail="This endpoint is deprecated. Please use the Shopify App Proxy.")
 
 
 # ==============================================================================

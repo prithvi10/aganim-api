@@ -23,7 +23,7 @@ async def test_stream_openai_response_logic():
     
     # Mock DB Session and Update Function
     mock_db = MagicMock()
-    api_key_id = 1
+    user_id = 1 # Changed from api_key_id
     billing_start = "2023-01-01"
     
     # We need to patch the DB update function since it's imported in the util
@@ -35,7 +35,7 @@ async def test_stream_openai_response_logic():
             category="Test",
             japanese_description="Test",
             db=mock_db,
-            api_key_id=api_key_id,
+            user_id=user_id,
             billing_cycle_start=billing_start
         )
         
@@ -47,30 +47,15 @@ async def test_stream_openai_response_logic():
         # Verify content
         assert "".join(content) == "Hello World"
         
-        # Verify DB Update was called with the correct token count (5)
-        mock_update.assert_called_once_with(mock_db, api_key_id, 5, billing_start)
+        # Verify DB Update was called with the correct token count (5) and user_id
+        mock_update.assert_called_once_with(mock_db, user_id, 5, billing_start)
 
 @pytest.mark.asyncio
 async def test_stream_openai_response_error_handling():
     """Test graceful error handling during stream."""
     mock_service = MagicMock()
     
-    # Create a generator that raises an exception immediately
-    def error_generator(*args, **kwargs):
-        raise Exception("Stream Error")
-        yield "should not reach here"
-
-    # When generate_copy_stream is called, it should return our error_generator (or raise when iterated)
-    # But in the implementation: stream = openai_service.generate_copy_stream(...)
-    # If that call *returns* a generator object without raising, the exception happens during iteration.
-    # If that call *raises*, it's caught by the try-except block inside stream_openai_response ONLY if 
-    # the try-except wraps the initial call.
-    
-    # Looking at streaming_utils.py, the try-except block starts AFTER the initial call.
-    # So if generate_copy_stream raises immediately, stream_openai_response will crash (propagate error).
-    # If generate_copy_stream returns a generator that raises on next(), it is caught.
-    
-    # Let's mock it to behave like the OpenAI client: returning an iterator that raises during iteration.
+    # Mock iterator behavior that raises exception
     mock_iterator = MagicMock()
     mock_iterator.__iter__.side_effect = Exception("Stream Error")
     mock_service.generate_copy_stream.return_value = mock_iterator
@@ -83,16 +68,13 @@ async def test_stream_openai_response_error_handling():
         category="Test",
         japanese_description="Test",
         db=mock_db,
-        api_key_id=1,
+        user_id=1,
         billing_cycle_start="2023-01-01"
     )
     
     content = []
-    try:
-        async for item in generator:
-            content.append(item)
-    except Exception:
-        pass # Should be caught internally but let's see
+    async for item in generator:
+        content.append(item)
     
     # The util catches Exception and yields an error message
     assert "Error generating response" in "".join(content)

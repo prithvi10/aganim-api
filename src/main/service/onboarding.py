@@ -3,7 +3,6 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from src.main.db import db_transactions
 from src.main.api.models import OnboardingRequest, OnboardingResponse
-from src.main.security.security import hash_api_key
 from src.main.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -14,8 +13,7 @@ def onboard_user(db: Session, request: OnboardingRequest) -> OnboardingResponse:
     1. Validates the plan.
     2. Checks if the user already exists.
     3. Creates the User record.
-    4. Generates and stores a new API Key.
-    5. Returns the user details and the raw API Key.
+    4. Returns the user details.
     """
     
     # 1. Validate Plan
@@ -43,26 +41,11 @@ def onboard_user(db: Session, request: OnboardingRequest) -> OnboardingResponse:
         logger.error(f"Failed to create user: {e}")
         raise HTTPException(status_code=500, detail="Failed to create user record.")
 
-    # 4. Generate & Store API Key
-    # Generate a random 32-byte URL-safe string
-    raw_api_key = secrets.token_urlsafe(32)
-    hashed_key = hash_api_key(raw_api_key)
-    
-    try:
-        db_transactions.create_api_key_record(db, new_user.id, hashed_key)
-        logger.info(f"Generated API key for user: {new_user.username}")
-    except Exception as e:
-        logger.error(f"Failed to create API key record: {e}")
-        # Note: In a production system with transaction management, we would rollback here.
-        # Since our DB helpers currently auto-commit, we would need to manually cleanup 
-        # or refactor the DB layer to support session-managed transactions better.
-        raise HTTPException(status_code=500, detail="Failed to generate API key.")
-
-    # 5. Return Response
+    # 4. Return Response (No API Key anymore)
     return OnboardingResponse(
         user_id=new_user.id,
         username=new_user.username,
         plan_name=plan.name,
-        api_key=raw_api_key
+        api_key="deprecated" # Or remove field from model if possible, but keeping for compatibility
     )
 

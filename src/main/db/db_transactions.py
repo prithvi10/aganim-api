@@ -1,61 +1,18 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import update
 from datetime import date
-from .db_models import User, APIKey, UsageRecord, Plan
+from .db_models import User, UsageRecord, Plan
 
-def get_user_quota_context(db: Session, key_hash: str) -> dict | None:
-    """
-    Retrieves user, plan, and usage information based on the API Key hash.
-    Returns None if the key is invalid or not found.
-    Does NOT verify quota limits or raise HTTP exceptions.
-    """
-    today = date.today()
-    cycle_start = date(today.year, today.month, 1)
-
-    # Query for the key
-    api_key_record = (
-        db.query(APIKey)
-        .filter(APIKey.key_hash == key_hash)
-        .first()
-    )
-
-    if not api_key_record:
-        return None
-
-    user = api_key_record.user
-    if not user:
-         # Orphaned key scenario
-         return None
-
-    plan = user.plan
-    if not plan:
-         return None
-
-    # Fetch current usage record
-    usage_record = (
-        db.query(UsageRecord)
-        .filter(
-            UsageRecord.api_key_id == api_key_record.id,
-            UsageRecord.billing_cycle_start == cycle_start
-        )
-        .first()
-    )
-
-    current_usage = usage_record.token_count if usage_record else 0
-
-    return {
-        "user": user,
-        "plan": plan,
-        "api_key_id": api_key_record.id,
-        "current_usage": current_usage,
-        "billing_cycle_start": cycle_start,
-        "is_active": api_key_record.is_active
-    }
+# NOTE: get_user_quota_context was used for API Key validation.
+# Since we are removing API Keys, we might need a different way to validate external requests if we still support them.
+# For now, I will comment it out or adapt it if the user still wants direct API access (which they likely do for non-proxy calls).
+# If direct API access is still needed, we'd need to authenticate the User directly (e.g. via a token on the User model).
+# For this refactor, I will focus on the Proxy flow which uses Shop Domain.
 
 def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
     """
     Retrieves user, plan, and usage information based on the Shop Domain (username).
-    Returns None if the user/shop is not found or has no active API key.
+    Returns None if the user/shop is not found.
     """
     today = date.today()
     cycle_start = date(today.year, today.month, 1)
@@ -70,30 +27,15 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
     if not user:
         return None
 
-    # 2. Find ACTIVE API Key
-    # We prioritize finding *any* active key.
-    api_key_record = (
-        db.query(APIKey)
-        .filter(
-            APIKey.user_id == user.id,
-            APIKey.is_active == True
-        )
-        .order_by(APIKey.created_at.desc()) # Use most recent if multiple
-        .first()
-    )
-
-    if not api_key_record:
-        return None
-
     plan = user.plan
     if not plan:
         return None
 
-    # 3. Fetch current usage record
+    # 2. Fetch current usage record linked to USER
     usage_record = (
         db.query(UsageRecord)
         .filter(
-            UsageRecord.api_key_id == api_key_record.id,
+            UsageRecord.user_id == user.id,
             UsageRecord.billing_cycle_start == cycle_start
         )
         .first()
@@ -104,26 +46,22 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
     return {
         "user": user,
         "plan": plan,
-        "api_key_id": api_key_record.id,
+        "user_id": user.id, # Changed from api_key_id
         "current_usage": current_usage,
         "billing_cycle_start": cycle_start,
-        "is_active": api_key_record.is_active
+        "is_active": True # Users are active if they exist and have a plan
     }
 
-def update_token_usage(db: Session, api_key_id: int, token_usage: int, billing_cycle_start: date):
+def update_token_usage(db: Session, user_id: int, token_usage: int, billing_cycle_start: date):
     """
     Atomic update of the usage record.
-    If record doesn't exist, create it (upsert logic needed or check-then-create).
-    To be safe and atomic, we often use:
-      UPDATE usage_records SET token_count = token_count + :usage 
-      WHERE api_key_id = :id AND billing_cycle_start = :date
     """
     
     # 1. Try to update existing record
     stmt = (
         update(UsageRecord)
         .where(
-            UsageRecord.api_key_id == api_key_id,
+            UsageRecord.user_id == user_id,
             UsageRecord.billing_cycle_start == billing_cycle_start
         )
         .values(token_count=UsageRecord.token_count + token_usage)
@@ -133,12 +71,9 @@ def update_token_usage(db: Session, api_key_id: int, token_usage: int, billing_c
     
     # 2. If no row updated, it means the record doesn't exist for this month yet.
     if result.rowcount == 0:
-        # Create new record
-        # Note: There's a tiny race condition here if two reqs come in at exact same time 
-        # for a NEW month. Handle with unique constraint/integrity error in real prod.
         try:
             new_record = UsageRecord(
-                api_key_id=api_key_id,
+                user_id=user_id,
                 billing_cycle_start=billing_cycle_start,
                 token_count=token_usage
             )
@@ -146,7 +81,6 @@ def update_token_usage(db: Session, api_key_id: int, token_usage: int, billing_c
             db.commit()
         except Exception:
             db.rollback()
-            # If insert failed (race condition), try update again
             result = db.execute(stmt)
             db.commit()
     else:
@@ -168,19 +102,15 @@ def create_user(db: Session, username: str, email: str | None, plan_id: int) -> 
     db.refresh(new_user)
     return new_user
 
-def create_api_key_record(db: Session, user_id: int, key_hash: str) -> APIKey:
-    new_key = APIKey(user_id=user_id, key_hash=key_hash)
-    db.add(new_key)
-    db.commit()
-    db.refresh(new_key)
-    return new_key
-
 def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
     """
     Stores or updates the access token for a given shop.
+    ALSO ensures a corresponding User record exists for billing/quota.
     """
-    from .db_models import Shop
-    
+    from .db_models import Shop, User, Plan
+    import secrets
+
+    # 1. Update/Create Shop Record (OAuth Token)
     shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
     
     if shop_record:
@@ -189,6 +119,24 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
         new_shop = Shop(domain=shop_domain, access_token=access_token)
         db.add(new_shop)
         shop_record = new_shop
+
+    # 2. Update/Create User Record (Billing Identity)
+    user = db.query(User).filter(User.username == shop_domain).first()
+    
+    if not user:
+        # Assign default plan
+        default_plan = db.query(Plan).filter(Plan.name == "Basic Agent").first()
+        if not default_plan:
+             default_plan = db.query(Plan).first()
+        
+        if default_plan:
+            user = User(username=shop_domain, email=None, plan_id=default_plan.id)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            # No API Key creation anymore!
+        else:
+            pass
 
     db.commit()
     db.refresh(shop_record)
