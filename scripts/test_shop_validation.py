@@ -9,9 +9,8 @@ from sqlalchemy.orm import sessionmaker
 from datetime import date
 
 from src.main.db.database import Base
-from src.main.db.db_models import User, Plan, APIKey, UsageRecord
+from src.main.db.db_models import User, Plan, UsageRecord, Shop
 from src.main.api.validation import validate_shop_and_quota
-from src.main.security.security import hash_api_key
 from fastapi import HTTPException
 
 # Setup In-Memory DB
@@ -34,12 +33,11 @@ def setup_data():
     db.commit()
     print(f"Created User: {user.username}")
 
-    # 3. API Key
-    key_hash = hash_api_key("some_key")
-    api_key = APIKey(user_id=user.id, key_hash=key_hash, is_active=True)
-    db.add(api_key)
+    # 3. Shop
+    shop = Shop(domain="proxy-shop.myshopify.com", access_token="some_token")
+    db.add(shop)
     db.commit()
-    print(f"Created Active API Key for User")
+    print(f"Created Shop Record")
 
     return user
 
@@ -64,12 +62,10 @@ def test_validation():
     today = date.today()
     cycle_start = date(today.year, today.month, 1)
     
-    # Get Key ID
     user = db.query(User).filter_by(username=shop_domain).first()
-    key = user.api_keys[0]
     
     usage = UsageRecord(
-        api_key_id=key.id,
+        user_id=user.id,
         billing_cycle_start=cycle_start,
         token_count=1500 # > 1000
     )

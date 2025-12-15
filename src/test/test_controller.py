@@ -58,7 +58,8 @@ def test_generate_copy_endpoint_deprecated(mock_auth_context):
 
 def test_proxy_generate_copy_endpoint_success(mock_auth_context):
     """Test the Proxy API endpoint success path."""
-    mock_response_text = "Generated English Copy"
+    # Mock LLM returning JSON
+    mock_response_text = '{"title": "My Title", "description": "My Description"}'
     mock_openai_response = MagicMock()
     mock_openai_response.choices = [MagicMock(message=MagicMock(content=mock_response_text))]
     mock_openai_response.usage.total_tokens = 10
@@ -80,7 +81,10 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
                 )
 
                 assert response.status_code == 200
-                assert response.json()["english_copy"] == mock_response_text
+                json_resp = response.json()
+                assert json_resp["status"] == "success"
+                assert json_resp["data"]["title"] == "My Title"
+                assert json_resp["data"]["description"] == "My Description"
                 
                 mock_validate.assert_called_once()
                 args, _ = mock_validate.call_args

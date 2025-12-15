@@ -82,7 +82,7 @@ def test_integration_generate_copy_flow(client, setup_data):
     
     # Mock OpenAI
     mock_openai_response = MagicMock()
-    mock_openai_response.choices = [MagicMock(message=MagicMock(content="Integration Success"))]
+    mock_openai_response.choices = [MagicMock(message=MagicMock(content='{"title": "Int Title", "description": "Int Desc"}'))]
     mock_openai_response.usage.total_tokens = 50
 
     with patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate:
@@ -99,7 +99,10 @@ def test_integration_generate_copy_flow(client, setup_data):
         
         # 1. Check Response
         assert response.status_code == 200
-        assert response.json()["english_copy"] == "Integration Success"
+        json_resp = response.json()
+        assert json_resp["status"] == "success"
+        assert json_resp["data"]["title"] == "Int Title"
+        assert json_resp["data"]["description"] == "Int Desc"
         
         # 2. Verify OpenAI was called
         mock_generate.assert_called_once()

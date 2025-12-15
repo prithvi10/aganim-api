@@ -6,8 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.orm import Session
 from src.main.db.database import SessionLocal, engine, Base
-from src.main.db.db_models import Plan, User, APIKey
-from src.main.security.security import hash_api_key
+from src.main.db.db_models import Plan, User, Shop
 
 def seed_data():
     db = SessionLocal()
@@ -27,10 +26,11 @@ def seed_data():
             print("✅ Created Basic Plan")
 
         # 2. Create Test User
-        test_user = db.query(User).filter(User.username == "dev-shop.myshopify.com").first()
+        shop_domain = "dev-shop.myshopify.com"
+        test_user = db.query(User).filter(User.username == shop_domain).first()
         if not test_user:
             test_user = User(
-                username="dev-shop.myshopify.com",
+                username=shop_domain,
                 email="dev@example.com",
                 plan_id=basic_plan.id
             )
@@ -39,21 +39,16 @@ def seed_data():
             db.refresh(test_user)
             print("✅ Created Test User")
 
-        # 3. Create Test API Key
-        # Raw key: "dev-token-123"
-        raw_key = "dev-token-123"
-        key_hash = hash_api_key(raw_key)
-        
-        test_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
-        if not test_key:
-            test_key = APIKey(
-                user_id=test_user.id,
-                key_hash=key_hash,
-                is_active=True
+        # 3. Create Shop Record (for OAuth/Proxy)
+        test_shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        if not test_shop:
+            test_shop = Shop(
+                domain=shop_domain,
+                access_token="dev-token-123"
             )
-            db.add(test_key)
+            db.add(test_shop)
             db.commit()
-            print(f"✅ Created Test API Key (Raw: {raw_key})")
+            print(f"✅ Created Test Shop Record for {shop_domain}")
         
     except Exception as e:
         print(f"❌ Error seeding data: {e}")
