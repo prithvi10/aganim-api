@@ -108,55 +108,38 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
     mock_openai_response.choices = [MagicMock(message=MagicMock(content=mock_response_text))]
     mock_openai_response.usage.total_tokens = 10
 
-    # Mock the proxy signature verification dependency
-    def mock_verify_proxy():
-        return "test-shop.myshopify.com"
+    # No dependency override needed as we removed the signature validation dependency
+    # But we MUST provide the 'shop' query parameter as the controller manually extracts it.
+
+    with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
+        with patch("src.main.api.controller.update_token_usage"):
+            with patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response):
+                
+                response = client.post(
+                    "/api/proxy/generate-copy?shop=test-shop.myshopify.com",
+                    json={
+                        "product_name": "Proxy Product",
+                        "japanese_description": "Proxy Desc",
+                        "category": "Proxy Cat"
+                    }
+                )
+
+                assert response.status_code == 200
+                assert response.json()["english_copy"] == mock_response_text
+                
+                mock_validate.assert_called_once()
+                args, _ = mock_validate.call_args
+                assert args[1] == "test-shop.myshopify.com" 
+
+def test_proxy_generate_copy_missing_shop():
+    """Test proxy endpoint fails correctly when shop param is missing."""
     
-    app.dependency_overrides[verify_shopify_proxy_request] = mock_verify_proxy
-
-    try:
-        with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
-            with patch("src.main.api.controller.update_token_usage"):
-                with patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response):
-                    
-                    response = client.post(
-                        "/api/proxy/generate-copy?shop=test-shop.myshopify.com&signature=valid",
-                        json={
-                            "product_name": "Proxy Product",
-                            "japanese_description": "Proxy Desc",
-                            "category": "Proxy Cat"
-                        }
-                    )
-
-                    assert response.status_code == 200
-                    assert response.json()["english_copy"] == mock_response_text
-                    
-                    mock_validate.assert_called_once()
-                    args, _ = mock_validate.call_args
-                    assert args[1] == "test-shop.myshopify.com" 
-    finally:
-        del app.dependency_overrides[verify_shopify_proxy_request]
-
-def test_proxy_generate_copy_missing_signature():
-    """Test proxy endpoint fails correctly when signature validation fails (dependency raises error)."""
-    
-    from fastapi import HTTPException
-    
-    # Mock the proxy signature verification dependency to fail
-    def mock_verify_proxy_fail():
-        raise HTTPException(status_code=401, detail="Invalid signature")
-        
-    app.dependency_overrides[verify_shopify_proxy_request] = mock_verify_proxy_fail
-
-    try:
-        response = client.post(
-            "/api/proxy/generate-copy", 
-            json={
-                "product_name": "Proxy Product",
-                "japanese_description": "Proxy Desc"
-            }
-        )
-        assert response.status_code == 401
-        assert "Invalid signature" in response.json()["detail"]
-    finally:
-        del app.dependency_overrides[verify_shopify_proxy_request]
+    response = client.post(
+        "/api/proxy/generate-copy", # No shop param
+        json={
+            "product_name": "Proxy Product",
+            "japanese_description": "Proxy Desc"
+        }
+    )
+    assert response.status_code == 400
+    assert "Missing shop parameter" in response.json()["detail"]
