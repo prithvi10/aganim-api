@@ -10,7 +10,6 @@ from src.main.db.db_models import User, Plan, APIKey, UsageRecord
 from src.main.security.security import get_api_key_hash, hash_api_key
 
 # 1. Setup In-Memory Integration DB
-# Use StaticPool to share the same connection across threads (crucial for in-memory SQLite + FastAPI/TestClient)
 TEST_DATABASE_URL = "sqlite:///:memory:"
 engine = create_engine(
     TEST_DATABASE_URL, 
@@ -19,7 +18,6 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# 2. Override the Dependency
 def override_get_db():
     db = TestingSessionLocal()
     try:
@@ -27,34 +25,29 @@ def override_get_db():
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
-
-# 3. Override get_api_key_hash to prevent header parsing errors or validation issues
-# Since we're testing the full flow, we *could* let it parse the header,
-# but `get_api_key_hash` in `controller.py` might be failing if not mocked correctly
-# or if the test client isn't sending headers exactly as expected.
-# However, the previous failure was 401, which means `get_api_key_hash` likely succeeded (or failed and raised 401)
-# OR `verify_api_key_and_quota` failed (DB check).
-
-# Given we are using an in-memory DB that is reset per test or module, let's ensure 
-# the DB connection used by the APP is the SAME one as the test setup.
-# `get_db` override handles this via `TestingSessionLocal` bound to the static pool engine.
-
-# Let's override `get_api_key_hash` to return the hash directly to simplify the test
-# and ensure we isolate the DB logic from the header parsing logic.
 def override_get_api_key_hash():
     # Return the known hash of "integration_key_123"
     return hash_api_key("integration_key_123")
-
-# Apply the override for the integration tests
-app.dependency_overrides[get_api_key_hash] = override_get_api_key_hash
 
 @pytest.fixture(scope="module")
 def client():
     # Create tables once for the module
     Base.metadata.create_all(bind=engine)
+    
+    # Override dependencies locally for this test module logic
+    # Note: Ideally this should be per-function or managed better, 
+    # but since we are running integration tests that depend on specific DB state, 
+    # let's set it here and clear it after.
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_api_key_hash] = override_get_api_key_hash
+    
     with TestClient(app) as c:
         yield c
+        
+    # Cleanup overrides
+    del app.dependency_overrides[get_db]
+    del app.dependency_overrides[get_api_key_hash]
+    
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
