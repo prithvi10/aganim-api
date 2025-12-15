@@ -104,9 +104,12 @@ async def _process_generation_request(
 @router.post("/api/proxy/generate-copy")
 async def proxy_generate_copy(
     request: Request,
+    # This dependency validates the HMAC signature and returns the shop domain
+    shop_domain: str = Depends(verify_shopify_proxy_request), 
     db: Session = Depends(get_db)
 ):
-    # 1. Parse Body manually (FastAPI Request object)
+    # 1. Parse Body manually (FastAPI Request object) or use pydantic model if JSON matches
+    # Proxy requests are JSON, so we can parse it.
     try:
         body = await request.json()
         rewrite_request = RewriteRequest(**body)
@@ -115,18 +118,8 @@ async def proxy_generate_copy(
 
     validate_rewrite_request(rewrite_request.model_dump())
 
-    # 2. Lookup User & Quota using just the Shop Domain (defaulting to dev shop for now if not provided)
-    # Since we removed signature validation, we need a way to know WHICH shop this is.
-    # Ideally, the shop sends its domain in the body or query param.
-    # For now, we will try to get it from query params, or default to a known dev shop.
-    shop_domain = request.query_params.get("shop")
-    
-    if not shop_domain:
-        # Fallback/Security Risk: Without signature, we can't trust 'shop' param blindly in prod.
-        # But for this specific request to disable validation:
-        logger.warning("⚠️ Proxy Request missing 'shop' param. Using DEV fallback.")
-        shop_domain = "dev-shop.myshopify.com" 
-
+    # 2. Lookup User & Quota using just the Shop Domain
+    # (You need to implement validate_shop_and_quota in your validation.py)
     auth_context = validate_shop_and_quota(db, shop_domain)
     
     # 3. Process
@@ -135,7 +128,7 @@ async def proxy_generate_copy(
         request=rewrite_request,
         user=auth_context["user"],
         plan=auth_context["plan"],
-        api_key_id=auth_context["api_key_id"], 
+        api_key_id=auth_context["api_key_id"], # The system picks the user's active key ID automatically
         billing_cycle_start=auth_context["billing_cycle_start"]
     )
 
