@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from .models import RewriteRequest, OnboardingRequest
 from src.main.db.db_models import User, Shop
@@ -8,17 +9,22 @@ from src.main.security.security import (
     verify_shopify_session, 
     verify_webhook_signature, 
     verify_shopify_redirect,
-    verify_shopify_proxy_request, # <--- NEW IMPORT
+    verify_shopify_proxy_request, 
     SHOPIFY_API_KEY,
     SHOPIFY_API_SECRET
 )
+import secrets
+
+SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
+SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
+
 from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG
 from src.main.logging.logger import get_logger
 from src.main.db.database import get_db
-from src.main.db.db_transactions import update_token_usage, get_plan_by_name
+from src.main.db.db_transactions import update_token_usage, get_plan_by_name, store_shop_access_token
 from src.main.service.streaming_utils import create_streaming_response
-from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota # <--- NEW VALIDATION HELPER
+from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota 
 from src.main.service.onboarding import onboard_user
 import httpx
 
@@ -27,6 +33,32 @@ logger = get_logger(__name__)
 router = APIRouter()
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
 openai_service = OpenAIService()
+
+# ==============================================================================
+#  0. OAUTH ENTRY POINT (Install App)
+# ==============================================================================
+@router.get("/")
+async def install_app(shop: str = Query(..., description="Shopify Shop Domain")):
+    """
+    Redirects the user to Shopify's OAuth authorization page.
+    This is the entry point when a merchant installs the app.
+    """
+    if not shop:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+    
+    state = secrets.token_hex(16)
+    
+    # Construct Authorization URL
+    authorization_url = (
+        f"https://{shop}/admin/oauth/authorize?"
+        f"client_id={SHOPIFY_API_KEY}&"
+        f"scope={SCOPES}&"
+        f"redirect_uri={SHOPIFY_REDIRECT_URI}&"
+        f"state={state}"
+    )
+    
+    return RedirectResponse(url=authorization_url, status_code=307)
+
 
 # ==============================================================================
 #  SHARED CORE LOGIC (Refactored to avoid duplication)
@@ -105,7 +137,18 @@ async def _process_generation_request(
 async def proxy_generate_copy(
     request: Request,
     # This dependency validates the HMAC signature and returns the shop domain
-    shop_domain: str = Depends(verify_shopify_proxy_request), 
+    # shop_domain: str = Depends(verify_shopify_proxy_request), # <--- REMOVED direct usage here to ensure we extract it from query first if needed, 
+    # BUT wait, the dependency RETURNS the shop domain.
+    # The requirement says: "Ensure the function proxy_generate_copy correctly extracts the shop domain from the query parameters using request.query_params.get("shop")"
+    # Actually, verify_shopify_proxy_request ALREADY returns the shop domain.
+    # Let's verify verify_shopify_proxy_request implementation.
+    # It returns `query_params.get("shop")`.
+    # So we can just use the dependency. 
+    # However, to be EXPLICIT as per instructions:
+    # "Ensure the function proxy_generate_copy correctly extracts the shop domain from the query parameters... before calling validate_shop_and_quota"
+    # The dependency does exactly this.
+    # I will keep the dependency as it is cleaner and secure.
+    shop_domain: str = Depends(verify_shopify_proxy_request),
     db: Session = Depends(get_db)
 ):
     # 1. Parse Body manually (FastAPI Request object) or use pydantic model if JSON matches
