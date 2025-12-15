@@ -14,6 +14,7 @@ from src.main.security.security import (
     SHOPIFY_API_SECRET
 )
 import secrets
+import json
 
 SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
 SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
@@ -117,10 +118,32 @@ async def _process_generation_request(
         if total_tokens_used > 0:
             update_token_usage(db, user_id, total_tokens_used, billing_cycle_start)
 
+        # Parse JSON response
+        raw_content = openai_response.choices[0].message.content
+        # Strip code fences if present (common with LLMs)
+        cleaned_content = raw_content.strip()
+        if cleaned_content.startswith("```json"):
+            cleaned_content = cleaned_content[7:]
+        elif cleaned_content.startswith("```"):
+            cleaned_content = cleaned_content[3:]
+        
+        if cleaned_content.endswith("```"):
+            cleaned_content = cleaned_content[:-3]
+        
+        try:
+            parsed_content = json.loads(cleaned_content.strip())
+        except json.JSONDecodeError:
+            # Fallback if LLM fails to return valid JSON
+            logger.warning(f"⚠️ LLM did not return valid JSON for {shop}. Returning raw text as description.")
+            parsed_content = {
+                "title": "Generated Copy",
+                "description": raw_content
+            }
+
         logger.info(f"✅ Translated for {shop}. Tokens: {total_tokens_used}")
         return {
             "status": "success",
-            "english_copy": openai_response.choices[0].message.content
+            "data": parsed_content
         }
 
     except HTTPException:

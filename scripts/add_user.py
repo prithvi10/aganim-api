@@ -6,8 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.orm import Session
 from src.main.db.database import SessionLocal, engine, Base
-from src.main.db.db_models import Plan, User, APIKey
-from src.main.security.security import hash_api_key
+from src.main.db.db_models import Plan, User, Shop
 
 def add_custom_user():
     db = SessionLocal()
@@ -48,20 +47,21 @@ def add_custom_user():
             user.plan_id = custom_plan.id
             db.commit()
 
-        # 3. Create API Key
-        raw_key = "restricted-token-456"
-        key_hash = hash_api_key(raw_key)
-        
-        api_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
-        if not api_key:
-            api_key = APIKey(
-                user_id=user.id,
-                key_hash=key_hash,
-                is_active=True
+        # 3. Create Shop Record (for access token)
+        shop = db.query(Shop).filter(Shop.domain == username).first()
+        token = "restricted-token-456"
+        if not shop:
+            shop = Shop(
+                domain=username,
+                access_token=token
             )
-            db.add(api_key)
+            db.add(shop)
             db.commit()
-            print(f"✅ Created API Key for user. Token: {raw_key}")
+            print(f"✅ Created Shop Record for user. Token: {token}")
+        else:
+            print(f"ℹ️ Shop '{username}' already exists. Updating token.")
+            shop.access_token = token
+            db.commit()
         
     except Exception as e:
         print(f"❌ Error adding user: {e}")

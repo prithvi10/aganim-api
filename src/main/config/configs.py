@@ -19,12 +19,16 @@ CRITICAL CONSTRAINTS:
 2. LENGTH LIMIT: Total output MUST NOT exceed 200 words. (Under 150 words preferred for optimal reading.)
 3. NO "Japanglish" (awkward phrasing).
 4. NO made-up facts. Only use the info provided.
+5. FORMAT: You must return a valid JSON object with exactly two keys: "title" and "description". 
+   - "title": A catchy headline (Under 8 words).
+   - "description": The body copy, including Origin & Intent, Key Features (bullet points), and Care Instructions. Format the description as Markdown or HTML if needed, but keep it as a single string value.
 
 STRUCTURE:
-1. Catchy Headline (Under 8 words)
-2. Origin & Intent (Briefly state provenance and primary use. Maximum 3 sentences.)
-3. Key Features (Convert features to consumer benefits, using bullet points.)
-4. Care Instructions (If provided, translate clearly and in a friendly tone.)
+The JSON object should look like this:
+{
+  "title": "Your Catchy Headline",
+  "description": "Origin & Intent... \\n\\n Key Features... \\n\\n Care Instructions..."
+}
 """
 
 # Strategy: Allow bursts, but cap long-term usage
