@@ -149,3 +149,39 @@ def test_get_shop_quota_context_no_active_key(db_session):
     
     context = get_shop_quota_context(db_session, "user_inactive")
     assert context is None
+
+# --- New Tests for store_shop_access_token ---
+
+def test_store_shop_access_token_create(db_session):
+    """Should create a new Shop record if it doesn't exist."""
+    from src.main.db.db_transactions import store_shop_access_token
+    
+    shop_domain = "new-shop.myshopify.com"
+    token = "new_token_123"
+    
+    shop = store_shop_access_token(db_session, shop_domain, token)
+    
+    assert shop.domain == shop_domain
+    assert shop.access_token == token
+    assert shop.id is not None
+
+def test_store_shop_access_token_update(db_session):
+    """Should update the access token if the Shop record exists."""
+    from src.main.db.db_transactions import store_shop_access_token
+    from src.main.db.db_models import Shop
+    
+    shop_domain = "existing-shop.myshopify.com"
+    old_token = "old_token_123"
+    new_token = "new_token_456"
+    
+    # Create existing
+    existing = Shop(domain=shop_domain, access_token=old_token)
+    db_session.add(existing)
+    db_session.commit()
+    
+    # Update
+    updated = store_shop_access_token(db_session, shop_domain, new_token)
+    
+    assert updated.id == existing.id
+    assert updated.domain == shop_domain
+    assert updated.access_token == new_token

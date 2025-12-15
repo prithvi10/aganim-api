@@ -18,6 +18,19 @@ class User(Base):
     plan = relationship("Plan", back_populates="users")
     api_keys = relationship("APIKey", back_populates="user")
 
+class Shop(Base):
+    """
+    Stores Shopify Shop details including access tokens.
+    Used for OAuth flow and offline access.
+    """
+    __tablename__ = "shops"
+
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String, unique=True, index=True) # e.g., 'my-shop.myshopify.com'
+    access_token = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
 class APIKey(Base):
     __tablename__ = "api_keys"
     

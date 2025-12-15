@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import date
 
 from src.main.api.main import app
-from src.main.security.security import get_api_key_hash
+from src.main.security.security import get_api_key_hash, verify_shopify_proxy_request
 from src.main.db.database import get_db
 from src.main.db.db_models import User, Plan
 
@@ -21,7 +21,7 @@ def mock_get_db():
     db = MagicMock(spec=Session)
     return db
 
-# Override the dependencies
+# Override the dependencies globally
 app.dependency_overrides[get_api_key_hash] = mock_get_api_key_hash
 app.dependency_overrides[get_db] = mock_get_db
 
@@ -98,3 +98,65 @@ def test_generate_copy_validation_error():
         }
     )
     assert response.status_code == 422
+
+# --- NEW PROXY TESTS ---
+
+def test_proxy_generate_copy_endpoint_success(mock_auth_context):
+    """Test the Proxy API endpoint success path."""
+    mock_response_text = "Generated English Copy"
+    mock_openai_response = MagicMock()
+    mock_openai_response.choices = [MagicMock(message=MagicMock(content=mock_response_text))]
+    mock_openai_response.usage.total_tokens = 10
+
+    # Mock the proxy signature verification dependency
+    def mock_verify_proxy():
+        return "test-shop.myshopify.com"
+    
+    app.dependency_overrides[verify_shopify_proxy_request] = mock_verify_proxy
+
+    try:
+        with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
+            with patch("src.main.api.controller.update_token_usage"):
+                with patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response):
+                    
+                    response = client.post(
+                        "/api/proxy/generate-copy?shop=test-shop.myshopify.com&signature=valid",
+                        json={
+                            "product_name": "Proxy Product",
+                            "japanese_description": "Proxy Desc",
+                            "category": "Proxy Cat"
+                        }
+                    )
+
+                    assert response.status_code == 200
+                    assert response.json()["english_copy"] == mock_response_text
+                    
+                    mock_validate.assert_called_once()
+                    args, _ = mock_validate.call_args
+                    assert args[1] == "test-shop.myshopify.com" 
+    finally:
+        del app.dependency_overrides[verify_shopify_proxy_request]
+
+def test_proxy_generate_copy_missing_signature():
+    """Test proxy endpoint fails correctly when signature validation fails (dependency raises error)."""
+    
+    from fastapi import HTTPException
+    
+    # Mock the proxy signature verification dependency to fail
+    def mock_verify_proxy_fail():
+        raise HTTPException(status_code=401, detail="Invalid signature")
+        
+    app.dependency_overrides[verify_shopify_proxy_request] = mock_verify_proxy_fail
+
+    try:
+        response = client.post(
+            "/api/proxy/generate-copy", 
+            json={
+                "product_name": "Proxy Product",
+                "japanese_description": "Proxy Desc"
+            }
+        )
+        assert response.status_code == 401
+        assert "Invalid signature" in response.json()["detail"]
+    finally:
+        del app.dependency_overrides[verify_shopify_proxy_request]

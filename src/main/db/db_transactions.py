@@ -174,3 +174,22 @@ def create_api_key_record(db: Session, user_id: int, key_hash: str) -> APIKey:
     db.commit()
     db.refresh(new_key)
     return new_key
+
+def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
+    """
+    Stores or updates the access token for a given shop.
+    """
+    from .db_models import Shop
+    
+    shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    
+    if shop_record:
+        shop_record.access_token = access_token
+    else:
+        new_shop = Shop(domain=shop_domain, access_token=access_token)
+        db.add(new_shop)
+        shop_record = new_shop
+
+    db.commit()
+    db.refresh(shop_record)
+    return shop_record
