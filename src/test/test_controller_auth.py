@@ -7,14 +7,52 @@ from httpx import Response
 from urllib.parse import urlencode
 from fastapi.testclient import TestClient
 from unittest.mock import patch
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from src.main.api.main import app
+from src.main.db.database import get_db, Base
 
 # Mock Config
 MOCK_API_KEY = "test_api_key"
 MOCK_API_SECRET = "test_api_secret"
 
-client = TestClient(app)
+# Setup In-Memory DB
+TEST_DATABASE_URL = "sqlite:///:memory:"
+engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@pytest.fixture(scope="module")
+def db_engine():
+    # Create tables
+    Base.metadata.create_all(bind=engine)
+    yield engine
+    Base.metadata.drop_all(bind=engine)
+
+@pytest.fixture(scope="function")
+def db_session(db_engine):
+    connection = db_engine.connect()
+    transaction = connection.begin()
+    session = TestingSessionLocal(bind=connection)
+    
+    yield session
+    
+    session.close()
+    transaction.rollback()
+    connection.close()
+
+@pytest.fixture(scope="function")
+def client(db_session):
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+    
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as c:
+        yield c
+    del app.dependency_overrides[get_db]
 
 def generate_hmac(secret, params):
     sorted_params = urlencode(sorted(params.items()))
@@ -34,7 +72,7 @@ def auth_params():
     }
 
 @respx.mock
-def test_auth_callback_success(auth_params):
+def test_auth_callback_success(client, auth_params): # Injected client fixture
     """
     Test successful OAuth callback flow:
     1. Verify HMAC (Middleware/Security check).
@@ -72,7 +110,7 @@ def test_auth_callback_success(auth_params):
         assert body["client_secret"] == MOCK_API_SECRET
         assert body["code"] == auth_params["code"]
 
-def test_auth_callback_invalid_hmac(auth_params):
+def test_auth_callback_invalid_hmac(client, auth_params):
     """Test callback fails with 400 if HMAC is invalid."""
     params = auth_params.copy()
     params["hmac"] = "invalid_signature"
@@ -83,7 +121,7 @@ def test_auth_callback_invalid_hmac(auth_params):
         assert response.status_code == 400
         assert "Invalid HMAC signature" in response.json()["detail"]
 
-def test_auth_callback_missing_params(auth_params):
+def test_auth_callback_missing_params(client, auth_params):
     """Test callback fails if required params (code/shop) are missing (even if HMAC valid)."""
     # Note: If 'code' is missing from params BEFORE hmac calc, the calc is valid for THAT set.
     # But the controller checks for code/shop explicitly.
@@ -99,7 +137,7 @@ def test_auth_callback_missing_params(auth_params):
         assert "Missing code" in response.json()["detail"]
 
 @respx.mock
-def test_auth_callback_exchange_failure(auth_params):
+def test_auth_callback_exchange_failure(client, auth_params):
     """Test callback handles failure from Shopify Token API."""
     params = auth_params.copy()
     params["hmac"] = generate_hmac(MOCK_API_SECRET, params)
@@ -116,4 +154,3 @@ def test_auth_callback_exchange_failure(auth_params):
         
         assert response.status_code == 400
         assert "Failed to exchange access token" in response.json()["detail"]
-
