@@ -141,3 +141,11 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
     db.commit()
     db.refresh(shop_record)
     return shop_record
+
+def get_shop_access_token(db: Session, shop_domain: str) -> str | None:
+    """
+    Retrieves the access token for a given shop domain.
+    """
+    from .db_models import Shop
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    return shop.access_token if shop else None

@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.main.db.database import Base
 from src.main.db.db_models import User, Plan, UsageRecord
-from src.main.db.db_transactions import update_token_usage, get_shop_quota_context
+from src.main.db.db_transactions import update_token_usage, get_shop_quota_context, get_shop_access_token, store_shop_access_token
 
 # Use in-memory SQLite for testing transactions
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -89,7 +89,6 @@ def test_store_shop_access_token_create(db_session):
     """
     Should create a new Shop record AND a User record if they don't exist.
     """
-    from src.main.db.db_transactions import store_shop_access_token
     from src.main.db.db_models import User, Plan
     
     # Ensure default plan exists for the auto-creation logic
@@ -116,7 +115,6 @@ def test_store_shop_access_token_create(db_session):
 
 def test_store_shop_access_token_update(db_session):
     """Should update the access token if the Shop record exists."""
-    from src.main.db.db_transactions import store_shop_access_token
     from src.main.db.db_models import Shop
     
     shop_domain = "existing-shop.myshopify.com"
@@ -134,3 +132,20 @@ def test_store_shop_access_token_update(db_session):
     assert updated.id == existing.id
     assert updated.domain == shop_domain
     assert updated.access_token == new_token
+
+def test_get_shop_access_token_found(db_session):
+    """Should return the access token if shop exists."""
+    shop_domain = "token-test.myshopify.com"
+    token = "secret_token"
+    
+    # Seed
+    store_shop_access_token(db_session, shop_domain, token)
+    
+    # Test
+    retrieved_token = get_shop_access_token(db_session, shop_domain)
+    assert retrieved_token == token
+
+def test_get_shop_access_token_not_found(db_session):
+    """Should return None if shop does not exist."""
+    retrieved_token = get_shop_access_token(db_session, "missing.myshopify.com")
+    assert retrieved_token is None
