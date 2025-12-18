@@ -23,11 +23,12 @@ from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG
 from src.main.logging.logger import get_logger
 from src.main.db.database import get_db
-from src.main.db.db_transactions import update_token_usage, get_plan_by_name, store_shop_access_token
+from src.main.db.db_transactions import update_token_usage, get_plan_by_name, store_shop_access_token, get_shop_access_token
 from src.main.service.streaming_utils import create_streaming_response
 from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota 
 from src.main.service.onboarding import onboard_user
 import httpx
+import os
 
 logger = get_logger(__name__)
 
@@ -139,6 +140,47 @@ async def _process_generation_request(
                 "title": "Generated Copy",
                 "description": raw_content
             }
+
+        # ----------------------------------------------------------------------
+        # 6. Save Changes to Shopify Admin API (If product_id provided)
+        # ----------------------------------------------------------------------
+        if request.product_id:
+            access_token = get_shop_access_token(db, shop)
+            if not access_token:
+                logger.error(f"❌ Access Token missing for shop {shop} during product update.")
+                raise HTTPException(status_code=500, detail="Shopify Access Token not found. Re-install app.")
+
+            shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+            product_update_url = f"https://{shop}/admin/api/{shopify_api_version}/products/{request.product_id}.json"
+
+            headers = {
+                "X-Shopify-Access-Token": access_token,
+                "Content-Type": "application/json"
+            }
+
+            # Safely get title/desc or fall back
+            final_title = parsed_content.get("title", "Translated Product")
+            final_desc = parsed_content.get("description", raw_content)
+
+            update_payload = {
+                "product": {
+                    "id": request.product_id,
+                    "title": final_title,
+                    "body_html": final_desc
+                }
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.put(product_update_url, headers=headers, json=update_payload)
+                
+                if response.status_code != 200:
+                    logger.error(f"❌ Failed to save product {request.product_id} for {shop}. Status: {response.status_code}, Detail: {response.text}")
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"Failed to save changes to Shopify. API Error: {response.status_code}"
+                    )
+                else:
+                    logger.info(f"✅ Product {request.product_id} updated successfully in Shopify Admin for {shop}.")
 
         logger.info(f"✅ Translated for {shop}. Tokens: {total_tokens_used}")
         return {

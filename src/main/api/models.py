@@ -6,6 +6,7 @@ class RewriteRequest(BaseModel):
     japanese_description: str
     category: str = DEFAULT_PRODUCT_CATEGORY # e.g., "Kitchenware", "Apparel"
     stream: bool = False # New flag for streaming requests
+    product_id: int | None = None # Optional: ID of the product to update in Shopify
 
 class OnboardingRequest(BaseModel):
     username: str # This will be the shop domain
