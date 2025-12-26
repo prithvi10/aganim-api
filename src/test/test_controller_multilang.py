@@ -85,7 +85,8 @@ async def test_controller_updates_primary_locale_via_rest(mock_auth_context, moc
          patch("src.main.api.controller.update_token_usage"), \
          patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.api.controller.get_shop_access_token", return_value="token"), \
-         patch("src.main.api.controller.httpx.AsyncClient") as MockClient:
+         patch("src.main.api.controller.httpx.AsyncClient") as MockClient, \
+         patch("src.main.api.controller.limiter.is_allowed", return_value=True): # Mock Rate Limiter
 
         mock_client = MockClient.return_value
         mock_client.__aenter__.return_value = mock_client
