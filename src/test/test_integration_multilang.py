@@ -58,7 +58,8 @@ async def test_integration_multilang_happy_path(mock_auth_context, mock_openai_r
          patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.api.controller.get_shop_access_token", return_value="valid_token"), \
          patch("src.main.api.controller.httpx.AsyncClient") as MockClient, \
-         patch("src.main.api.controller.create_shopify_translation", new_callable=AsyncMock) as mock_create_translation:
+         patch("src.main.api.controller.create_shopify_translation", new_callable=AsyncMock) as mock_create_translation, \
+         patch("src.main.api.controller.limiter.is_allowed", return_value=True): # Mock Rate Limiter
 
         # Setup Client Mock for Primary Locale Check
         mock_client = MockClient.return_value
@@ -121,7 +122,8 @@ async def test_integration_multilang_missing_locale(mock_auth_context, mock_open
          patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.api.controller.get_shop_access_token", return_value="valid_token"), \
          patch("src.main.api.controller.httpx.AsyncClient") as MockClient, \
-         patch("src.main.api.controller.create_shopify_translation", side_effect=Exception(error_message)):
+         patch("src.main.api.controller.create_shopify_translation", side_effect=Exception(error_message)), \
+         patch("src.main.api.controller.limiter.is_allowed", return_value=True): # Mock Rate Limiter
 
         # Setup Client Mock for Primary Locale Check
         mock_client = MockClient.return_value

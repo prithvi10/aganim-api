@@ -135,7 +135,7 @@ async def test_proxy_generate_copy_shopify_api_failure(mock_auth_context, mock_o
         )
 
         assert response.status_code == 500
-        assert "Failed to save changes to Shopify" in response.json()["detail"]
+        assert "Failed to update product" in response.json()["detail"]
 
 @pytest.mark.asyncio
 async def test_proxy_generate_copy_no_product_id_skips_update(mock_auth_context, mock_openai_response):
