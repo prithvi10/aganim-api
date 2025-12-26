@@ -22,6 +22,7 @@ SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/cal
 from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG, SYSTEM_PROMPT
 from src.main.utils.text_processor import detect_and_label_sections
+from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
 from src.main.logging.logger import get_logger
 from src.main.db.database import get_db
 from src.main.db.db_transactions import update_token_usage, get_plan_by_name, store_shop_access_token, get_shop_access_token
@@ -31,6 +32,7 @@ from src.main.api.validation import validate_api_key_and_quota, validate_rewrite
 from src.main.service.onboarding import onboard_user
 import httpx
 import os
+import re
 
 logger = get_logger(__name__)
 
@@ -38,30 +40,6 @@ router = APIRouter()
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
 openai_service = OpenAIService()
 
-# Helper: robust JSON parsing for LLM output
-def _parse_llm_json(raw_content: str) -> dict | None:
-    cleaned = raw_content.strip()
-    if cleaned.startswith("```json"):
-        cleaned = cleaned[7:]
-    elif cleaned.startswith("```"):
-        cleaned = cleaned[3:]
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3]
-
-    try:
-        return json.loads(cleaned.strip())
-    except Exception:
-        pass
-
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        candidate = cleaned[start : end + 1]
-        try:
-            return json.loads(candidate)
-        except Exception:
-            pass
-    return None
 
 # ==============================================================================
 #  0. OAUTH ENTRY POINT (Install App)
@@ -179,13 +157,18 @@ SECTION TAGS:
 
         # Parse JSON response
         raw_content = openai_response.choices[0].message.content
-        parsed_content = _parse_llm_json(raw_content)
+        parsed_content = parse_llm_json(raw_content)
         if not parsed_content:
-            logger.warning(f"⚠️ LLM did not return valid JSON for {shop}. Returning raw text as description.")
-            parsed_content = {
-                "title": "Generated Copy",
-                "description": raw_content
-            }
+            recovered = recover_title_desc(raw_content)
+            if recovered:
+                logger.warning(f"⚠️ LLM JSON parse failed; recovered fields for {shop}.")
+                parsed_content = recovered
+            else:
+                logger.warning(f"⚠️ LLM did not return valid JSON for {shop}. Returning raw text as description.")
+                parsed_content = {
+                    "title": "Generated Copy",
+                    "description": raw_content
+                }
 
         # ----------------------------------------------------------------------
         # 6. Save Changes to Shopify (REST or GraphQL based on Locale)
