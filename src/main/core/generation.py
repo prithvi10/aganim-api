@@ -1,9 +1,10 @@
 import os
 import httpx
+import asyncio
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from src.main.db.db_models import User
-from src.main.api.models import RewriteRequest
+from src.main.api.models import RewriteRequest, BulkRewriteRequest
 from src.main.service.open_ai_api_service import OpenAIService
 from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG, SYSTEM_PROMPT
@@ -18,40 +19,15 @@ logger = get_logger(__name__)
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
 openai_service = OpenAIService()
 
-async def process_generation_request(
-    db: Session,
-    request: RewriteRequest,
-    user: User,
-    plan,
-    user_id: int,
-    billing_cycle_start
-):
-    """
-    Core business logic for processing generation requests.
-    Orchestrates rate limiting, validation, LLM call, and Shopify persistence.
-    """
-    shop = user.username
+LOCALE_PERSONA_MAP = {
+    "en": "US Amazon Market",
+    "zh-TW": "Taiwan Shopee Market (use Taiwanese Mandarin and emphasize CP値/CP ratio)",
+    "ko": "Korean Coupang Market (use natural Korean marketing tone)"
+}
 
-    # 1. Check Rate Limit
-    if not limiter.is_allowed(shop):
-        logger.warning(f"Rate limit exceeded for shop: {shop}")
-        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
-    
-    # 2. Check Streaming Capability
-    if request.stream and not plan.can_stream_responses:
-        raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
-
-    # 3. Build dynamic prompt with locale + market persona
-    locale_persona_map = {
-        "en": "US Amazon Market",
-        "zh-TW": "Taiwan Shopee Market (use Taiwanese Mandarin and emphasize CP値/CP ratio)",
-        "ko": "Korean Coupang Market (use natural Korean marketing tone)"
-    }
-
-    target_locale = request.target_locale or "en"
-    market_persona = locale_persona_map.get(target_locale, "Global English Market")
-
-    dynamic_prompt = f"""{SYSTEM_PROMPT}
+def _build_dynamic_prompt(target_locale: str) -> str:
+    market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
+    return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
 MARKET PERSONA: {market_persona}
@@ -67,8 +43,73 @@ SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
 """
 
+async def _generate_and_save_for_locale(
+    db: Session,
+    shop: str,
+    product_id: int | None,
+    product_name: str,
+    category: str,
+    processed_description: str,
+    target_locale: str,
+    primary_locale: str,
+    access_token: str | None,
+    user_id: int,
+    billing_cycle_start
+):
+    """
+    Helper to generate copy for a single locale and save it to Shopify.
+    """
+    dynamic_prompt = _build_dynamic_prompt(target_locale)
+    
+    openai_response = openai_service.generate_copy(
+        product_name=product_name,
+        category=category,
+        japanese_description=processed_description,
+        system_prompt=dynamic_prompt
+    )
+    
+    total_tokens = getattr(openai_response.usage, 'total_tokens', 0) if openai_response.usage else 0
+    if total_tokens > 0:
+        update_token_usage(db, user_id, total_tokens, billing_cycle_start)
+
+    raw_content = openai_response.choices[0].message.content
+    parsed = parse_llm_json(raw_content) or recover_title_desc(raw_content)
+    
+    if not parsed:
+        parsed = {"title": "Generated Copy", "description": raw_content}
+
+    if product_id and access_token:
+        await save_product_content_with_locale(
+            shop_domain=shop,
+            access_token=access_token,
+            product_id=product_id,
+            title=parsed.get("title", "Translated Product"),
+            description=parsed.get("description", raw_content),
+            target_locale=target_locale,
+            shop_primary_locale=primary_locale,
+        )
+    
+    return {"locale": target_locale, "data": parsed, "tokens": total_tokens}
+
+async def process_generation_request(
+    db: Session,
+    request: RewriteRequest,
+    user: User,
+    plan,
+    user_id: int,
+    billing_cycle_start
+):
+    shop = user.username
+    if not limiter.is_allowed(shop):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
+    
+    if request.stream and not plan.can_stream_responses:
+        raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
+
+    target_locale = request.target_locale or "en"
+    dynamic_prompt = _build_dynamic_prompt(target_locale)
+
     try:
-        # 4. Handle Streaming
         if request.stream:
             logger.info(f"🌊 Initiating Streaming Response for: {shop}")
             return openai_service.create_streaming_response(
@@ -81,82 +122,33 @@ SECTION TAGS:
                 system_prompt=dynamic_prompt
             )
 
-        # 5. Handle Standard Request
-        processed_description = detect_and_label_sections(request.japanese_description)
+        # Standard non-streaming flow
+        processed_desc = detect_and_label_sections(request.japanese_description)
+        access_token = get_shop_access_token(db, shop) if request.product_id else None
+        
+        if request.product_id and not access_token:
+            logger.error(f"❌ Access Token missing for shop {shop} during product update.")
+            raise HTTPException(status_code=500, detail="Shopify Access Token not found. Re-install app.")
 
-        openai_response = openai_service.generate_copy(
-            product_name=request.product_name,
-            category=request.category,
-            japanese_description=processed_description,
-            system_prompt=dynamic_prompt
+        # Need primary locale for routing REST/GraphQL
+        primary_locale = "en"
+        if access_token:
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        f"https://{shop}/admin/api/2024-07/shop.json", 
+                        headers={"X-Shopify-Access-Token": access_token}
+                    )
+                    if resp.status_code == 200:
+                        primary_locale = resp.json().get("shop", {}).get("primary_locale", "en")
+            except Exception: pass
+
+        result = await _generate_and_save_for_locale(
+            db, shop, request.product_id, request.product_name, request.category,
+            processed_desc, target_locale, primary_locale, access_token, user_id, billing_cycle_start
         )
         
-        # 6. Usage Metering
-        total_tokens_used = 0
-        if hasattr(openai_response, 'usage') and openai_response.usage:
-            total_tokens_used = openai_response.usage.total_tokens
-        
-        if total_tokens_used > 0:
-            update_token_usage(db, user_id, total_tokens_used, billing_cycle_start)
-
-        # Parse JSON response
-        raw_content = openai_response.choices[0].message.content
-        parsed_content = parse_llm_json(raw_content)
-        if not parsed_content:
-            recovered = recover_title_desc(raw_content)
-            if recovered:
-                logger.warning(f"⚠️ LLM JSON parse failed; recovered fields for {shop}.")
-                parsed_content = recovered
-            else:
-                logger.warning(f"⚠️ LLM did not return valid JSON for {shop}. Returning raw text as description.")
-                parsed_content = {
-                    "title": "Generated Copy",
-                    "description": raw_content
-                }
-
-        # 7. Save Changes to Shopify
-        if request.product_id:
-            access_token = get_shop_access_token(db, shop)
-            if not access_token:
-                logger.error(f"❌ Access Token missing for shop {shop} during product update.")
-                raise HTTPException(status_code=500, detail="Shopify Access Token not found. Re-install app.")
-
-            final_title = parsed_content.get("title", "Translated Product")
-            final_desc = parsed_content.get("description", raw_content)
-
-            shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
-            headers = {
-                "X-Shopify-Access-Token": access_token,
-                "Content-Type": "application/json"
-            }
-
-            primary_locale = "en"
-            try:
-                shop_info_url = f"https://{shop}/admin/api/{shopify_api_version}/shop.json"
-                async with httpx.AsyncClient() as client:
-                    shop_resp = await client.get(shop_info_url, headers=headers)
-                    if shop_resp.status_code == 200:
-                        primary_locale = shop_resp.json().get("shop", {}).get("primary_locale", "en")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to fetch primary locale, assuming 'en': {e}")
-
-            target_locale = request.target_locale or primary_locale
-
-            await save_product_content_with_locale(
-                shop_domain=shop,
-                access_token=access_token,
-                product_id=request.product_id,
-                title=final_title,
-                description=final_desc,
-                target_locale=target_locale,
-                shop_primary_locale=primary_locale,
-            )
-
-        logger.info(f"✅ Translated for {shop}. Tokens: {total_tokens_used}")
-        return {
-            "status": "success",
-            "data": parsed_content
-        }
+        return {"status": "success", "data": result["data"]}
 
     except HTTPException:
         raise
@@ -164,3 +156,74 @@ SECTION TAGS:
         logger.error(f"❌ Error processing request for {shop}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+async def process_bulk_generation_request(
+    db: Session,
+    request: BulkRewriteRequest,
+    user: User,
+    plan,
+    user_id: int,
+    billing_cycle_start
+):
+    """
+    Core logic for bulk generation requests.
+    Checks plan, rate limits, and parallelizes generation for multiple locales.
+    """
+    shop = user.username
+    if not limiter.is_allowed(shop):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
+
+    # 1. Plan Check for Bulk (Multi-locale)
+    if len(request.target_locales) > 1 and plan.name != "Global Pro":
+        raise HTTPException(status_code=403, detail="Bulk multi-market generation requires Global Pro plan.")
+
+    try:
+        access_token = get_shop_access_token(db, shop) if request.product_id else None
+        if request.product_id and not access_token:
+            raise HTTPException(status_code=500, detail="Shopify Access Token not found.")
+
+        # 2. Fetch Primary Locale once
+        primary_locale = "en"
+        if access_token:
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        f"https://{shop}/admin/api/2024-07/shop.json", 
+                        headers={"X-Shopify-Access-Token": access_token}
+                    )
+                    if resp.status_code == 200:
+                        primary_locale = resp.json().get("shop", {}).get("primary_locale", "en")
+            except Exception: pass
+
+        processed_desc = detect_and_label_sections(request.japanese_description)
+
+        # 3. Parallelize generations
+        tasks = [
+            _generate_and_save_for_locale(
+                db, shop, request.product_id, request.product_name, request.category,
+                processed_desc, locale, primary_locale, access_token, user_id, billing_cycle_start
+            )
+            for locale in request.target_locales
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        success_locales = []
+        failed_locales = []
+        
+        for res in results:
+            if isinstance(res, Exception):
+                logger.error(f"Bulk item failed: {res}")
+                failed_locales.append(str(res))
+            else:
+                success_locales.append(res["locale"])
+
+        return {
+            "status": "success",
+            "processed": success_locales,
+            "failed": failed_locales
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in bulk processing for {shop}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

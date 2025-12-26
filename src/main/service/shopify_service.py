@@ -13,8 +13,10 @@ async def create_shopify_translation(
     target_locale: str
 ) -> None:
     """
+    ACTION 2: DUAL-STEP TRANSLATION (READ BEFORE WRITE)
     Creates or updates a translation for a given product ID using GraphQL.
-    Fetches the latest content digest to ensure atomic updates.
+    1. Query translatableResource: Fetch the digest for the 'title' and 'body_html' of the product.
+    2. Execute translationsRegister: Pass the new AI content, target_locale, and digests.
     """
     shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
     graphql_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json"
@@ -27,15 +29,13 @@ async def create_shopify_translation(
     product_gid = f"gid://shopify/Product/{product_id}"
 
     async with httpx.AsyncClient() as client:
-        # 1. Fetch Digests
-        # We need the digest of the PRIMARY content (title and body_html)
+        # STEP 1: READ (Fetch Digests)
         digest_query = """
         query getTranslatableContent($resourceId: ID!) {
           translatableResource(resourceId: $resourceId) {
             translatableContent {
               key
               digest
-              value
             }
           }
         }
@@ -68,22 +68,20 @@ async def create_shopify_translation(
                 elif item["key"] == "body_html":
                     desc_digest = item["digest"]
 
+            if not title_digest or not desc_digest:
+                logger.warning(f"⚠️ Could not find digests for title or body_html for product {product_id}")
+
         except Exception as e:
             logger.error(f"Error fetching digests: {e}")
             raise
 
-        # 2. Register Translation
+        # STEP 2: WRITE (Register Translation)
         mutation = """
         mutation translationsRegister($resourceId: ID!, $translations: [TranslationInput!]!) {
           translationsRegister(resourceId: $resourceId, translations: $translations) {
             userErrors {
               message
               field
-            }
-            translations {
-              locale
-              key
-              value
             }
           }
         }
@@ -126,32 +124,12 @@ async def create_shopify_translation(
                 logger.error(f"❌ Translation API Errors: {user_errors}")
                 raise Exception(f"Shopify Translation Error: {error_msg}")
             
+            logger.info(f"✅ Successfully registered translation for {target_locale} (Product {product_id}).")
             return None
 
         except Exception as e:
             logger.error(f"Error registering translation: {e}")
             raise
-
-
-async def register_graphql_translation(
-    shop_domain: str,
-    access_token: str,
-    product_id: int | str,
-    title: str,
-    description: str,
-    target_locale: str
-) -> None:
-    """
-    Wrapper for create_shopify_translation to align naming with controller routing.
-    """
-    return await create_shopify_translation(
-        shop_domain=shop_domain,
-        access_token=access_token,
-        product_id=product_id,
-        title=title,
-        description=description,
-        target_locale=target_locale
-    )
 
 
 async def save_product_content_with_locale(
@@ -164,6 +142,8 @@ async def save_product_content_with_locale(
     shop_primary_locale: str,
 ) -> None:
     """
+    ACTION 1: LOCALE ROUTING LOGIC
+    ACTION 3: PREVENT "MASTER" OVERWRITE
     Save product content. If target locale is primary, update via REST.
     Otherwise, register translation via GraphQL.
     """
@@ -173,6 +153,7 @@ async def save_product_content_with_locale(
         "Content-Type": "application/json"
     }
 
+    # IF PRIMARY: Update using REST API (updates the 'Master' description)
     if target_locale == shop_primary_locale:
         product_update_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/products/{product_id}.json"
         update_payload = {
@@ -188,8 +169,10 @@ async def save_product_content_with_locale(
                 logger.error(f"❌ Failed REST update {product_id} ({shop_domain}): {resp.status_code} {resp.text}")
                 raise Exception(f"Failed to update product: {resp.status_code}")
             logger.info(f"✅ Product {product_id} updated (primary locale {shop_primary_locale}).")
+    
+    # IF SECONDARY: Use GraphQL Translation mutation (Prevents "Master" overwrite)
     else:
-        await register_graphql_translation(
+        await create_shopify_translation(
             shop_domain=shop_domain,
             access_token=access_token,
             product_id=product_id,
@@ -197,4 +180,3 @@ async def save_product_content_with_locale(
             description=description,
             target_locale=target_locale
         )
-

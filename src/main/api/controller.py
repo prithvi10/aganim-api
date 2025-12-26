@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 import secrets
 import os
 
-from .models import RewriteRequest, OnboardingRequest
+from .models import RewriteRequest, OnboardingRequest, BulkRewriteRequest
 from src.main.db.db_models import User
 from src.main.db.database import get_db
 from src.main.db.db_transactions import get_plan_by_name, store_shop_access_token
@@ -20,7 +20,7 @@ from src.main.service.onboarding import onboard_user
 from src.main.logging.logger import get_logger
 
 # Import core business logic
-from src.main.core.generation import process_generation_request
+from src.main.core.generation import process_generation_request, process_bulk_generation_request
 from src.main.core.shop import fetch_shop_locales
 
 logger = get_logger(__name__)
@@ -80,6 +80,33 @@ async def proxy_generate_copy(
     return await process_generation_request(
         db=db,
         request=rewrite_request,
+        user=auth_context["user"],
+        plan=auth_context["plan"],
+        user_id=auth_context["user_id"],
+        billing_cycle_start=auth_context["billing_cycle_start"]
+    )
+
+
+@router.post("/api/proxy/generate-bulk")
+async def proxy_generate_bulk(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        body = await request.json()
+        bulk_request = BulkRewriteRequest(**body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    shop_domain = request.query_params.get("shop")
+    if not shop_domain:
+         raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    auth_context = validate_shop_and_quota(db, shop_domain)
+    
+    return await process_bulk_generation_request(
+        db=db,
+        request=bulk_request,
         user=auth_context["user"],
         plan=auth_context["plan"],
         user_id=auth_context["user_id"],

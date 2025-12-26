@@ -10,7 +10,7 @@ from src.main.db.database import get_db
 from src.main.db.db_models import User, Plan
 
 # Initialize Test Client
-client = TestClient(app)
+client = TestClient(app, raise_server_exceptions=False)
 
 # Mock DB
 def mock_get_db():
@@ -62,13 +62,9 @@ async def test_proxy_generate_copy_saves_to_shopify_success(mock_auth_context, m
          patch("src.main.core.generation.update_token_usage"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value=access_token) as mock_get_token, \
-         patch("src.main.core.generation.httpx.AsyncClient") as MockClient:
+         patch("src.main.core.generation.save_product_content_with_locale") as mock_save:
         
-        # Configure AsyncClient mock
-        mock_client_instance = MockClient.return_value
-        mock_client_instance.__aenter__.return_value = mock_client_instance
-        mock_client_instance.__aexit__.return_value = None
-        mock_client_instance.put = AsyncMock(return_value=mock_shopify_response)
+        mock_save.return_value = None
 
         # Execute
         response = client.post(
@@ -89,16 +85,14 @@ async def test_proxy_generate_copy_saves_to_shopify_success(mock_auth_context, m
         mock_get_token.assert_called_once()
         
         # Verify Shopify API Call
-        mock_client_instance.put.assert_called_once()
-        call_args = mock_client_instance.put.call_args
-        url = call_args[0][0]
-        kwargs = call_args[1]
+        mock_save.assert_called_once()
+        call_args = mock_save.call_args[1]
         
-        assert f"/products/{product_id}.json" in url
-        assert kwargs["headers"]["X-Shopify-Access-Token"] == access_token
-        assert kwargs["json"]["product"]["id"] == product_id
-        assert kwargs["json"]["product"]["title"] == "My Title"
-        assert kwargs["json"]["product"]["body_html"] == "My Description"
+        assert call_args["shop_domain"] == shop_domain
+        assert call_args["access_token"] == access_token
+        assert call_args["product_id"] == product_id
+        assert call_args["title"] == "My Title"
+        assert call_args["description"] == "My Description"
 
 @pytest.mark.asyncio
 async def test_proxy_generate_copy_shopify_api_failure(mock_auth_context, mock_openai_response):
@@ -118,13 +112,8 @@ async def test_proxy_generate_copy_shopify_api_failure(mock_auth_context, mock_o
          patch("src.main.core.generation.update_token_usage"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value=access_token), \
-         patch("src.main.core.generation.httpx.AsyncClient") as MockClient:
+         patch("src.main.core.generation.save_product_content_with_locale", side_effect=Exception("Failed to update product: 422")):
         
-        mock_client_instance = MockClient.return_value
-        mock_client_instance.__aenter__.return_value = mock_client_instance
-        mock_client_instance.__aexit__.return_value = None
-        mock_client_instance.put = AsyncMock(return_value=mock_shopify_response)
-
         response = client.post(
             f"/api/proxy/generate-copy?shop={shop_domain}",
             json={
@@ -148,12 +137,8 @@ async def test_proxy_generate_copy_no_product_id_skips_update(mock_auth_context,
          patch("src.main.core.generation.update_token_usage"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token") as mock_get_token, \
-         patch("src.main.core.generation.httpx.AsyncClient") as MockClient:
+         patch("src.main.core.generation.save_product_content_with_locale") as mock_save:
         
-        mock_client_instance = MockClient.return_value
-        # Even if we mock it, we want to ensure it's NOT called
-        mock_client_instance.put = AsyncMock()
-
         response = client.post(
             f"/api/proxy/generate-copy?shop={shop_domain}",
             json={
@@ -168,7 +153,7 @@ async def test_proxy_generate_copy_no_product_id_skips_update(mock_auth_context,
         
         # Verify NO token retrieval or API call
         mock_get_token.assert_not_called()
-        mock_client_instance.put.assert_not_called()
+        mock_save.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_proxy_generate_copy_missing_access_token(mock_auth_context, mock_openai_response):
