@@ -38,6 +38,31 @@ router = APIRouter()
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
 openai_service = OpenAIService()
 
+# Helper: robust JSON parsing for LLM output
+def _parse_llm_json(raw_content: str) -> dict | None:
+    cleaned = raw_content.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+
+    try:
+        return json.loads(cleaned.strip())
+    except Exception:
+        pass
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = cleaned[start : end + 1]
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+    return None
+
 # ==============================================================================
 #  0. OAUTH ENTRY POINT (Install App)
 # ==============================================================================
@@ -154,20 +179,8 @@ SECTION TAGS:
 
         # Parse JSON response
         raw_content = openai_response.choices[0].message.content
-        # Strip code fences if present (common with LLMs)
-        cleaned_content = raw_content.strip()
-        if cleaned_content.startswith("```json"):
-            cleaned_content = cleaned_content[7:]
-        elif cleaned_content.startswith("```"):
-            cleaned_content = cleaned_content[3:]
-        
-        if cleaned_content.endswith("```"):
-            cleaned_content = cleaned_content[:-3]
-        
-        try:
-            parsed_content = json.loads(cleaned_content.strip())
-        except json.JSONDecodeError:
-            # Fallback if LLM fails to return valid JSON
+        parsed_content = _parse_llm_json(raw_content)
+        if not parsed_content:
             logger.warning(f"⚠️ LLM did not return valid JSON for {shop}. Returning raw text as description.")
             parsed_content = {
                 "title": "Generated Copy",
