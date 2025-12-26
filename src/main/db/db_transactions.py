@@ -125,7 +125,7 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
     
     if not user:
         # Assign default plan
-        default_plan = db.query(Plan).filter(Plan.name == "Basic Agent").first()
+        default_plan = db.query(Plan).filter(Plan.name == "Basic").first()
         if not default_plan:
              default_plan = db.query(Plan).first()
         

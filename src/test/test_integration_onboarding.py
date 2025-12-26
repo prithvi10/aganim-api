@@ -31,7 +31,7 @@ def test_integration_onboarding_webhook_flow():
     db = TestingSessionLocal()
     
     # Seed Plan
-    plan = Plan(name="Basic Agent", monthly_token_quota=50000, max_request_rate=60)
+    plan = Plan(name="Basic", monthly_token_quota=50000, max_request_rate=60)
     db.add(plan)
     db.commit()
     plan_id = plan.id # Capture ID before closing session
@@ -42,7 +42,7 @@ def test_integration_onboarding_webhook_flow():
     secret = "test_integration_secret"
     payload = {
         "myshopify_domain": "integration-store.myshopify.com",
-        "billing_plan": "Basic Agent",
+        "billing_plan": "Basic",
         "email": "integration@example.com"
     }
     json_body = json.dumps(payload).encode('utf-8')

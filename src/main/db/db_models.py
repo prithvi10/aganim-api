@@ -49,7 +49,7 @@ class Plan(Base):
     __tablename__ = "plans"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True) # e.g., "Basic Agent", "Pro Agent"
+    name = Column(String, unique=True, index=True) # e.g., "Basic", "Standard", "Pro"
     price_usd_monthly = Column(Numeric(10, 2))
     
     # CORE QUOTA DEFINITIONS

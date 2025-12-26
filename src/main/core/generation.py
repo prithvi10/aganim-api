@@ -173,8 +173,8 @@ async def process_bulk_generation_request(
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
 
     # 1. Plan Check for Bulk (Multi-locale)
-    if len(request.target_locales) > 1 and plan.name != "Global Pro":
-        raise HTTPException(status_code=403, detail="Bulk multi-market generation requires Global Pro plan.")
+    if len(request.target_locales) > 1 and plan.name != "Pro":
+        raise HTTPException(status_code=403, detail="Bulk multi-market generation requires Pro plan.")
 
     try:
         access_token = get_shop_access_token(db, shop) if request.product_id else None
