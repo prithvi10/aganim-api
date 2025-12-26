@@ -9,6 +9,13 @@ class RewriteRequest(BaseModel):
     product_id: int | None = None # Optional: ID of the product to update in Shopify
     target_locale: str | None = None # Optional: The target locale for the translation (e.g. "en", "zh-TW")
 
+class BulkRewriteRequest(BaseModel):
+    product_name: str
+    japanese_description: str
+    category: str = DEFAULT_PRODUCT_CATEGORY
+    product_id: int | None = None
+    target_locales: list[str]
+
 class OnboardingRequest(BaseModel):
     username: str # This will be the shop domain
     email: str | None = None

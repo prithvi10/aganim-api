@@ -3,6 +3,7 @@ import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from src.main.db.db_transactions import get_shop_access_token
+from src.main.db.db_models import User
 from src.main.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -10,9 +11,14 @@ logger = get_logger(__name__)
 async def fetch_shop_locales(db: Session, shop_domain: str):
     """
     Core logic to fetch enabled locales for a shop from Shopify.
+    Includes the merchant's current plan name for feature gating.
     """
     if not shop_domain:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    # 1. Fetch User and Plan
+    user = db.query(User).filter(User.username == shop_domain).first()
+    plan_name = user.plan.name if user and user.plan else "Free"
 
     access_token = get_shop_access_token(db, shop_domain)
     if not access_token:
@@ -48,7 +54,11 @@ async def fetch_shop_locales(db: Session, shop_domain: str):
                  raise HTTPException(status_code=500, detail="Shopify GraphQL Error")
             
             locales = data.get("data", {}).get("shopLocales", [])
-            return {"status": "success", "locales": locales}
+            return {
+                "status": "success", 
+                "locales": locales,
+                "plan_name": plan_name
+            }
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Shopify GraphQL Request Failed: {e.response.text}")

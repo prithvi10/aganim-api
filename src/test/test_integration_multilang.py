@@ -8,7 +8,7 @@ from src.main.api.main import app
 from src.main.db.database import get_db
 from src.main.db.db_models import User, Plan
 
-client = TestClient(app)
+client = TestClient(app, raise_server_exceptions=False)
 
 # --- Common Test Fixtures ---
 def mock_get_db():
