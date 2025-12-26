@@ -11,21 +11,31 @@ from src.main.db.db_models import Plan, User, Shop
 def seed_data():
     db = SessionLocal()
     try:
-        # 1. Create Plans
-        basic_plan = db.query(Plan).filter(Plan.name == "Basic Agent").first()
-        if not basic_plan:
-            basic_plan = Plan(
-                name="Basic Agent",
-                price_usd_monthly=29.99,
-                monthly_token_quota=50000, # 50k tokens
-                max_request_rate=60
-            )
-            db.add(basic_plan)
-            db.commit()
-            db.refresh(basic_plan)
-            print("✅ Created Basic Plan")
+        # 1. Create New Plans
+        plans = [
+            {"name": "Basic", "price": 9.90, "quota": 100000, "rate": 60, "stream": False},
+            {"name": "Standard", "price": 29.90, "quota": 500000, "rate": 120, "stream": False},
+            {"name": "Pro", "price": 69.90, "quota": 5000000, "rate": 300, "stream": True},
+        ]
 
-        # 2. Create Test User
+        for p_data in plans:
+            existing = db.query(Plan).filter(Plan.name == p_data["name"]).first()
+            if not existing:
+                plan = Plan(
+                    name=p_data["name"],
+                    price_usd_monthly=p_data["price"],
+                    monthly_token_quota=p_data["quota"],
+                    max_request_rate=p_data["rate"],
+                    can_stream_responses=p_data["stream"],
+                    is_active=True
+                )
+                db.add(plan)
+                print(f"✅ Created {p_data['name']} Plan")
+        
+        db.commit()
+
+        # 2. Create Test User (linked to Basic)
+        basic_plan = db.query(Plan).filter(Plan.name == "Basic").first()
         shop_domain = "dev-shop.myshopify.com"
         test_user = db.query(User).filter(User.username == shop_domain).first()
         if not test_user:
@@ -60,4 +70,3 @@ if __name__ == "__main__":
     # Ensure tables exist
     Base.metadata.create_all(bind=engine)
     seed_data()
-

@@ -92,8 +92,8 @@ def test_store_shop_access_token_create(db_session):
     from src.main.db.db_models import User, Plan
     
     # Ensure default plan exists for the auto-creation logic
-    if not db_session.query(Plan).filter_by(name="Basic Agent").first():
-        db_session.add(Plan(name="Basic Agent", monthly_token_quota=1000, max_request_rate=10))
+    if not db_session.query(Plan).filter_by(name="Basic").first():
+        db_session.add(Plan(name="Basic", monthly_token_quota=1000, max_request_rate=10))
         db_session.commit()
 
     shop_domain = "new-shop.myshopify.com"

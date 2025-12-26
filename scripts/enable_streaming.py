@@ -10,13 +10,13 @@ from src.main.db.db_models import Plan
 def enable_streaming():
     db = SessionLocal()
     try:
-        plan = db.query(Plan).filter(Plan.name == "Basic Agent").first()
+        plan = db.query(Plan).filter(Plan.name == "Pro").first()
         if plan:
             plan.can_stream_responses = True
             db.commit()
             print(f"✅ Enabled streaming for plan: {plan.name}")
         else:
-            print("❌ Plan 'Basic Agent' not found.")
+            print("❌ Plan 'Pro' not found.")
     except Exception as e:
         print(f"❌ Error: {e}")
         db.rollback()
