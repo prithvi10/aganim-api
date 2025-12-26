@@ -41,31 +41,17 @@ async def process_generation_request(
     if request.stream and not plan.can_stream_responses:
         raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
 
-    try:
-        # 3. Handle Streaming
-        if request.stream:
-            logger.info(f"🌊 Initiating Streaming Response for: {shop}")
-            return openai_service.create_streaming_response(
-                product_name=request.product_name,
-                category=request.category,
-                japanese_description=request.japanese_description,
-                db=db,
-                user_id=user_id,
-                billing_cycle_start=billing_cycle_start,
-                system_prompt=dynamic_prompt
-            )
+    # 3. Build dynamic prompt with locale + market persona
+    locale_persona_map = {
+        "en": "US Amazon Market",
+        "zh-TW": "Taiwan Shopee Market (use Taiwanese Mandarin and emphasize CP値/CP ratio)",
+        "ko": "Korean Coupang Market (use natural Korean marketing tone)"
+    }
 
-        # 4. Handle Standard Request
-        locale_persona_map = {
-            "en": "US Amazon Market",
-            "zh-TW": "Taiwan Shopee Market (use Taiwanese Mandarin and emphasize CP値/CP ratio)",
-            "ko": "Korean Coupang Market (use natural Korean marketing tone)"
-        }
+    target_locale = request.target_locale or "en"
+    market_persona = locale_persona_map.get(target_locale, "Global English Market")
 
-        target_locale = request.target_locale or "en"
-        market_persona = locale_persona_map.get(target_locale, "Global English Market")
-
-        dynamic_prompt = f"""{SYSTEM_PROMPT}
+    dynamic_prompt = f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
 MARKET PERSONA: {market_persona}
@@ -81,6 +67,21 @@ SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
 """
 
+    try:
+        # 4. Handle Streaming
+        if request.stream:
+            logger.info(f"🌊 Initiating Streaming Response for: {shop}")
+            return openai_service.create_streaming_response(
+                product_name=request.product_name,
+                category=request.category,
+                japanese_description=request.japanese_description,
+                db=db,
+                user_id=user_id,
+                billing_cycle_start=billing_cycle_start,
+                system_prompt=dynamic_prompt
+            )
+
+        # 5. Handle Standard Request
         processed_description = detect_and_label_sections(request.japanese_description)
 
         openai_response = openai_service.generate_copy(
@@ -90,7 +91,7 @@ SECTION TAGS:
             system_prompt=dynamic_prompt
         )
         
-        # 5. Usage Metering
+        # 6. Usage Metering
         total_tokens_used = 0
         if hasattr(openai_response, 'usage') and openai_response.usage:
             total_tokens_used = openai_response.usage.total_tokens
@@ -113,7 +114,7 @@ SECTION TAGS:
                     "description": raw_content
                 }
 
-        # 6. Save Changes to Shopify
+        # 7. Save Changes to Shopify
         if request.product_id:
             access_token = get_shop_access_token(db, shop)
             if not access_token:

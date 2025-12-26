@@ -2,6 +2,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 from src.main.service.open_ai_api_service import OpenAIService
 
+from src.main.config.configs import OPENAI_MAX_TOKENS
+
 @pytest.fixture
 def mock_openai_client():
     with patch("src.main.service.open_ai_api_service.OpenAI") as mock_openai:
@@ -27,12 +29,12 @@ def test_generate_copy_success(mock_openai_client):
     # The service now returns the full response object
     assert result == mock_response
     assert result.choices[0].message.content == "Generated Copy"
-    
+
     # Verify calls
     mock_instance.chat.completions.create.assert_called_once()
     call_kwargs = mock_instance.chat.completions.create.call_args[1]
     assert call_kwargs["model"] == "gpt-4o-mini"
-    assert call_kwargs["max_tokens"] == 500
+    assert call_kwargs["max_tokens"] == OPENAI_MAX_TOKENS
 
 
 

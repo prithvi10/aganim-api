@@ -3,7 +3,7 @@ import os
 # OpenAI Configuration
 OPENAI_MODEL = "gpt-4o-mini"
 OPENAI_TEMPERATURE = 0.5
-OPENAI_MAX_TOKENS = 500
+OPENAI_MAX_TOKENS = 700
 
 # Defaults
 DEFAULT_PRODUCT_CATEGORY = "General Goods"
@@ -30,7 +30,7 @@ Transform a factual Japanese product description into localized, benefit-driven 
 ### JSON STRUCTURE:
 {
   "title": "Headline",
-  "description": "<div class=\"ai-generated-description\"><h2>Header</h2><h4>✨ Subheader</h4><ul><li>Feature</li></ul><table><tr><th>Size</th><td>...</td></tr><tr><th>Care</th><td>...</td></tr><tr><th>Tailoring</th><td>...</td></tr><tr><th>Includes</th><td>...</td></tr></table><p>Benefit-driven copy...</p></div>"
+  "description": "<div class=\"ai-generated-description\"><h2>Header</h2><h4>Subheader</h4><ul><li>Feature</li></ul><table><tr><th>Size</th><td>...</td></tr><tr><th>Care</th><td>...</td></tr><tr><th>Tailoring</th><td>...</td></tr><tr><th>Includes</th><td>...</td></tr></table><p>Benefit-driven copy...</p></div>"
 }
 
 ### LOCALIZATION GUIDANCE (DYNAMIC, WILL BE INJECTED):
@@ -41,7 +41,7 @@ Transform a factual Japanese product description into localized, benefit-driven 
 
 ### ARCHITECTURAL RULES:
 1. Preserve divisions: If source text has separate blocks (Taste, How to use, Specs), keep them distinct. Output separate <h3> blocks for each section label.
-2. Visual hierarchy: <h2> (overall heading) optional, <h3> for section headers, <h4> with emojis for subheaders; use <hr /> between major logical sections.
+2. Visual hierarchy: <h2> (overall heading) optional, <h3> for section headers, <h4> for subheaders; use <hr /> between major logical sections.
 3. Data representation: Use <table> for numeric or step-by-step data. Specs: [Attribute, Value]. Prep: [Step, Detail] or [Ingredient, Amount]. Required rows: Size, Care, Tailoring, Includes.
 4. Sensory scales: For taste/strength, include visual indicators (e.g., Strength: ●●●○○ Rich).
 """
