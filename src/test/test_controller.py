@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from sqlalchemy.orm import Session
 from datetime import date
 
@@ -68,27 +68,29 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
     # But we MUST provide the 'shop' query parameter as the controller manually extracts it.
 
     with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
-        with patch("src.main.api.controller.update_token_usage"):
-            with patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response):
-                
-                response = client.post(
-                    "/api/proxy/generate-copy?shop=test-shop.myshopify.com",
-                    json={
-                        "product_name": "Proxy Product",
-                        "japanese_description": "Proxy Desc",
-                        "category": "Proxy Cat"
-                    }
-                )
+        with patch("src.main.api.controller.process_generation_request", new_callable=AsyncMock) as mock_process:
+            mock_process.return_value = {
+                "status": "success",
+                "data": {"title": "My Title", "description": "My Description"}
+            }
+            
+            response = client.post(
+                "/api/proxy/generate-copy?shop=test-shop.myshopify.com",
+                json={
+                    "product_name": "Proxy Product",
+                    "japanese_description": "Proxy Desc",
+                    "category": "Proxy Cat"
+                }
+            )
 
-                assert response.status_code == 200
-                json_resp = response.json()
-                assert json_resp["status"] == "success"
-                assert json_resp["data"]["title"] == "My Title"
-                assert json_resp["data"]["description"] == "My Description"
-                
-                mock_validate.assert_called_once()
-                args, _ = mock_validate.call_args
-                assert args[1] == "test-shop.myshopify.com" 
+            assert response.status_code == 200
+            json_resp = response.json()
+            assert json_resp["status"] == "success"
+            assert json_resp["data"]["title"] == "My Title"
+            assert json_resp["data"]["description"] == "My Description"
+            
+            mock_validate.assert_called_once()
+            mock_process.assert_called_once()
 
 def test_proxy_generate_copy_missing_shop():
     """Test proxy endpoint fails correctly when shop param is missing."""

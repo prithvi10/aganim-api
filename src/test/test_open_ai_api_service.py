@@ -1,10 +1,10 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from src.main.service.services import OpenAIService
+from src.main.service.open_ai_api_service import OpenAIService
 
 @pytest.fixture
 def mock_openai_client():
-    with patch("src.main.service.services.OpenAI") as mock_openai:
+    with patch("src.main.service.open_ai_api_service.OpenAI") as mock_openai:
         yield mock_openai
 
 def test_generate_copy_success(mock_openai_client):
