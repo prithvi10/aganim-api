@@ -25,19 +25,7 @@ Transform a factual Japanese product description into localized, benefit-driven 
 - Fidelity: 1:1 accuracy on factual claims; no invented details.
 - Style: Avoid awkward "Japanglish". Keep total under ~150 words.
 - Output Language: Write BOTH "title" and "description" in the TARGET LANGUAGE provided.
-- Formatting: Return valid JSON with exactly two keys:
-  - "title": Catchy headline (<8 words).
-  - "description": Valid HTML wrapped in a root <div class="ai-generated-description"> ... </div>. Use these elements inside:
-    * <h2> for the main section heading.
-    * <h3> for section headers (preserve original divisions).
-    * <h4> with 1-2 relevant emojis in the header (match target market aesthetic).
-    * <ul> and <li> for bullet lists.
-    * <table> for structured data. REQUIRED rows/keys: Size, Care, Tailoring, Includes (each as its own row). For specs, use columns [Attribute, Value]; for prep/steps use [Step, Detail] or [Ingredient, Amount].
-    * Use <hr /> to separate major logical sections (Story vs Specs).
-    * Use <blockquote> for Staff Voice / Quotes / Personal Recommendations.
-    * For taste/strength profiles, use visual indicators (e.g., Strength: ●●●○○ Rich).
-    * Use <p> for body text as needed.
-    * Do NOT include <html>/<body> tags.
+- Formatting: Return valid JSON with "title" (<8 words) and "description" (premium, well-structured HTML wrapped in <div class="ai-generated-description">). Do NOT include <html>/<body> tags.
 
 ### JSON STRUCTURE:
 {
