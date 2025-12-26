@@ -20,7 +20,8 @@ SCOPES = "read_products,write_products,read_locales,read_translations,write_tran
 SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
 
 from src.main.security.ratelimiter import InMemoryRateLimiter
-from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG
+from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG, SYSTEM_PROMPT
+from src.main.utils.text_processor import detect_and_label_sections
 from src.main.logging.logger import get_logger
 from src.main.db.database import get_db
 from src.main.db.db_transactions import update_token_usage, get_plan_by_name, store_shop_access_token, get_shop_access_token
@@ -106,10 +107,41 @@ async def _process_generation_request(
             )
 
         # 4. Handle Standard Request
+        # Build dynamic prompt with locale + market persona
+        locale_persona_map = {
+            "en": "US Amazon Market",
+            "zh-TW": "Taiwan Shopee Market (use Taiwanese Mandarin and emphasize CP値/CP ratio)",
+            "ko": "Korean Coupang Market (use natural Korean marketing tone)"
+        }
+
+        # Determine primary locale early (may be updated later when we fetch shop info)
+        target_locale = request.target_locale or "en"
+        market_persona = locale_persona_map.get(target_locale, "Global English Market")
+
+        dynamic_prompt = f"""{SYSTEM_PROMPT}
+
+TARGET LANGUAGE: {target_locale}
+MARKET PERSONA: {market_persona}
+
+ADDITIONAL LOCALIZATION RULES:
+- Write both "title" and "description" in the TARGET LANGUAGE ({target_locale}) only.
+- Use local idioms and market-specific triggers for {market_persona}. Avoid literal English/Japanese if not the target.
+- For zh-TW: prefer Taiwanese Mandarin expressions and highlight CP値/CP ratio.
+- For ko: keep tone natural for Korean shoppers.
+- Keep JSON shape exactly: {{"title": "...", "description": "..."}}.
+
+SECTION TAGS:
+- The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
+"""
+
+        # Pre-process Japanese text to detect and label sections
+        processed_description = detect_and_label_sections(request.japanese_description)
+
         openai_response = openai_service.generate_copy(
             product_name=request.product_name,
             category=request.category,
-            japanese_description=request.japanese_description
+            japanese_description=processed_description,
+            system_prompt=dynamic_prompt
         )
         
         # 5. Usage Metering (Atomic Update)
