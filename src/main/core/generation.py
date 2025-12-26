@@ -209,18 +209,22 @@ async def process_bulk_generation_request(
         
         success_locales = []
         failed_locales = []
+        results_data = {}
         
         for res in results:
             if isinstance(res, Exception):
                 logger.error(f"Bulk item failed: {res}")
                 failed_locales.append(str(res))
             else:
-                success_locales.append(res["locale"])
+                locale = res["locale"]
+                success_locales.append(locale)
+                results_data[locale] = res["data"]
 
         return {
             "status": "success",
             "processed": success_locales,
-            "failed": failed_locales
+            "failed": failed_locales,
+            "results": results_data
         }
     except HTTPException:
         raise
