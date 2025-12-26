@@ -29,22 +29,25 @@ class OpenAIService:
         )
         self.system_prompt = SYSTEM_PROMPT
 
-    def generate_copy(self, product_name: str, category: str, japanese_description: str) -> object:
+    def generate_copy(self, product_name: str, category: str, japanese_description: str, system_prompt: str | None = None) -> object:
         user_content = f"""
         Product Name: {product_name}
         Category: {category}
-        Original Japanese Text:
+        The following Japanese text is pre-labeled with [Section] tags. Translate and beautify EACH section individually, preserving order and structure. Use the Architectural Rules from the system prompt.
+        Pre-labeled Japanese Text:
         {japanese_description}
         """
         
         logger.info(f"Rewriting description using AI for product: {product_name}")
         logger.debug(f"User Content: {user_content}")
+
+        prompt_to_use = system_prompt or self.system_prompt
         
         # Non-streaming call
         response = self.client.chat.completions.create(
             model=OPENAI_MODEL, 
             messages=[
-                {"role": "system", "content": self.system_prompt},
+                {"role": "system", "content": prompt_to_use},
                 {"role": "user", "content": user_content}
             ],
             temperature=OPENAI_TEMPERATURE,
@@ -53,7 +56,7 @@ class OpenAIService:
         
         return response # Return full object to access usage stats
 
-    def generate_copy_stream(self, product_name: str, category: str, japanese_description: str):
+    def generate_copy_stream(self, product_name: str, category: str, japanese_description: str, system_prompt: str | None = None):
         """
         Returns a generator (stream) from OpenAI.
         """
@@ -66,11 +69,13 @@ class OpenAIService:
         
         logger.info(f"Stream-Rewriting description for product: {product_name}")
         
+        prompt_to_use = system_prompt or self.system_prompt
+
         # Streaming call
         stream = self.client.chat.completions.create(
             model=OPENAI_MODEL, 
             messages=[
-                {"role": "system", "content": self.system_prompt},
+                {"role": "system", "content": prompt_to_use},
                 {"role": "user", "content": user_content}
             ],
             temperature=OPENAI_TEMPERATURE,
