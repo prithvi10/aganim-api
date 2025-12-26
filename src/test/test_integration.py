@@ -85,7 +85,7 @@ def test_integration_generate_copy_flow(client, setup_data):
     mock_openai_response.choices = [MagicMock(message=MagicMock(content='{"title": "Int Title", "description": "Int Desc"}'))]
     mock_openai_response.usage.total_tokens = 50
 
-    with patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate:
+    with patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate:
         
         # Use proxy endpoint (manual shop extraction)
         response = client.post(

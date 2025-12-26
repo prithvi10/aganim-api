@@ -1,45 +1,34 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+import secrets
+import os
+
 from .models import RewriteRequest, OnboardingRequest
-from src.main.db.db_models import User, Shop
-from src.main.service.services import OpenAIService
+from src.main.db.db_models import User
+from src.main.db.database import get_db
+from src.main.db.db_transactions import get_plan_by_name, store_shop_access_token
 from src.main.security.security import (
-    get_api_key_hash, 
     verify_shopify_session, 
     verify_webhook_signature, 
     verify_shopify_redirect,
-    verify_shopify_proxy_request, 
     SHOPIFY_API_KEY,
     SHOPIFY_API_SECRET
 )
-import secrets
-import json
-
-SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
-SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
-
-from src.main.security.ratelimiter import InMemoryRateLimiter
-from src.main.config.configs import LOCAL_RATE_LIMIT_CONFIG, SYSTEM_PROMPT
-from src.main.utils.text_processor import detect_and_label_sections
-from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
-from src.main.logging.logger import get_logger
-from src.main.db.database import get_db
-from src.main.db.db_transactions import update_token_usage, get_plan_by_name, store_shop_access_token, get_shop_access_token
-from src.main.service.streaming_utils import create_streaming_response
-from src.main.service.shopify_service import save_product_content_with_locale
-from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota 
+from src.main.api.validation import validate_rewrite_request, validate_shop_and_quota 
 from src.main.service.onboarding import onboard_user
-import httpx
-import os
-import re
+from src.main.logging.logger import get_logger
+
+# Import core business logic
+from src.main.core.generation import process_generation_request
+from src.main.core.shop import fetch_shop_locales
 
 logger = get_logger(__name__)
 
 router = APIRouter()
-limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
-openai_service = OpenAIService()
 
+SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
+SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
 
 # ==============================================================================
 #  0. OAUTH ENTRY POINT (Install App)
@@ -48,14 +37,12 @@ openai_service = OpenAIService()
 async def install_app(shop: str = Query(..., description="Shopify Shop Domain")):
     """
     Redirects the user to Shopify's OAuth authorization page.
-    This is the entry point when a merchant installs the app.
     """
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
     
     state = secrets.token_hex(16)
     
-    # Construct Authorization URL
     authorization_url = (
         f"https://{shop}/admin/oauth/authorize?"
         f"client_id={SHOPIFY_API_KEY}&"
@@ -68,181 +55,13 @@ async def install_app(shop: str = Query(..., description="Shopify Shop Domain"))
 
 
 # ==============================================================================
-#  SHARED CORE LOGIC (Refactored to avoid duplication)
-# ==============================================================================
-async def _process_generation_request(
-    db: Session,
-    request: RewriteRequest,
-    user: User,
-    plan,
-    user_id: int, # Changed from api_key_id
-    billing_cycle_start
-):
-    """
-    Common logic for processing generation requests.
-    Handles Rate Limiting, Streaming checks, OpenAI calls, and Usage Metering.
-    """
-    shop = user.username
-
-    # 1. Check Rate Limit
-    if not limiter.is_allowed(shop):
-        logger.warning(f"Rate limit exceeded for shop: {shop}")
-        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
-    
-    # 2. Check Streaming Capability
-    if request.stream and not plan.can_stream_responses:
-        raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
-
-    try:
-        # 3. Handle Streaming
-        if request.stream:
-            logger.info(f"🌊 Initiating Streaming Response for: {shop}")
-            # Note: create_streaming_response likely needs updating too if it uses api_key_id internally
-            # We will update it in a separate step or verify it takes **kwargs
-            return create_streaming_response(
-                openai_service=openai_service,
-                product_name=request.product_name,
-                category=request.category,
-                japanese_description=request.japanese_description,
-                db=db,
-                user_id=user_id, # Pass user_id instead of api_key_id
-                billing_cycle_start=billing_cycle_start
-            )
-
-        # 4. Handle Standard Request
-        # Build dynamic prompt with locale + market persona
-        locale_persona_map = {
-            "en": "US Amazon Market",
-            "zh-TW": "Taiwan Shopee Market (use Taiwanese Mandarin and emphasize CP値/CP ratio)",
-            "ko": "Korean Coupang Market (use natural Korean marketing tone)"
-        }
-
-        # Determine primary locale early (may be updated later when we fetch shop info)
-        target_locale = request.target_locale or "en"
-        market_persona = locale_persona_map.get(target_locale, "Global English Market")
-
-        dynamic_prompt = f"""{SYSTEM_PROMPT}
-
-TARGET LANGUAGE: {target_locale}
-MARKET PERSONA: {market_persona}
-
-ADDITIONAL LOCALIZATION RULES:
-- Write both "title" and "description" in the TARGET LANGUAGE ({target_locale}) only.
-- Use local idioms and market-specific triggers for {market_persona}. Avoid literal English/Japanese if not the target.
-- For zh-TW: prefer Taiwanese Mandarin expressions and highlight CP値/CP ratio.
-- For ko: keep tone natural for Korean shoppers.
-- Keep JSON shape exactly: {{"title": "...", "description": "..."}}.
-
-SECTION TAGS:
-- The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
-"""
-
-        # Pre-process Japanese text to detect and label sections
-        processed_description = detect_and_label_sections(request.japanese_description)
-
-        openai_response = openai_service.generate_copy(
-            product_name=request.product_name,
-            category=request.category,
-            japanese_description=processed_description,
-            system_prompt=dynamic_prompt
-        )
-        
-        # 5. Usage Metering (Atomic Update)
-        total_tokens_used = 0
-        if hasattr(openai_response, 'usage') and openai_response.usage:
-            total_tokens_used = openai_response.usage.total_tokens
-        
-        if total_tokens_used > 0:
-            update_token_usage(db, user_id, total_tokens_used, billing_cycle_start)
-
-        # Parse JSON response
-        raw_content = openai_response.choices[0].message.content
-        parsed_content = parse_llm_json(raw_content)
-        if not parsed_content:
-            recovered = recover_title_desc(raw_content)
-            if recovered:
-                logger.warning(f"⚠️ LLM JSON parse failed; recovered fields for {shop}.")
-                parsed_content = recovered
-            else:
-                logger.warning(f"⚠️ LLM did not return valid JSON for {shop}. Returning raw text as description.")
-                parsed_content = {
-                    "title": "Generated Copy",
-                    "description": raw_content
-                }
-
-        # ----------------------------------------------------------------------
-        # 6. Save Changes to Shopify (REST or GraphQL based on Locale)
-        # ----------------------------------------------------------------------
-        if request.product_id:
-            access_token = get_shop_access_token(db, shop)
-            if not access_token:
-                logger.error(f"❌ Access Token missing for shop {shop} during product update.")
-                raise HTTPException(status_code=500, detail="Shopify Access Token not found. Re-install app.")
-
-            # Safely get title/desc or fall back
-            final_title = parsed_content.get("title", "Translated Product")
-            final_desc = parsed_content.get("description", raw_content)
-
-            shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
-            headers = {
-                "X-Shopify-Access-Token": access_token,
-                "Content-Type": "application/json"
-            }
-
-            # A. FETCH PRIMARY LOCALE (To check if we are updating Default or Secondary)
-            primary_locale = "en"  # Default Fallback
-            try:
-                shop_info_url = f"https://{shop}/admin/api/{shopify_api_version}/shop.json"
-                async with httpx.AsyncClient() as client:
-                    shop_resp = await client.get(shop_info_url, headers=headers)
-                    if shop_resp.status_code == 200:
-                        primary_locale = shop_resp.json().get("shop", {}).get("primary_locale", "en")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to fetch primary locale, assuming 'en': {e}")
-
-            target_locale = request.target_locale or primary_locale
-
-            logger.info(f"🔄 Updating Shopify: Target={target_locale}, Primary={primary_locale}")
-
-            try:
-                await save_product_content_with_locale(
-                    shop_domain=shop,
-                    access_token=access_token,
-                    product_id=request.product_id,
-                    title=final_title,
-                    description=final_desc,
-                    target_locale=target_locale,
-                    shop_primary_locale=primary_locale,
-                )
-            except Exception as e:
-                logger.error(f"❌ Failed to save product/translation: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
-
-        logger.info(f"✅ Translated for {shop}. Tokens: {total_tokens_used}")
-        return {
-            "status": "success",
-            "data": parsed_content
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error processing request for {shop}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==============================================================================
 #  1. APP PROXY ENDPOINT (Securely used by Shopify Theme Frontend)
-#     - No API Key required from client (HMAC verified).
-#     - Uses the User ID for metering.
 # ==============================================================================
 @router.post("/api/proxy/generate-copy")
 async def proxy_generate_copy(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    # 1. Parse Body manually (FastAPI Request object) or use pydantic model if JSON matches
-    # Proxy requests are JSON, so we can parse it.
     try:
         body = await request.json()
         rewrite_request = RewriteRequest(**body)
@@ -251,44 +70,37 @@ async def proxy_generate_copy(
 
     validate_rewrite_request(rewrite_request.model_dump())
 
-    # 2. Extract Shop Domain manually from query parameters (since we removed the validating dependency)
     shop_domain = request.query_params.get("shop")
     if not shop_domain:
          raise HTTPException(status_code=400, detail="Missing shop parameter")
 
-    # 3. Lookup User & Quota using just the Shop Domain
     auth_context = validate_shop_and_quota(db, shop_domain)
     
-    # 4. Process
-    return await _process_generation_request(
+    # Delegate business logic to Core layer
+    return await process_generation_request(
         db=db,
         request=rewrite_request,
         user=auth_context["user"],
         plan=auth_context["plan"],
-        user_id=auth_context["user_id"], # Passed from context
+        user_id=auth_context["user_id"],
         billing_cycle_start=auth_context["billing_cycle_start"]
     )
 
 
 # ==============================================================================
 #  2. DIRECT API ENDPOINT (DEPRECATED/REMOVED)
-#     - This endpoint relied on API Keys which are now removed.
-#     - We keep the route but make it return 410 Gone or similar.
 # ==============================================================================
 @router.post("/api/generate-copy")
 async def generate_copy(
     request: RewriteRequest,
-    # key_hash: str = Depends(get_api_key_hash), # Dependency removed to avoid errors
     db: Session = Depends(get_db)
 ):
-    # Explicitly fail
     raise HTTPException(status_code=410, detail="This endpoint is deprecated. Please use the Shopify App Proxy.")
 
 
 # ==============================================================================
 #  3. WEBHOOKS & AUTH (Shopify Admin)
-#  4. ADMIN/SETUP ENDPOINT (Uses Shopify JWT)
-# ------------------------------------------------------------------
+# ==============================================================================
 @router.get("/api/admin/me")
 async def get_admin_info(
     shop: str = Depends(verify_shopify_session)
@@ -300,41 +112,28 @@ async def handle_subscription_activated(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """
-    Shopify Webhook for subscription activation.
-    Triggers the onboarding process for the merchant.
-    """
-    # 1. Shopify Webhook Verification
     await verify_webhook_signature(request)
     
-    # 2. Extract Merchant and Subscription data
     try:
         payload = await request.json()
         shop_domain = payload.get('myshopify_domain')
-        # Note: 'billing_plan' might be nested or named differently depending on the specific webhook topic
-        # For 'app_subscriptions/update', it's often in the 'name' field of the plan object
-        # We'll stick to the user's provided structure for now, but fail gracefully.
         plan_name = payload.get('billing_plan') 
         
         if not shop_domain or not plan_name:
             logger.warning("Webhook payload missing 'myshopify_domain' or 'billing_plan'")
-            return Response(status_code=200) # Return 200 to acknowledge receipt
+            return Response(status_code=200)
 
-        # 3. Resolve Plan
         plan = get_plan_by_name(db, plan_name)
         if not plan:
             logger.warning(f"Webhook received for unknown plan: {plan_name}")
             return Response(status_code=200)
 
-        # 4. Call Core Onboarding Service
         onboarding_req = OnboardingRequest(
             username=shop_domain,
             plan_id=plan.id,
-            email=payload.get('email') # Optional: try to get email if available
+            email=payload.get('email')
         )
         
-        # We catch exceptions because we want to acknowledge the webhook with 200 OK 
-        # even if our logic fails (e.g. duplicate user), to stop Shopify from retrying.
         try:
             onboard_user(db, onboarding_req)
             logger.info(f"Webhook successfully onboarded user: {shop_domain}")
@@ -348,22 +147,14 @@ async def handle_subscription_activated(
 
     except Exception as e:
         logger.error(f"Error parsing webhook payload: {e}")
-        # Still return 200 to prevent retry storms if payload is malformed
         return Response(status_code=200)
 
-    # 5. Success response
     return Response(status_code=200)
 
 @router.get("/api/auth/callback")
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
-    """
-    Shopify OAuth Redirect Handler.
-    Validates HMAC and exchanges code for access token.
-    This URL must be whitelisted in Shopify Partner Dashboard.
-    """
     params = dict(request.query_params)
     
-    # 1. Verify HMAC
     try:
         verify_shopify_redirect(params)
     except HTTPException as e:
@@ -377,8 +168,6 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     if not code or not shop:
         raise HTTPException(status_code=400, detail="Missing code or shop parameter")
 
-    # 2. Exchange code for access token
-    # POST https://{shop}/admin/oauth/access_token
     token_url = f"https://{shop}/admin/oauth/access_token"
     payload = {
         "client_id": SHOPIFY_API_KEY,
@@ -386,30 +175,17 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         "code": code
     }
 
+    import httpx
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(token_url, json=payload)
             response.raise_for_status()
             token_data = response.json()
-            
             access_token = token_data.get("access_token")
-            # Scope can also be checked here if needed
             
             logger.info(f"Successfully exchanged token for shop: {shop}")
-            
-            # 3. Session Creation / Redirect
-            from src.main.db.db_transactions import store_shop_access_token
             store_shop_access_token(db, shop, access_token)
             
-            logger.info(f"Access token successfully stored/updated for shop: {shop}")
-            
-            # In a full app, you would:
-            # - Store the access_token in the DB (encrypted) associated with the shop
-            # - Create a user session (cookie/JWT)
-            # - Redirect the user to the embedded app UI (https://admin.shopify.com/store/...)
-            
-            # For now, we return success to satisfy the Safety Whitelist requirement check
-            # and acknowledge the flow completion.
             return {
                 "status": "success", 
                 "message": "App installed successfully", 
@@ -427,63 +203,12 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
 
 # ==============================================================================
 #  4. SHOP LOCALES ENDPOINT
-#     - Retrieves enabled locales for the shop.
 # ==============================================================================
 @router.get("/api/proxy/shop/locales")
 async def get_shop_locales(request: Request, db: Session = Depends(get_db)):
     """
-    Fetches the enabled locales for the shop using GraphQL.
-    Intended to be called via the App Proxy.
+    Fetches the enabled locales for the shop.
+    Delegates to Core layer.
     """
-    # 1. Extract Shop Domain manually (Proxy Request)
     shop_domain = request.query_params.get("shop")
-    if not shop_domain:
-        # Fallback: Try to get it from signature verification context or header if available
-        # But for proxy, it's usually in the query params.
-        raise HTTPException(status_code=400, detail="Missing shop parameter")
-
-    # 2. Get Access Token
-    access_token = get_shop_access_token(db, shop_domain)
-    if not access_token:
-        raise HTTPException(status_code=401, detail="Shop not authenticated")
-
-    # 3. Construct GraphQL Query
-    graphql_query = """
-    {
-      shopLocales {
-        locale
-        name
-        primary
-        published
-      }
-    }
-    """
-    
-    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
-    graphql_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json"
-    
-    headers = {
-        "X-Shopify-Access-Token": access_token,
-        "Content-Type": "application/json"
-    }
-
-    # 4. Execute Query
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(graphql_url, headers=headers, json={"query": graphql_query})
-            response.raise_for_status()
-            
-            data = response.json()
-            if "errors" in data:
-                 logger.error(f"GraphQL Errors: {data['errors']}")
-                 raise HTTPException(status_code=500, detail="Shopify GraphQL Error")
-            
-            locales = data.get("data", {}).get("shopLocales", [])
-            return {"status": "success", "locales": locales}
-
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Shopify GraphQL Request Failed: {e.response.text}")
-        raise HTTPException(status_code=500, detail="Failed to fetch locales from Shopify")
-    except Exception as e:
-        logger.error(f"Unexpected error fetching locales: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+    return await fetch_shop_locales(db, shop_domain)
