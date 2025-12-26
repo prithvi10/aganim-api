@@ -26,7 +26,7 @@ from src.main.logging.logger import get_logger
 from src.main.db.database import get_db
 from src.main.db.db_transactions import update_token_usage, get_plan_by_name, store_shop_access_token, get_shop_access_token
 from src.main.service.streaming_utils import create_streaming_response
-from src.main.service.shopify_service import create_shopify_translation
+from src.main.service.shopify_service import save_product_content_with_locale
 from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota 
 from src.main.service.onboarding import onboard_user
 import httpx
@@ -207,13 +207,8 @@ SECTION TAGS:
             }
 
             # A. FETCH PRIMARY LOCALE (To check if we are updating Default or Secondary)
-            # --------------------------------------------------------------------------
-            # Note: For efficiency, we could cache this or pass it from frontend, 
-            # but querying ensures truth.
-            primary_locale = "en" # Default Fallback
+            primary_locale = "en"  # Default Fallback
             try:
-                # We can reuse the logic from get_shop_locales or do a quick REST call
-                # REST: GET /admin/api/{version}/shop.json -> shop.primary_locale
                 shop_info_url = f"https://{shop}/admin/api/{shopify_api_version}/shop.json"
                 async with httpx.AsyncClient() as client:
                     shop_resp = await client.get(shop_info_url, headers=headers)
@@ -222,49 +217,23 @@ SECTION TAGS:
             except Exception as e:
                 logger.warning(f"⚠️ Failed to fetch primary locale, assuming 'en': {e}")
 
-
-            # B. DETERMINE UPDATE METHOD
-            # --------------------------------------------------------------------------
             target_locale = request.target_locale or primary_locale
-            
+
             logger.info(f"🔄 Updating Shopify: Target={target_locale}, Primary={primary_locale}")
 
-            async with httpx.AsyncClient() as client:
-                
-                # CASE 1: PRIMARY LOCALE -> UPDATE PRODUCT DIRECTLY (REST API)
-                if target_locale == primary_locale:
-                    product_update_url = f"https://{shop}/admin/api/{shopify_api_version}/products/{request.product_id}.json"
-                    update_payload = {
-                        "product": {
-                            "id": request.product_id,
-                            "title": final_title,
-                            "body_html": final_desc
-                        }
-                    }
-                    response = await client.put(product_update_url, headers=headers, json=update_payload)
-                    
-                    if response.status_code != 200:
-                        logger.error(f"❌ Failed to save product {request.product_id}. Status: {response.status_code}, Detail: {response.text}")
-                        raise HTTPException(status_code=500, detail=f"Failed to update product: {response.status_code}")
-                    else:
-                        logger.info(f"✅ Product {request.product_id} updated (Primary Locale).")
-
-
-                # CASE 2: SECONDARY LOCALE -> CREATE TRANSLATION (GraphQL API)
-                else:
-                    try:
-                        await create_shopify_translation(
-                            shop_domain=shop,
-                            access_token=access_token,
-                            product_id=request.product_id,
-                            title=final_title,
-                            description=final_desc,
-                            target_locale=target_locale
-                        )
-                        logger.info(f"✅ Translation saved for {target_locale} (Product {request.product_id}).")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to save translation: {e}")
-                        raise HTTPException(status_code=500, detail=str(e))
+            try:
+                await save_product_content_with_locale(
+                    shop_domain=shop,
+                    access_token=access_token,
+                    product_id=request.product_id,
+                    title=final_title,
+                    description=final_desc,
+                    target_locale=target_locale,
+                    shop_primary_locale=primary_locale,
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to save product/translation: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
 
         logger.info(f"✅ Translated for {shop}. Tokens: {total_tokens_used}")
         return {

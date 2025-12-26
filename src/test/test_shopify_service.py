@@ -58,7 +58,7 @@ async def test_create_shopify_translation_success(mock_httpx_client):
         shop_domain, access_token, product_id, title, desc, target_locale
     )
 
-    assert result is True
+    assert result is None
     assert mock_httpx_client.post.call_count == 2
     
     # Verify Digest Query

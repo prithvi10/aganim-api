@@ -58,7 +58,7 @@ async def test_integration_multilang_happy_path(mock_auth_context, mock_openai_r
          patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.api.controller.get_shop_access_token", return_value="valid_token"), \
          patch("src.main.api.controller.httpx.AsyncClient") as MockClient, \
-         patch("src.main.api.controller.create_shopify_translation", new_callable=AsyncMock) as mock_create_translation, \
+         patch("src.main.api.controller.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
          patch("src.main.api.controller.limiter.is_allowed", return_value=True): # Mock Rate Limiter
 
         # Setup Client Mock for Primary Locale Check
@@ -67,7 +67,7 @@ async def test_integration_multilang_happy_path(mock_auth_context, mock_openai_r
         mock_client.__aexit__.return_value = None
         mock_client.get = AsyncMock(return_value=mock_shop_info_resp)
 
-        mock_create_translation.return_value = True
+        mock_save_content.return_value = True
 
         # Execute Request
         response = client.post(
@@ -84,9 +84,8 @@ async def test_integration_multilang_happy_path(mock_auth_context, mock_openai_r
         assert response.status_code == 200
         assert response.json()["status"] == "success"
         
-        # Verify that because target != primary, we called the translation service
-        mock_create_translation.assert_called_once()
-        kwargs = mock_create_translation.call_args[1]
+        mock_save_content.assert_called_once()
+        kwargs = mock_save_content.call_args[1]
         assert kwargs["target_locale"] == "fr"
         assert kwargs["product_id"] == 12345
         assert kwargs["title"] == "Translated Title"
@@ -122,7 +121,7 @@ async def test_integration_multilang_missing_locale(mock_auth_context, mock_open
          patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.api.controller.get_shop_access_token", return_value="valid_token"), \
          patch("src.main.api.controller.httpx.AsyncClient") as MockClient, \
-         patch("src.main.api.controller.create_shopify_translation", side_effect=Exception(error_message)), \
+         patch("src.main.api.controller.save_product_content_with_locale", side_effect=Exception(error_message)), \
          patch("src.main.api.controller.limiter.is_allowed", return_value=True): # Mock Rate Limiter
 
         # Setup Client Mock for Primary Locale Check

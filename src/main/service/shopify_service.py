@@ -11,7 +11,7 @@ async def create_shopify_translation(
     title: str,
     description: str,
     target_locale: str
-):
+) -> None:
     """
     Creates or updates a translation for a given product ID using GraphQL.
     Fetches the latest content digest to ensure atomic updates.
@@ -126,9 +126,75 @@ async def create_shopify_translation(
                 logger.error(f"❌ Translation API Errors: {user_errors}")
                 raise Exception(f"Shopify Translation Error: {error_msg}")
             
-            return True
+            return None
 
         except Exception as e:
             logger.error(f"Error registering translation: {e}")
             raise
+
+
+async def register_graphql_translation(
+    shop_domain: str,
+    access_token: str,
+    product_id: int | str,
+    title: str,
+    description: str,
+    target_locale: str
+) -> None:
+    """
+    Wrapper for create_shopify_translation to align naming with controller routing.
+    """
+    return await create_shopify_translation(
+        shop_domain=shop_domain,
+        access_token=access_token,
+        product_id=product_id,
+        title=title,
+        description=description,
+        target_locale=target_locale
+    )
+
+
+async def save_product_content_with_locale(
+    shop_domain: str,
+    access_token: str,
+    product_id: int | str,
+    title: str,
+    description: str,
+    target_locale: str,
+    shop_primary_locale: str,
+) -> None:
+    """
+    Save product content. If target locale is primary, update via REST.
+    Otherwise, register translation via GraphQL.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json"
+    }
+
+    if target_locale == shop_primary_locale:
+        product_update_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/products/{product_id}.json"
+        update_payload = {
+            "product": {
+                "id": product_id,
+                "title": title,
+                "body_html": description
+            }
+        }
+        async with httpx.AsyncClient() as client:
+            resp = await client.put(product_update_url, headers=headers, json=update_payload)
+            if resp.status_code != 200:
+                logger.error(f"❌ Failed REST update {product_id} ({shop_domain}): {resp.status_code} {resp.text}")
+                raise Exception(f"Failed to update product: {resp.status_code}")
+            logger.info(f"✅ Product {product_id} updated (primary locale {shop_primary_locale}).")
+    else:
+        await register_graphql_translation(
+            shop_domain=shop_domain,
+            access_token=access_token,
+            product_id=product_id,
+            title=title,
+            description=description,
+            target_locale=target_locale
+        )
 
