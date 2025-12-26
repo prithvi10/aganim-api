@@ -125,7 +125,7 @@ async def test_controller_updates_secondary_locale_via_graphql(mock_auth_context
          patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.api.controller.get_shop_access_token", return_value="token"), \
          patch("src.main.api.controller.httpx.AsyncClient") as MockClient, \
-         patch("src.main.api.controller.create_shopify_translation", new_callable=AsyncMock) as mock_create_translation, \
+         patch("src.main.api.controller.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
          patch("src.main.api.controller.limiter.is_allowed", return_value=True):
 
         mock_client = MockClient.return_value
@@ -143,9 +143,9 @@ async def test_controller_updates_secondary_locale_via_graphql(mock_auth_context
 
         assert response.status_code == 200
         
-        # Verify GraphQL Service was called
-        mock_create_translation.assert_called_once()
-        kwargs = mock_create_translation.call_args[1]
+        # Verify saving with locale was invoked
+        mock_save_content.assert_called_once()
+        kwargs = mock_save_content.call_args[1]
         assert kwargs["target_locale"] == "fr"
         assert kwargs["product_id"] == 123
 
@@ -163,7 +163,7 @@ async def test_controller_translation_service_failure(mock_auth_context, mock_op
          patch("src.main.api.controller.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.api.controller.get_shop_access_token", return_value="token"), \
          patch("src.main.api.controller.httpx.AsyncClient") as MockClient, \
-         patch("src.main.api.controller.create_shopify_translation", side_effect=Exception("GraphQL Service Down")), \
+         patch("src.main.api.controller.save_product_content_with_locale", side_effect=Exception("GraphQL Service Down")), \
          patch("src.main.api.controller.limiter.is_allowed", return_value=True):
 
         mock_client = MockClient.return_value
