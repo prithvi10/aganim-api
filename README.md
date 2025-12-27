@@ -2,6 +2,63 @@
 
 A robust FastAPI-based backend designed to generate localized, high-quality English product descriptions from Japanese inputs for Shopify stores. This service leverages OpenAI for content generation and includes enterprise-grade features like rate limiting, usage-based billing quotas, and response streaming.
 
+## 🏗️ Architecture
+
+```mermaid
+graph TD
+    subgraph "Shopify Cloud"
+        Store[Shopify Storefront / Admin]
+        API_S[Shopify Admin API]
+    end
+
+    subgraph "Frontend: shopify-translator-ui (Remix/Express)"
+        UI[App Dashboard / Plans Page]
+        ServerUI[Shopify App Server]
+    end
+
+    subgraph "Backend: shopify-translator-api (FastAPI/Python)"
+        FastAPI[API Controllers]
+        Core[Core Business Logic]
+        DB[(PostgreSQL)]
+        LLM[OpenAI GPT-4o-mini]
+    end
+
+    %% Flow 1: Installation & Billing
+    Store -- 1. Install/Open App --> UI
+    UI -- 2. Manage Plans --> Store
+    Store -- 3. Billing Webhook --> FastAPI
+    FastAPI -- 4. Update Plan --> DB
+
+    %% Flow 2: Product Translation (The "Magic")
+    Store -- 5. App Proxy Request --> FastAPI
+    FastAPI -- 6. Check Quota/Plan --> DB
+    FastAPI -- 7. Generate Copy --> LLM
+    FastAPI -- 8. Save Translation --> API_S
+    API_S -- 9. Persistence --> Store
+```
+
+### Component Roles
+
+#### **1. Frontend: `shopify-translator-ui` (The Interface)**
+*   **Technology:** React (Polaris) + Remix/Express.
+*   **Purpose:** This is the "Admin Dashboard." It handles:
+    *   **Onboarding:** The initial OAuth handshake.
+    *   **Billing:** The native Shopify Plans selection UI.
+    *   **Settings:** Merchant-facing configuration and plan management.
+
+#### **2. Backend: `shopify-translator-api` (The Engine)**
+*   **Technology:** Python (FastAPI) + PostgreSQL.
+*   **Purpose:** This is the logic layer that performs the heavy lifting.
+    *   **LLM Processing:** Translates and beautifies product descriptions using market-specific personas.
+    *   **Shopify Integration:** Routes updates via REST (primary locale) or GraphQL (secondary locales).
+    *   **Usage Tracking:** Monitors token usage and enforces plan-based quotas.
+
+#### **3. Shopify Integration (The Ecosystem)**
+*   **The Widget:** Injected into the Product Admin via Theme App Extensions.
+*   **App Proxy:** Securely forwards frontend requests to the FastAPI backend without exposing raw credentials.
+
+---
+
 ## 🚀 Overview
 
 This application serves as the backend for a Shopify App. It provides two main interfaces:
