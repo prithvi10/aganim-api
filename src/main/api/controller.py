@@ -143,11 +143,26 @@ async def handle_subscription_activated(
     
     try:
         payload = await request.json()
-        shop_domain = payload.get('myshopify_domain')
-        plan_name = payload.get('billing_plan') 
+        # Shopify standard webhook for APP_SUBSCRIPTIONS_UPDATE
+        # Check for both custom payload and standard Shopify payload
+        app_subscription = payload.get('app_subscription', {})
         
+        if app_subscription:
+            # Standard Shopify webhook
+            shop_domain = request.headers.get("X-Shopify-Shop-Domain")
+            plan_name = app_subscription.get('name')
+            status = app_subscription.get('status')
+            
+            if status != "ACTIVE":
+                logger.info(f"Subscription update for {shop_domain} with status {status}. Skipping onboarding.")
+                return Response(status_code=200)
+        else:
+            # Fallback for manual/custom triggers
+            shop_domain = payload.get('myshopify_domain')
+            plan_name = payload.get('billing_plan')
+            
         if not shop_domain or not plan_name:
-            logger.warning("Webhook payload missing 'myshopify_domain' or 'billing_plan'")
+            logger.warning("Webhook payload missing shop domain or plan name")
             return Response(status_code=200)
 
         plan = get_plan_by_name(db, plan_name)
@@ -158,7 +173,7 @@ async def handle_subscription_activated(
         onboarding_req = OnboardingRequest(
             username=shop_domain,
             plan_id=plan.id,
-            email=payload.get('email')
+            email=payload.get('email') or f"contact@{shop_domain}"
         )
         
         try:
