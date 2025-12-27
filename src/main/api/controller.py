@@ -228,12 +228,16 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             logger.info(f"Successfully exchanged token for shop: {shop}")
             store_shop_access_token(db, shop, access_token)
             
-            return {
-                "status": "success", 
-                "message": "App installed successfully", 
-                "shop": shop,
-                "host": host
-            }
+            # Redirect back to the Shopify Admin embedded app page
+            # Use the host parameter provided by Shopify to stay in the correct admin context
+            if host:
+                return RedirectResponse(
+                    url=f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}/app?host={host}"
+                )
+            else:
+                return RedirectResponse(
+                    url=f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}/app"
+                )
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Token exchange failed: {e.response.text}")
