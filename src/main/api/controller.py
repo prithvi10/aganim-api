@@ -17,6 +17,7 @@ from src.main.security.security import (
 )
 from src.main.api.validation import validate_rewrite_request, validate_shop_and_quota 
 from src.main.service.onboarding import onboard_user
+from src.main.config.configs import SHOPIFY_UI_URL
 from src.main.logging.logger import get_logger
 
 # Import core business logic
@@ -231,6 +232,8 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             # Redirect to the Remix UI's login route to ensure the UI also authenticates
             # The Remix app will handle the second half of the handshake and then load the embedded app
             ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"
+            if host:
+                ui_login_url += f"&host={host}"
             return RedirectResponse(url=ui_login_url)
 
     except httpx.HTTPStatusError as e:
