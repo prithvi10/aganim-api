@@ -227,7 +227,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             access_token = token_data.get("access_token")
             
             logger.info(f"Successfully exchanged token for shop: {shop}")
-            logger.debug(f"Auth callback params: host={host}, state={params.get('state')}, timestamp={params.get('timestamp')}")
+            logger.info(f"Auth callback params: host={host}, state={params.get('state')}, timestamp={params.get('timestamp')}")
             store_shop_access_token(db, shop, access_token)
             
             # Redirect to the Remix UI's login route to ensure the UI also authenticates
