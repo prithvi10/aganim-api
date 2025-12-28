@@ -73,23 +73,23 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
                 "status": "success",
                 "data": {"title": "My Title", "description": "My Description"}
             }
-                
-                response = client.post(
-                    "/api/proxy/generate-copy?shop=test-shop.myshopify.com",
-                    json={
-                        "product_name": "Proxy Product",
-                        "japanese_description": "Proxy Desc",
-                        "category": "Proxy Cat"
-                    }
-                )
+            
+            response = client.post(
+                "/api/proxy/generate-copy?shop=test-shop.myshopify.com",
+                json={
+                    "product_name": "Proxy Product",
+                    "japanese_description": "Proxy Desc",
+                    "category": "Proxy Cat"
+                }
+            )
 
-                assert response.status_code == 200
-                json_resp = response.json()
-                assert json_resp["status"] == "success"
-                assert json_resp["data"]["title"] == "My Title"
-                assert json_resp["data"]["description"] == "My Description"
-                
-                mock_validate.assert_called_once()
+            assert response.status_code == 200
+            json_resp = response.json()
+            assert json_resp["status"] == "success"
+            assert json_resp["data"]["title"] == "My Title"
+            assert json_resp["data"]["description"] == "My Description"
+            
+            mock_validate.assert_called_once()
             mock_process.assert_called_once()
 
 def test_proxy_generate_copy_missing_shop():
