@@ -228,16 +228,10 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             logger.info(f"Successfully exchanged token for shop: {shop}")
             store_shop_access_token(db, shop, access_token)
             
-            # Redirect back to the Shopify Admin embedded app page
-            # Use the host parameter provided by Shopify to stay in the correct admin context
-            if host:
-                return RedirectResponse(
-                    url=f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}/app?host={host}"
-                )
-            else:
-                return RedirectResponse(
-                    url=f"https://{shop}/admin/apps/{SHOPIFY_API_KEY}/app"
-                )
+            # Redirect to the Remix UI's login route to ensure the UI also authenticates
+            # The Remix app will handle the second half of the handshake and then load the embedded app
+            ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"
+            return RedirectResponse(url=ui_login_url)
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Token exchange failed: {e.response.text}")
