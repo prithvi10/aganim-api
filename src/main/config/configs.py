@@ -73,3 +73,6 @@ ALLOWED_ORIGINS = [
 DEPLOYED_APP_URL = os.getenv("DEPLOYED_APP_URL")
 if DEPLOYED_APP_URL:
     ALLOWED_ORIGINS.append(DEPLOYED_APP_URL)
+
+# UI Frontend URL (for redirects)
+SHOPIFY_UI_URL = os.getenv("SHOPIFY_UI_URL", "https://shopify-translator-ui.onrender.com")
