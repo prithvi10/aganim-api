@@ -28,11 +28,11 @@ def seed_data():
                     max_request_rate=p_data["rate"],
                     can_stream_responses=p_data["stream"],
                     is_active=True
-                )
+            )
                 db.add(plan)
                 print(f"✅ Created {p_data['name']} Plan")
         
-        db.commit()
+            db.commit()
 
         # 2. Create Test User (linked to Basic)
         basic_plan = db.query(Plan).filter(Plan.name == "Basic").first()
