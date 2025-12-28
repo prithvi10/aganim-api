@@ -104,15 +104,15 @@ def test_integration_oauth_handshake(client): # Inject client fixture
     # We need to patch the secrets in both security (for validation) and controller (for exchange)
     with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
          patch("src.main.api.controller.SHOPIFY_API_KEY", MOCK_INTEGRATION_KEY), \
-         patch("src.main.api.controller.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET):
+         patch("src.main.api.controller.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
+         patch("src.main.api.controller.SHOPIFY_UI_URL", "https://ui.test.com"):
         
-        response = client.get("/api/auth/callback", params=params)
+        response = client.get("/api/auth/callback", params=params, follow_redirects=False)
         
         # 4. Verifications
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "success"
-        assert data["shop"] == shop_domain
+        assert response.status_code == 307
+        assert response.headers["location"].startswith("https://ui.test.com/auth/login")
+        assert shop_domain in response.headers["location"]
         
         # Verify Shopify API was called correctly
         assert mock_shopify.called

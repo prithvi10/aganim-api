@@ -83,13 +83,16 @@ def test_auth_callback_success(client, auth_params):
     
     with patch("src.main.api.controller.SHOPIFY_API_KEY", MOCK_API_KEY), \
          patch("src.main.api.controller.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
-         patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET):
+         patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
+         patch("src.main.api.controller.SHOPIFY_UI_URL", "https://ui.test.com"):
         
-        response = client.get("/api/auth/callback", params=params)
+        # We set follow_redirects=False to inspect the RedirectResponse
+        response = client.get("/api/auth/callback", params=params, follow_redirects=False)
         
-        assert response.status_code == 200
-        assert response.json()["status"] == "success"
-        assert response.json()["shop"] == auth_params["shop"]
+        # RedirectResponse defaults to 307
+        assert response.status_code == 307
+        assert response.headers["location"].startswith("https://ui.test.com/auth/login")
+        assert auth_params["shop"] in response.headers["location"]
         
         assert mock_route.called
 
