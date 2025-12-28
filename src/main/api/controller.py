@@ -159,9 +159,9 @@ async def handle_subscription_activated(
                 return Response(status_code=200)
         else:
             # Fallback for manual/custom triggers
-            shop_domain = payload.get('myshopify_domain')
-            plan_name = payload.get('billing_plan')
-            
+        shop_domain = payload.get('myshopify_domain')
+        plan_name = payload.get('billing_plan') 
+        
         if not shop_domain or not plan_name:
             logger.warning("Webhook payload missing shop domain or plan name")
             return Response(status_code=200)
@@ -227,6 +227,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             access_token = token_data.get("access_token")
             
             logger.info(f"Successfully exchanged token for shop: {shop}")
+            logger.debug(f"Auth callback params: host={host}, state={params.get('state')}, timestamp={params.get('timestamp')}")
             store_shop_access_token(db, shop, access_token)
             
             # Redirect to the Remix UI's login route to ensure the UI also authenticates
@@ -234,6 +235,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"
             if host:
                 ui_login_url += f"&host={host}"
+            logger.info(f"Redirecting to UI login for secondary handshake: {ui_login_url}")
             return RedirectResponse(url=ui_login_url)
 
     except httpx.HTTPStatusError as e:
