@@ -159,8 +159,8 @@ async def handle_subscription_activated(
                 return Response(status_code=200)
         else:
             # Fallback for manual/custom triggers
-        shop_domain = payload.get('myshopify_domain')
-        plan_name = payload.get('billing_plan') 
+            shop_domain = payload.get('myshopify_domain')
+            plan_name = payload.get('billing_plan') 
         
         if not shop_domain or not plan_name:
             logger.warning("Webhook payload missing shop domain or plan name")
