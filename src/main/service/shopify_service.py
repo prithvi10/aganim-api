@@ -185,7 +185,8 @@ async def save_product_content_with_locale(
             if user_errors:
                 logger.error(f"❌ productUpdate user errors: {user_errors}")
                 raise Exception(f"GraphQL productUpdate error: {user_errors[0].get('message','Unknown error')}")
-            logger.info(f"✅ Product {product_id} updated via GraphQL (primary locale {shop_primary_locale}).")
+            updated = data.get("data", {}).get("productUpdate", {}).get("product", {})
+            logger.info(f"✅ Product {product_id} updated via GraphQL (primary {shop_primary_locale}). title_sample='{updated.get('title','')[:80]}'")
     
     # IF SECONDARY: Use GraphQL Translation mutation (Prevents "Master" overwrite)
     else:

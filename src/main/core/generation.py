@@ -79,6 +79,7 @@ async def _generate_and_save_for_locale(
         parsed = {"title": "Generated Copy", "description": raw_content}
 
     if product_id and access_token:
+        logger.info(f"[Save] shop={shop} pid={product_id} target={target_locale} primary={primary_locale} title_sample={parsed.get('title','')[:80]}")
         await save_product_content_with_locale(
             shop_domain=shop,
             access_token=access_token,
