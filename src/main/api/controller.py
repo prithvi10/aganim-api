@@ -32,6 +32,7 @@ router = APIRouter()
 
 SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
 SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
+TOKEN_SYNC_SECRET = os.getenv("TOKEN_SYNC_SECRET")
 
 # ==============================================================================
 #  0. OAUTH ENTRY POINT (Install App)
@@ -138,6 +139,39 @@ async def get_admin_info(
     shop: str = Depends(verify_shopify_session)
 ):
     return {"status": "authenticated", "shop": shop, "message": "Welcome to the Admin API"}
+
+
+@router.post("/api/admin/sync-token")
+async def sync_token(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Accepts a Shopify access token from the UI after its OAuth completes,
+    and stores it in the API DB so proxy endpoints have credentials.
+    Protected by a shared secret header.
+    """
+    if not TOKEN_SYNC_SECRET:
+        raise HTTPException(status_code=500, detail="Server misconfigured: TOKEN_SYNC_SECRET not set")
+
+    provided_secret = request.headers.get("X-Token-Sync-Secret")
+    if not provided_secret or not secrets.compare_digest(provided_secret, TOKEN_SYNC_SECRET):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    shop = payload.get("shop")
+    access_token = payload.get("access_token")
+
+    if not shop or not access_token:
+        raise HTTPException(status_code=400, detail="Missing shop or access_token")
+
+    logger.info(f"[Sync Token] Storing token for shop={shop}")
+    store_shop_access_token(db, shop, access_token)
+    return Response(status_code=204)
 
 @router.post("/webhooks/subscription-activated")
 async def handle_subscription_activated(
