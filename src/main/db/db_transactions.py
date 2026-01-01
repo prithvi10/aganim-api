@@ -109,6 +109,10 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
     """
     from .db_models import Shop, User, Plan
     import secrets
+    from src.main.logging.logger import get_logger
+    logger = get_logger(__name__)
+
+    logger.info(f"Storing access token for shop: {shop_domain}")
 
     # 1. Update/Create Shop Record (OAuth Token)
     shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
@@ -127,19 +131,23 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
         # Assign default plan
         default_plan = db.query(Plan).filter(Plan.name == "Basic").first()
         if not default_plan:
+             logger.warning("Plan 'Basic' not found. Falling back to first available plan.")
              default_plan = db.query(Plan).first()
         
         if default_plan:
+            logger.info(f"Creating new user for {shop_domain} with plan {default_plan.name}")
             user = User(username=shop_domain, email=None, plan_id=default_plan.id)
             db.add(user)
             db.commit()
             db.refresh(user)
-            # No API Key creation anymore!
         else:
+            logger.error(f"CRITICAL: No plans found in database. Cannot create user for {shop_domain}.")
+            # We should probably raise here, but for now just logging
             pass
 
     db.commit()
     db.refresh(shop_record)
+    logger.info(f"Successfully stored shop and user for {shop_domain}")
     return shop_record
 
 def get_shop_access_token(db: Session, shop_domain: str) -> str | None:
