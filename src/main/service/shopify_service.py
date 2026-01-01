@@ -153,22 +153,39 @@ async def save_product_content_with_locale(
         "Content-Type": "application/json"
     }
 
-    # IF PRIMARY: Update using REST API (updates the 'Master' description)
+    # IF PRIMARY: Update using GraphQL productUpdate (REST is deprecated)
     if target_locale == shop_primary_locale:
-        product_update_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/products/{product_id}.json"
-        update_payload = {
-            "product": {
-                "id": product_id,
+        mutation = """
+        mutation productUpdate($input: ProductInput!) {
+          productUpdate(input: $input) {
+            product { id title bodyHtml }
+            userErrors { field message }
+          }
+        }
+        """
+        product_gid = f"gid://shopify/Product/{product_id}"
+        variables = {
+            "input": {
+                "id": product_gid,
                 "title": title,
-                "body_html": description
+                "bodyHtml": description
             }
         }
         async with httpx.AsyncClient() as client:
-            resp = await client.put(product_update_url, headers=headers, json=update_payload)
+            resp = await client.post(
+                f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+                headers=headers,
+                json={"query": mutation, "variables": variables}
+            )
             if resp.status_code != 200:
-                logger.error(f"❌ Failed REST update {product_id} ({shop_domain}): {resp.status_code} {resp.text}")
-                raise Exception(f"Failed to update product: {resp.status_code}")
-            logger.info(f"✅ Product {product_id} updated (primary locale {shop_primary_locale}).")
+                logger.error(f"❌ GraphQL productUpdate failed {product_id} ({shop_domain}): {resp.status_code} {resp.text}")
+                raise Exception(f"Failed to update product via GraphQL: {resp.status_code}")
+            data = resp.json()
+            user_errors = data.get("data", {}).get("productUpdate", {}).get("userErrors", [])
+            if user_errors:
+                logger.error(f"❌ productUpdate user errors: {user_errors}")
+                raise Exception(f"GraphQL productUpdate error: {user_errors[0].get('message','Unknown error')}")
+            logger.info(f"✅ Product {product_id} updated via GraphQL (primary locale {shop_primary_locale}).")
     
     # IF SECONDARY: Use GraphQL Translation mutation (Prevents "Master" overwrite)
     else:

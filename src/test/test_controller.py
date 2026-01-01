@@ -73,7 +73,7 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
                 "status": "success",
                 "data": {"title": "My Title", "description": "My Description"}
             }
-            
+
             response = client.post(
                 "/api/proxy/generate-copy?shop=test-shop.myshopify.com",
                 json={
@@ -88,9 +88,9 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
             assert json_resp["status"] == "success"
             assert json_resp["data"]["title"] == "My Title"
             assert json_resp["data"]["description"] == "My Description"
-            
-            mock_validate.assert_called_once()
-            mock_process.assert_called_once()
+        
+        mock_validate.assert_called_once()
+        mock_process.assert_called_once()
 
 def test_proxy_generate_copy_missing_shop():
     """Test proxy endpoint fails correctly when shop param is missing."""

@@ -8,6 +8,8 @@ from .models import RewriteRequest, OnboardingRequest, BulkRewriteRequest
 from src.main.db.db_models import User
 from src.main.db.database import get_db
 from src.main.db.db_transactions import get_plan_by_name, store_shop_access_token
+from src.main.db.db_transactions import get_user_by_username
+from src.main.db.db_models import Shop, User
 from src.main.security.security import (
     verify_shopify_session, 
     verify_webhook_signature, 
@@ -192,6 +194,49 @@ async def handle_subscription_activated(
         logger.error(f"Error parsing webhook payload: {e}")
         return Response(status_code=200)
 
+    return Response(status_code=200)
+
+
+@router.post("/webhooks/app/uninstalled")
+async def handle_app_uninstalled(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Handle app/uninstalled webhook.
+    Keep this handler very fast to avoid Shopify timeouts.
+    """
+    await verify_webhook_signature(request)
+    try:
+        payload = await request.json()
+        shop_domain = payload.get("myshopify_domain") or request.headers.get("X-Shopify-Shop-Domain")
+
+        logger.info(f"🗑️ app/uninstalled received for {shop_domain}")
+
+        if shop_domain:
+            # Delete Shop and User records if they exist (best-effort).
+            try:
+                shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+                if shop_rec:
+                    db.delete(shop_rec)
+                    db.commit()
+            except Exception as e:
+                logger.warning(f"Unable to delete shop record for {shop_domain}: {e}")
+                db.rollback()
+
+            try:
+                user = get_user_by_username(db, shop_domain)
+                if user:
+                    db.delete(user)
+                    db.commit()
+            except Exception as e:
+                logger.warning(f"Unable to delete user record for {shop_domain}: {e}")
+                db.rollback()
+
+    except Exception as e:
+        logger.error(f"Error handling app/uninstalled webhook: {e}")
+
+    # Always return 200 quickly to avoid retries/timeouts
     return Response(status_code=200)
 
 @router.get("/api/auth/callback")
