@@ -215,6 +215,11 @@ async def save_product_content_with_locale(
                         f"[Verify] productUpdate readback pid={product_id} "
                         f"title_sample='{vtitle[:80]}' body_sample='{vbody[:80]}'"
                     )
+                    if not vtitle or not vbody:
+                        logger.warning(
+                            f"[Verify] productUpdate returned empty title/body for pid={product_id}. "
+                            f"raw_response={verify_json}"
+                        )
                 else:
                     logger.warning(
                         f"[Verify] productUpdate readback failed {product_id}: "
