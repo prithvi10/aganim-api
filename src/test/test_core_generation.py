@@ -43,9 +43,16 @@ async def test_process_generation_updates_primary_locale_via_rest(mock_db, mock_
     mock_shop_info_resp.status_code = 200
     mock_shop_info_resp.json.return_value = {"shop": {"primary_locale": "en"}}
 
-    # Mock Product Update (REST)
+    # Mock Product Update (GraphQL)
     mock_update_resp = MagicMock()
     mock_update_resp.status_code = 200
+    mock_update_resp.json.return_value = {
+        "data": {
+            "productUpdate": {
+                "userErrors": []
+            }
+        }
+    }
 
     with patch("src.main.core.generation.update_token_usage"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
@@ -58,7 +65,7 @@ async def test_process_generation_updates_primary_locale_via_rest(mock_db, mock_
         mock_client.__aexit__.return_value = None
         
         mock_client.get = AsyncMock(return_value=mock_shop_info_resp)
-        mock_client.put = AsyncMock(return_value=mock_update_resp)
+        mock_client.post = AsyncMock(return_value=mock_update_resp)
 
         result = await process_generation_request(
             db=mock_db,
@@ -70,8 +77,8 @@ async def test_process_generation_updates_primary_locale_via_rest(mock_db, mock_
         )
 
         assert result["status"] == "success"
-        mock_client.put.assert_called_once()
-        assert "products/123.json" in mock_client.put.call_args[0][0]
+        mock_client.post.assert_called_once()
+        assert "graphql.json" in mock_client.post.call_args[0][0]
 
 @pytest.mark.asyncio
 async def test_process_generation_updates_secondary_locale_via_graphql(mock_db, mock_user, mock_plan, mock_openai_response):
