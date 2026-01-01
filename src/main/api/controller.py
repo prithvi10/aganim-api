@@ -44,6 +44,8 @@ async def install_app(shop: str = Query(..., description="Shopify Shop Domain"))
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
     
+    logger.info(f"[Install] Received install request for shop={shop}")
+
     state = secrets.token_hex(16)
     
     authorization_url = (
@@ -256,6 +258,8 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     if not code or not shop:
         raise HTTPException(status_code=400, detail="Missing code or shop parameter")
 
+    logger.info(f"[OAuth Callback] Starting token exchange for shop={shop}, host={host}")
+
     token_url = f"https://{shop}/admin/oauth/access_token"
     payload = {
         "client_id": SHOPIFY_API_KEY,
@@ -300,5 +304,7 @@ async def get_shop_locales(request: Request, db: Session = Depends(get_db)):
     Fetches the enabled locales for the shop.
     Delegates to Core layer.
     """
+    params = dict(request.query_params)
+    logger.info(f"PROXY REQ locales: {params}")
     shop_domain = request.query_params.get("shop")
     return await fetch_shop_locales(db, shop_domain)
