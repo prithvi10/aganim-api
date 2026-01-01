@@ -186,7 +186,42 @@ async def save_product_content_with_locale(
                 logger.error(f"❌ productUpdate user errors: {user_errors}")
                 raise Exception(f"GraphQL productUpdate error: {user_errors[0].get('message','Unknown error')}")
             updated = data.get("data", {}).get("productUpdate", {}).get("product", {})
-            logger.info(f"✅ Product {product_id} updated via GraphQL (primary {shop_primary_locale}). title_sample='{updated.get('title','')[:80]}'")
+            logger.info(
+                f"✅ Product {product_id} updated via GraphQL (primary {shop_primary_locale}). "
+                f"title_sample='{updated.get('title','')[:80]}'"
+            )
+
+            # Read back to verify what Shopify stored (debug visibility)
+            verify_query = """
+            query ($id: ID!) {
+              product(id: $id) {
+                title
+                bodyHtml
+              }
+            }
+            """
+            try:
+                verify_resp = await client.post(
+                    f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+                    headers=headers,
+                    json={"query": verify_query, "variables": {"id": product_gid}}
+                )
+                if verify_resp.status_code == 200:
+                    verify_json = verify_resp.json()
+                    vprod = verify_json.get("data", {}).get("product", {}) or {}
+                    vtitle = vprod.get("title", "") or ""
+                    vbody = vprod.get("bodyHtml", "") or ""
+                    logger.info(
+                        f"[Verify] productUpdate readback pid={product_id} "
+                        f"title_sample='{vtitle[:80]}' body_sample='{vbody[:80]}'"
+                    )
+                else:
+                    logger.warning(
+                        f"[Verify] productUpdate readback failed {product_id}: "
+                        f"status={verify_resp.status_code} body={verify_resp.text}"
+                    )
+            except Exception as e:
+                logger.warning(f"[Verify] productUpdate readback error {product_id}: {e}")
     
     # IF SECONDARY: Use GraphQL Translation mutation (Prevents "Master" overwrite)
     else:
