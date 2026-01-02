@@ -1,0 +1,276 @@
+2026-01-01 14:12:22,314 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2026-01-01 14:12:22,326 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2026-01-01 14:12:22,329 - src.main.security.security - WARNING - Invalid OAuth redirect signature
+2026-01-01 14:12:22,333 - src.main.security.security - WARNING - Invalid App Proxy signature. Calculated: 6e872181a1a3de5af9ee38290778536b42c6419d3d8f5b4fe885ff6d730e7285, Received: invalid_signature
+2026-01-01 14:12:22,441 - src.main.api.controller - INFO - Successfully exchanged token for shop: test-store.myshopify.com
+2026-01-01 14:12:22,441 - src.main.api.controller - INFO - Auth callback params: host=None, state=None, timestamp=1600000000
+2026-01-01 14:12:22,449 - src.main.api.controller - INFO - Redirecting to UI login for secondary handshake: https://ui.test.com/auth/login?shop=test-store.myshopify.com
+2026-01-01 14:12:22,470 - src.main.security.security - WARNING - Invalid OAuth redirect signature
+2026-01-01 14:12:22,470 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2026-01-01 14:12:22,500 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2026-01-01 14:12:22,512 - src.main.api.controller - INFO - Webhook successfully onboarded user: test-store.myshopify.com
+2026-01-01 14:12:22,515 - src.main.security.security - WARNING - Missing X-Shopify-Hmac-Sha256 header
+2026-01-01 14:12:22,517 - src.main.security.security - WARNING - Invalid webhook signature
+2026-01-01 14:12:22,520 - src.main.api.controller - WARNING - Webhook payload missing shop domain or plan name
+2026-01-01 14:12:22,523 - src.main.api.controller - WARNING - Webhook received for unknown plan: Basic Plan
+2026-01-01 14:12:22,525 - src.main.api.controller - INFO - User test-store.myshopify.com already exists. Skipping creation.
+2026-01-01 14:12:22,528 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2026-01-01 14:12:22,533 - src.main.service.shopify_service - ERROR - ❌ productUpdate user errors: <MagicMock name='mock.json().get().get().get()' id='4649288096'>
+2026-01-01 14:12:22,534 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: GraphQL productUpdate error: <MagicMock name='mock.json().get().get().get().__getitem__().get()' id='4649290112'>
+2026-01-01 14:12:22,700 - src.main.api.validation - WARNING - ⛔ Quota Exceeded: User integration-shop.myshopify.com (Usage: 1000 / Limit: 1000)
+2026-01-01 14:12:22,733 - src.main.api.controller - INFO - Successfully exchanged token for shop: integration-store.myshopify.com
+2026-01-01 14:12:22,733 - src.main.api.controller - INFO - Auth callback params: host=base64encodedhost, state=nonce_integration, timestamp=1600000000
+2026-01-01 14:12:22,736 - src.main.api.controller - INFO - Redirecting to UI login for secondary handshake: https://ui.test.com/auth/login?shop=integration-store.myshopify.com&host=base64encodedhost
+2026-01-01 14:12:22,748 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2026-01-01 14:12:22,770 - src.main.service.onboarding - INFO - Created new user: integration-store.myshopify.com with plan Basic
+2026-01-01 14:12:22,770 - src.main.api.controller - INFO - Webhook successfully onboarded user: integration-store.myshopify.com
+2026-01-01 14:12:22,778 - src.main.service.onboarding - INFO - Created new user: test-shop.myshopify.com with plan Basic Plan
+2026-01-01 14:12:22,779 - src.main.service.onboarding - WARNING - Onboarding failed: Invalid Plan ID 1
+2026-01-01 14:12:22,781 - src.main.service.onboarding - WARNING - Onboarding failed: User test-shop.myshopify.com already exists
+2026-01-01 14:12:22,783 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2026-01-01 14:12:22,785 - src.main.service.open_ai_api_service - INFO - Rewriting description using AI for product: Test Product
+2026-01-01 14:12:22,786 - src.main.service.open_ai_api_service - INFO - 📝 Stream complete. Updating usage: 5 tokens.
+2026-01-01 14:12:22,788 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2026-01-01 14:12:22,795 - src.main.security.security - WARNING - Token has expired
+2026-01-01 14:12:22,795 - src.main.security.security - WARNING - ⚠️ Security Alert: Invalid Token Attempt: 
+2026-01-01 14:12:22,796 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2026-01-01 14:12:22,797 - src.main.service.shopify_service - INFO - ✅ Successfully registered translation for zh-TW (Product 123).
+2026-01-01 14:12:22,799 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2026-01-01 14:12:22,799 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2026-01-01 14:12:22,800 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2026-01-01 14:12:22,800 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2026-01-01 14:12:22,804 - src.main.service.shopify_service - WARNING - ⚠️ Could not find digests for title or body_html for product 123
+2026-01-01 14:12:22,804 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2026-01-01 14:12:22,804 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2026-01-01 14:12:22,805 - src.main.service.shopify_service - WARNING - ⚠️ Could not find digests for title or body_html for product 123
+2026-01-01 14:12:22,805 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2026-01-01 14:12:22,805 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2026-01-01 14:12:22,814 - src.main.api.validation - WARNING - ⛔ Authorization Failed: Invalid or Inactive Shop invalid-shop
+2026-01-01 14:12:22,816 - src.main.api.validation - WARNING - ⛔ Quota Exceeded: User heavy_shop (Usage: 150 / Limit: 100)
+2026-01-01 14:13:28,873 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2026-01-01 14:13:28,886 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2026-01-01 14:13:28,888 - src.main.security.security - WARNING - Invalid OAuth redirect signature
+2026-01-01 14:13:28,892 - src.main.security.security - WARNING - Invalid App Proxy signature. Calculated: 6e872181a1a3de5af9ee38290778536b42c6419d3d8f5b4fe885ff6d730e7285, Received: invalid_signature
+2026-01-01 14:13:28,997 - src.main.api.controller - INFO - Successfully exchanged token for shop: test-store.myshopify.com
+2026-01-01 14:13:28,997 - src.main.api.controller - INFO - Auth callback params: host=None, state=None, timestamp=1600000000
+2026-01-01 14:13:29,005 - src.main.api.controller - INFO - Redirecting to UI login for secondary handshake: https://ui.test.com/auth/login?shop=test-store.myshopify.com
+2026-01-01 14:13:29,022 - src.main.security.security - WARNING - Invalid OAuth redirect signature
+2026-01-01 14:13:29,023 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2026-01-01 14:13:29,063 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2026-01-01 14:13:29,073 - src.main.api.controller - INFO - Webhook successfully onboarded user: test-store.myshopify.com
+2026-01-01 14:13:29,074 - src.main.security.security - WARNING - Missing X-Shopify-Hmac-Sha256 header
+2026-01-01 14:13:29,076 - src.main.security.security - WARNING - Invalid webhook signature
+2026-01-01 14:13:29,078 - src.main.api.controller - WARNING - Webhook payload missing shop domain or plan name
+2026-01-01 14:13:29,080 - src.main.api.controller - WARNING - Webhook received for unknown plan: Basic Plan
+2026-01-01 14:13:29,083 - src.main.api.controller - INFO - User test-store.myshopify.com already exists. Skipping creation.
+2026-01-01 14:13:29,086 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2026-01-01 14:13:29,090 - src.main.service.shopify_service - INFO - ✅ Product 123 updated via GraphQL (primary locale en).
+2026-01-01 14:13:29,211 - src.main.api.validation - WARNING - ⛔ Quota Exceeded: User integration-shop.myshopify.com (Usage: 1000 / Limit: 1000)
+2026-01-01 14:13:29,237 - src.main.api.controller - INFO - Successfully exchanged token for shop: integration-store.myshopify.com
+2026-01-01 14:13:29,237 - src.main.api.controller - INFO - Auth callback params: host=base64encodedhost, state=nonce_integration, timestamp=1600000000
+2026-01-01 14:13:29,240 - src.main.api.controller - INFO - Redirecting to UI login for secondary handshake: https://ui.test.com/auth/login?shop=integration-store.myshopify.com&host=base64encodedhost
+2026-01-01 14:13:29,253 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2026-01-01 14:13:29,273 - src.main.service.onboarding - INFO - Created new user: integration-store.myshopify.com with plan Basic
+2026-01-01 14:13:29,273 - src.main.api.controller - INFO - Webhook successfully onboarded user: integration-store.myshopify.com
+2026-01-01 14:13:29,280 - src.main.service.onboarding - INFO - Created new user: test-shop.myshopify.com with plan Basic Plan
+2026-01-01 14:13:29,282 - src.main.service.onboarding - WARNING - Onboarding failed: Invalid Plan ID 1
+2026-01-01 14:13:29,284 - src.main.service.onboarding - WARNING - Onboarding failed: User test-shop.myshopify.com already exists
+2026-01-01 14:13:29,286 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2026-01-01 14:13:29,287 - src.main.service.open_ai_api_service - INFO - Rewriting description using AI for product: Test Product
+2026-01-01 14:13:29,288 - src.main.service.open_ai_api_service - INFO - 📝 Stream complete. Updating usage: 5 tokens.
+2026-01-01 14:13:29,289 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2026-01-01 14:13:29,297 - src.main.security.security - WARNING - Token has expired
+2026-01-01 14:13:29,297 - src.main.security.security - WARNING - ⚠️ Security Alert: Invalid Token Attempt: 
+2026-01-01 14:13:29,298 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2026-01-01 14:13:29,299 - src.main.service.shopify_service - INFO - ✅ Successfully registered translation for zh-TW (Product 123).
+2026-01-01 14:13:29,300 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2026-01-01 14:13:29,300 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2026-01-01 14:13:29,302 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2026-01-01 14:13:29,302 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2026-01-01 14:13:29,303 - src.main.service.shopify_service - WARNING - ⚠️ Could not find digests for title or body_html for product 123
+2026-01-01 14:13:29,303 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2026-01-01 14:13:29,303 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2026-01-01 14:13:29,305 - src.main.service.shopify_service - WARNING - ⚠️ Could not find digests for title or body_html for product 123
+2026-01-01 14:13:29,305 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2026-01-01 14:13:29,305 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2026-01-01 14:13:29,313 - src.main.api.validation - WARNING - ⛔ Authorization Failed: Invalid or Inactive Shop invalid-shop
+2026-01-01 14:13:29,315 - src.main.api.validation - WARNING - ⛔ Quota Exceeded: User heavy_shop (Usage: 150 / Limit: 100)
+2026-01-01 19:57:02,033 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=987654321 target=en primary=en title_sample=My Title desc_sample=My Description
+2026-01-01 19:57:02,072 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=12345 target=en primary=en title_sample=My Title desc_sample=My Description
+2026-01-01 19:57:02,072 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2026-01-01 19:57:02,084 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2026-01-01 19:57:02,086 - src.main.security.security - WARNING - Invalid OAuth redirect signature
+2026-01-01 19:57:02,090 - src.main.security.security - WARNING - Invalid App Proxy signature. Calculated: 6e872181a1a3de5af9ee38290778536b42c6419d3d8f5b4fe885ff6d730e7285, Received: invalid_signature
+2026-01-01 19:57:02,395 - src.main.api.controller - INFO - [OAuth Callback] Starting token exchange for shop=test-store.myshopify.com, host=None
+2026-01-01 19:57:02,403 - src.main.api.controller - INFO - Successfully exchanged token for shop: test-store.myshopify.com
+2026-01-01 19:57:02,403 - src.main.api.controller - INFO - Auth callback params: host=None, state=None, timestamp=1600000000
+2026-01-01 19:57:02,404 - src.main.db.db_transactions - INFO - Storing access token for shop: test-store.myshopify.com
+2026-01-01 19:57:02,411 - src.main.db.db_transactions - WARNING - Plan 'Basic' not found. Falling back to first available plan.
+2026-01-01 19:57:02,411 - src.main.db.db_transactions - ERROR - CRITICAL: No plans found in database. Cannot create user for test-store.myshopify.com.
+2026-01-01 19:57:02,413 - src.main.db.db_transactions - INFO - Successfully stored shop and user for test-store.myshopify.com
+2026-01-01 19:57:02,413 - src.main.api.controller - INFO - Redirecting to UI login for secondary handshake: https://ui.test.com/auth/login?shop=test-store.myshopify.com
+2026-01-01 19:57:02,433 - src.main.security.security - WARNING - Invalid OAuth redirect signature
+2026-01-01 19:57:02,433 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2026-01-01 19:57:02,463 - src.main.api.controller - INFO - [OAuth Callback] Starting token exchange for shop=test-store.myshopify.com, host=None
+2026-01-01 19:57:02,470 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2026-01-01 19:57:02,476 - src.main.api.controller - INFO - PROXY REQ locales: {'shop': 'test-shop.myshopify.com'}
+2026-01-01 19:57:02,484 - src.main.api.controller - INFO - Webhook successfully onboarded user: test-store.myshopify.com
+2026-01-01 19:57:02,486 - src.main.security.security - WARNING - Missing X-Shopify-Hmac-Sha256 header
+2026-01-01 19:57:02,488 - src.main.security.security - WARNING - Invalid webhook signature
+2026-01-01 19:57:02,490 - src.main.api.controller - WARNING - Webhook payload missing shop domain or plan name
+2026-01-01 19:57:02,492 - src.main.api.controller - WARNING - Webhook received for unknown plan: Basic Plan
+2026-01-01 19:57:02,495 - src.main.api.controller - INFO - User test-store.myshopify.com already exists. Skipping creation.
+2026-01-01 19:57:02,497 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2026-01-01 19:57:02,502 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=123 target=en primary=en title_sample=New desc_sample=New
+2026-01-01 19:57:02,502 - src.main.service.shopify_service - WARNING - ⚠️ productUpdate returned empty product for 123: raw={'data': {'productUpdate': {'userErrors': []}}}
+2026-01-01 19:57:02,502 - src.main.service.shopify_service - INFO - ✅ Product 123 updated via GraphQL (primary en). title_sample=''
+2026-01-01 19:57:02,502 - src.main.service.shopify_service - INFO - [Verify] productUpdate readback pid=123 title_sample='' body_sample=''
+2026-01-01 19:57:02,502 - src.main.service.shopify_service - WARNING - [Verify] productUpdate returned empty title/body for pid=123. raw_response={'data': {'productUpdate': {'userErrors': []}}}
+2026-01-01 19:57:02,563 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=123 target=fr primary=en title_sample=New desc_sample=New
+2026-01-01 19:57:02,598 - src.main.db.db_transactions - INFO - Storing access token for shop: new-shop.myshopify.com
+2026-01-01 19:57:02,599 - src.main.db.db_transactions - INFO - Creating new user for new-shop.myshopify.com with plan Basic
+2026-01-01 19:57:02,601 - src.main.db.db_transactions - INFO - Successfully stored shop and user for new-shop.myshopify.com
+2026-01-01 19:57:02,605 - src.main.db.db_transactions - INFO - Storing access token for shop: existing-shop.myshopify.com
+2026-01-01 19:57:02,607 - src.main.db.db_transactions - WARNING - Plan 'Basic' not found. Falling back to first available plan.
+2026-01-01 19:57:02,607 - src.main.db.db_transactions - INFO - Creating new user for existing-shop.myshopify.com with plan Test Plan
+2026-01-01 19:57:02,609 - src.main.db.db_transactions - INFO - Successfully stored shop and user for existing-shop.myshopify.com
+2026-01-01 19:57:02,613 - src.main.db.db_transactions - INFO - Storing access token for shop: token-test.myshopify.com
+2026-01-01 19:57:02,615 - src.main.db.db_transactions - WARNING - Plan 'Basic' not found. Falling back to first available plan.
+2026-01-01 19:57:02,615 - src.main.db.db_transactions - INFO - Creating new user for token-test.myshopify.com with plan Test Plan
+2026-01-01 19:57:02,616 - src.main.db.db_transactions - INFO - Successfully stored shop and user for token-test.myshopify.com
+2026-01-01 19:57:02,652 - src.main.api.validation - WARNING - ⛔ Quota Exceeded: User integration-shop.myshopify.com (Usage: 1000 / Limit: 1000)
+2026-01-01 19:57:02,674 - src.main.api.controller - INFO - [OAuth Callback] Starting token exchange for shop=integration-store.myshopify.com, host=base64encodedhost
+2026-01-01 19:57:02,680 - src.main.api.controller - INFO - Successfully exchanged token for shop: integration-store.myshopify.com
+2026-01-01 19:57:02,680 - src.main.api.controller - INFO - Auth callback params: host=base64encodedhost, state=nonce_integration, timestamp=1600000000
+2026-01-01 19:57:02,680 - src.main.db.db_transactions - INFO - Storing access token for shop: integration-store.myshopify.com
+2026-01-01 19:57:02,682 - src.main.db.db_transactions - WARNING - Plan 'Basic' not found. Falling back to first available plan.
+2026-01-01 19:57:02,683 - src.main.db.db_transactions - ERROR - CRITICAL: No plans found in database. Cannot create user for integration-store.myshopify.com.
+2026-01-01 19:57:02,683 - src.main.db.db_transactions - INFO - Successfully stored shop and user for integration-store.myshopify.com
+2026-01-01 19:57:02,683 - src.main.api.controller - INFO - Redirecting to UI login for secondary handshake: https://ui.test.com/auth/login?shop=integration-store.myshopify.com&host=base64encodedhost
+2026-01-01 19:57:02,691 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=12345 target=fr primary=en title_sample=Translated Title desc_sample=Translated Desc
+2026-01-01 19:57:02,695 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=12345 target=de primary=en title_sample=Translated Title desc_sample=Translated Desc
+2026-01-01 19:57:02,695 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2026-01-01 19:57:02,716 - src.main.service.onboarding - INFO - Created new user: integration-store.myshopify.com with plan Basic
+2026-01-01 19:57:02,716 - src.main.api.controller - INFO - Webhook successfully onboarded user: integration-store.myshopify.com
+2026-01-01 19:57:02,723 - src.main.service.onboarding - INFO - Created new user: test-shop.myshopify.com with plan Basic Plan
+2026-01-01 19:57:02,725 - src.main.service.onboarding - WARNING - Onboarding failed: Invalid Plan ID 1
+2026-01-01 19:57:02,727 - src.main.service.onboarding - WARNING - Onboarding failed: User test-shop.myshopify.com already exists
+2026-01-01 19:57:02,728 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2026-01-01 19:57:02,730 - src.main.service.open_ai_api_service - INFO - Rewriting description using AI for product: Test Product
+2026-01-01 19:57:02,731 - src.main.service.open_ai_api_service - INFO - 📝 Stream complete. Updating usage: 5 tokens.
+2026-01-01 19:57:02,733 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2026-01-01 19:57:02,739 - src.main.security.security - WARNING - Token has expired
+2026-01-01 19:57:02,740 - src.main.security.security - WARNING - ⚠️ Security Alert: Invalid Token Attempt: 
+2026-01-01 19:57:02,740 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2026-01-01 19:57:02,742 - src.main.service.shopify_service - INFO - ✅ Successfully registered translation for zh-TW (Product 123).
+2026-01-01 19:57:02,744 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2026-01-01 19:57:02,744 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2026-01-01 19:57:02,745 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2026-01-01 19:57:02,745 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2026-01-01 19:57:02,749 - src.main.service.shopify_service - WARNING - ⚠️ Could not find digests for title or body_html for product 123
+2026-01-01 19:57:02,750 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2026-01-01 19:57:02,750 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2026-01-01 19:57:02,752 - src.main.service.shopify_service - WARNING - ⚠️ Could not find digests for title or body_html for product 123
+2026-01-01 19:57:02,752 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2026-01-01 19:57:02,752 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2026-01-01 19:57:02,761 - src.main.api.validation - WARNING - ⛔ Authorization Failed: Invalid or Inactive Shop invalid-shop
+2026-01-01 19:57:02,762 - src.main.api.validation - WARNING - ⛔ Quota Exceeded: User heavy_shop (Usage: 150 / Limit: 100)
+2026-01-01 19:57:49,244 - src.main.security.security - WARNING - Skipping load_dotenv due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,484 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,556 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,578 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,599 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,618 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,638 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,658 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,705 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,725 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,745 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,769 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:57:49,784 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:05,438 - src.main.security.security - WARNING - Skipping load_dotenv due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:05,678 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:05,681 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:05,783 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:05,784 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:05,831 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:05,833 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:05,878 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:05,879 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:05,952 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:05,953 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:05,999 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:06,000 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:06,047 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:06,048 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:06,092 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:06,093 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:06,136 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:06,137 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:06,181 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:06,182 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:06,230 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:06,231 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:06,270 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:06,271 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:23,209 - src.main.security.security - WARNING - Skipping load_dotenv due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:23,441 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:23,444 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:37,165 - src.main.security.security - WARNING - Skipping load_dotenv due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:37,418 - src.main.service.open_ai_api_service - WARNING - Skipping load_dotenv in open_ai_api_service due to permission error: [Errno 1] Operation not permitted: '/Users/prithviraj/shopify-translator-api/.env'
+2026-01-01 19:58:37,421 - src.main.service.open_ai_api_service - WARNING - Skipping custom SSL context: [Errno 1] Operation not permitted
+2026-01-01 19:58:37,481 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=987654321 target=en primary=en title_sample=My Title desc_sample=My Description
+2026-01-01 19:58:37,490 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=12345 target=en primary=en title_sample=My Title desc_sample=My Description
+2026-01-01 19:58:37,491 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2026-01-01 19:58:37,502 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2026-01-01 19:58:37,510 - src.main.security.security - WARNING - Invalid OAuth redirect signature
+2026-01-01 19:58:37,517 - src.main.security.security - WARNING - Invalid App Proxy signature. Calculated: 6e872181a1a3de5af9ee38290778536b42c6419d3d8f5b4fe885ff6d730e7285, Received: invalid_signature
+2026-01-01 19:58:39,025 - src.main.api.controller - INFO - PROXY REQ locales: {'shop': 'test-shop.myshopify.com'}
+2026-01-01 19:58:39,032 - src.main.api.controller - INFO - Webhook successfully onboarded user: test-store.myshopify.com
+2026-01-01 19:58:39,035 - src.main.security.security - ERROR - Missing SHOPIFY_API_SECRET
+2026-01-01 19:58:39,041 - src.main.security.security - WARNING - Invalid webhook signature
+2026-01-01 19:58:39,045 - src.main.api.controller - WARNING - Webhook payload missing shop domain or plan name
+2026-01-01 19:58:39,048 - src.main.api.controller - WARNING - Webhook received for unknown plan: Basic Plan
+2026-01-01 19:58:39,051 - src.main.api.controller - INFO - User test-store.myshopify.com already exists. Skipping creation.
+2026-01-01 19:58:39,054 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2026-01-01 19:58:39,060 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=123 target=en primary=en title_sample=New desc_sample=New
+2026-01-01 19:58:39,061 - src.main.service.shopify_service - WARNING - ⚠️ productUpdate returned empty product for 123: raw={'data': {'productUpdate': {'userErrors': []}}}
+2026-01-01 19:58:39,061 - src.main.service.shopify_service - INFO - ✅ Product 123 updated via GraphQL (primary en). title_sample=''
+2026-01-01 19:58:39,066 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=123 target=fr primary=en title_sample=New desc_sample=New
+2026-01-01 19:58:39,105 - src.main.db.db_transactions - INFO - Storing access token for shop: new-shop.myshopify.com
+2026-01-01 19:58:39,107 - src.main.db.db_transactions - INFO - Creating new user for new-shop.myshopify.com with plan Basic
+2026-01-01 19:58:39,109 - src.main.db.db_transactions - INFO - Successfully stored shop and user for new-shop.myshopify.com
+2026-01-01 19:58:39,115 - src.main.db.db_transactions - INFO - Storing access token for shop: existing-shop.myshopify.com
+2026-01-01 19:58:39,117 - src.main.db.db_transactions - WARNING - Plan 'Basic' not found. Falling back to first available plan.
+2026-01-01 19:58:39,119 - src.main.db.db_transactions - INFO - Creating new user for existing-shop.myshopify.com with plan Test Plan
+2026-01-01 19:58:39,121 - src.main.db.db_transactions - INFO - Successfully stored shop and user for existing-shop.myshopify.com
+2026-01-01 19:58:39,126 - src.main.db.db_transactions - INFO - Storing access token for shop: token-test.myshopify.com
+2026-01-01 19:58:39,128 - src.main.db.db_transactions - WARNING - Plan 'Basic' not found. Falling back to first available plan.
+2026-01-01 19:58:39,129 - src.main.db.db_transactions - INFO - Creating new user for token-test.myshopify.com with plan Test Plan
+2026-01-01 19:58:39,132 - src.main.db.db_transactions - INFO - Successfully stored shop and user for token-test.myshopify.com
+2026-01-01 19:58:40,070 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=12345 target=fr primary=en title_sample=Translated Title desc_sample=Translated Desc
+2026-01-01 19:58:40,076 - src.main.core.generation - INFO - [Save] shop=test-shop.myshopify.com pid=12345 target=de primary=en title_sample=Translated Title desc_sample=Translated Desc
+2026-01-01 19:58:40,077 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2026-01-01 19:58:40,390 - src.main.service.onboarding - INFO - Created new user: test-shop.myshopify.com with plan Basic Plan
+2026-01-01 19:58:40,392 - src.main.service.onboarding - WARNING - Onboarding failed: Invalid Plan ID 1
+2026-01-01 19:58:40,395 - src.main.service.onboarding - WARNING - Onboarding failed: User test-shop.myshopify.com already exists
+2026-01-01 19:58:40,397 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2026-01-01 19:58:40,400 - src.main.service.open_ai_api_service - INFO - Rewriting description using AI for product: Test Product
+2026-01-01 19:58:40,402 - src.main.service.open_ai_api_service - INFO - 📝 Stream complete. Updating usage: 5 tokens.
+2026-01-01 19:58:40,405 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2026-01-01 19:58:40,414 - src.main.security.security - WARNING - Token has expired
+2026-01-01 19:58:40,415 - src.main.security.security - WARNING - ⚠️ Security Alert: Invalid Token Attempt: 
+2026-01-01 19:58:40,416 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2026-01-01 19:58:40,419 - src.main.service.shopify_service - INFO - ✅ Successfully registered translation for zh-TW (Product 123).
+2026-01-01 19:58:40,459 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2026-01-01 19:58:40,460 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2026-01-01 19:58:40,463 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2026-01-01 19:58:40,464 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2026-01-01 19:58:40,467 - src.main.service.shopify_service - WARNING - ⚠️ Could not find digests for title or body_html for product 123
+2026-01-01 19:58:40,468 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2026-01-01 19:58:40,469 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2026-01-01 19:58:40,472 - src.main.service.shopify_service - WARNING - ⚠️ Could not find digests for title or body_html for product 123
+2026-01-01 19:58:40,473 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2026-01-01 19:58:40,474 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2026-01-01 19:58:40,485 - src.main.api.validation - WARNING - ⛔ Authorization Failed: Invalid or Inactive Shop invalid-shop
+2026-01-01 19:58:40,487 - src.main.api.validation - WARNING - ⛔ Quota Exceeded: User heavy_shop (Usage: 150 / Limit: 100)

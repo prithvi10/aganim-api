@@ -141,6 +141,36 @@ async def get_admin_info(
     return {"status": "authenticated", "shop": shop, "message": "Welcome to the Admin API"}
 
 
+@router.get("/api/admin/usage")
+async def get_usage(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns current usage and plan info for the shop.
+    Authenticated via shop query param (internal/proxy usage).
+    """
+    shop_domain = request.query_params.get("shop")
+    if not shop_domain:
+        # Try finding it in headers if passed by proxy or middleware
+        shop_domain = request.headers.get("X-Shopify-Shop-Domain")
+        
+    if not shop_domain:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    auth_context = validate_shop_and_quota(db, shop_domain)
+    
+    user = auth_context["user"]
+    plan = auth_context["plan"]
+    usage = auth_context["current_usage"]
+    
+    return {
+        "current_usage": usage,
+        "monthly_token_quota": plan.monthly_token_quota,
+        "plan_name": plan.name,
+        "is_pro": plan.name == "Pro" or plan.name == "Growth" # Support multiple Pro-tier names if needed
+    }
+
 @router.post("/api/admin/sync-token")
 async def sync_token(
     request: Request,
@@ -208,7 +238,17 @@ async def handle_subscription_activated(
         plan = get_plan_by_name(db, plan_name)
         if not plan:
             logger.warning(f"Webhook received for unknown plan: {plan_name}")
+            # If plan name changed or is different in Shopify, map it or default
+            # For now, just return 200 to acknowledge
             return Response(status_code=200)
+
+        # ACTION: Explicitly update the User's plan in DB to ensure immediate effect
+        user = get_user_by_username(db, shop_domain)
+        if user:
+            logger.info(f"Updating plan for {shop_domain} to {plan.name} (ID: {plan.id})")
+            user.plan_id = plan.id
+            db.commit()
+            db.refresh(user)
 
         onboarding_req = OnboardingRequest(
             username=shop_domain,
