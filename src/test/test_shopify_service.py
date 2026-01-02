@@ -111,7 +111,16 @@ async def test_create_shopify_translation_mutation_fail(mock_httpx_client):
     # Digest success
     mock_digest_response = MagicMock()
     mock_digest_response.status_code = 200
-    mock_digest_response.json.return_value = {"data": {"translatableResource": {"translatableContent": []}}}
+    mock_digest_response.json.return_value = {
+        "data": {
+            "translatableResource": {
+                "translatableContent": [
+                    {"key": "title", "digest": "digest_title"},
+                    {"key": "body_html", "digest": "digest_desc"}
+                ]
+            }
+        }
+    }
     
     # Mutation failure (HTTP)
     mock_mutation_response = MagicMock()
@@ -133,7 +142,16 @@ async def test_create_shopify_translation_user_errors(mock_httpx_client):
     # Digest success
     mock_digest_response = MagicMock()
     mock_digest_response.status_code = 200
-    mock_digest_response.json.return_value = {"data": {"translatableResource": {"translatableContent": []}}}
+    mock_digest_response.json.return_value = {
+        "data": {
+            "translatableResource": {
+                "translatableContent": [
+                    {"key": "title", "digest": "digest_title"},
+                    {"key": "body_html", "digest": "digest_desc"}
+                ]
+            }
+        }
+    }
     
     # Mutation with User Errors
     mock_mutation_response = MagicMock()

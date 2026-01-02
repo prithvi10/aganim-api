@@ -69,7 +69,8 @@ async def create_shopify_translation(
                     desc_digest = item["digest"]
 
             if not title_digest or not desc_digest:
-                logger.warning(f"⚠️ Could not find digests for title or body_html for product {product_id}")
+                logger.error(f"❌ Missing digests for title/body_html for product {product_id}; aborting translationsRegister.")
+                raise Exception("Missing content digests; cannot register translation.")
 
         except Exception as e:
             logger.error(f"Error fetching digests: {e}")
@@ -158,7 +159,7 @@ async def save_product_content_with_locale(
         mutation = """
         mutation productUpdate($input: ProductInput!) {
           productUpdate(input: $input) {
-            product { id title bodyHtml }
+            product { id title descriptionHtml }
             userErrors { field message }
           }
         }
@@ -168,7 +169,7 @@ async def save_product_content_with_locale(
             "input": {
                 "id": product_gid,
                 "title": title,
-                "bodyHtml": description
+                "descriptionHtml": description
             }
         }
         async with httpx.AsyncClient() as client:
@@ -181,6 +182,9 @@ async def save_product_content_with_locale(
                 logger.error(f"❌ GraphQL productUpdate failed {product_id} ({shop_domain}): {resp.status_code} {resp.text}")
                 raise Exception(f"Failed to update product via GraphQL: {resp.status_code}")
             data = resp.json()
+            if "errors" in data:
+                logger.error(f"❌ GraphQL Syntax Error: {data['errors']}")
+                raise Exception(f"GraphQL Syntax Error: {data['errors'][0].get('message')}")
             user_errors = data.get("data", {}).get("productUpdate", {}).get("userErrors", [])
             if user_errors:
                 logger.error(f"❌ productUpdate user errors: {user_errors}")
@@ -191,42 +195,43 @@ async def save_product_content_with_locale(
                 f"title_sample='{updated.get('title','')[:80]}'"
             )
 
-            # Read back to verify what Shopify stored (debug visibility)
-            verify_query = """
-            query ($id: ID!) {
-              product(id: $id) {
-                title
-                bodyHtml
-              }
-            }
-            """
-            try:
-                verify_resp = await client.post(
-                    f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
-                    headers=headers,
-                    json={"query": verify_query, "variables": {"id": product_gid}}
-                )
-                if verify_resp.status_code == 200:
-                    verify_json = verify_resp.json()
-                    vprod = verify_json.get("data", {}).get("product", {}) or {}
-                    vtitle = vprod.get("title", "") or ""
-                    vbody = vprod.get("bodyHtml", "") or ""
-                    logger.info(
-                        f"[Verify] productUpdate readback pid={product_id} "
-                        f"title_sample='{vtitle[:80]}' body_sample='{vbody[:80]}'"
+            # Optional readback; enabled only when explicitly configured to avoid extra calls in tests.
+            if os.getenv("ENABLE_SHOPIFY_VERIFY", "false").lower() == "true":
+                verify_query = """
+                query ($id: ID!) {
+                  product(id: $id) {
+                    title
+                    descriptionHtml
+                  }
+                }
+                """
+                try:
+                    verify_resp = await client.post(
+                        f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+                        headers=headers,
+                        json={"query": verify_query, "variables": {"id": product_gid}}
                     )
-                    if not vtitle or not vbody:
-                        logger.warning(
-                            f"[Verify] productUpdate returned empty title/body for pid={product_id}. "
-                            f"raw_response={verify_json}"
+                    if verify_resp.status_code == 200:
+                        verify_json = verify_resp.json()
+                        vprod = verify_json.get("data", {}).get("product", {}) or {}
+                        vtitle = vprod.get("title", "") or ""
+                        vbody = vprod.get("descriptionHtml", "") or ""
+                        logger.info(
+                            f"[Verify] productUpdate readback pid={product_id} "
+                            f"title_sample='{vtitle[:80]}' body_sample='{vbody[:80]}'"
                         )
-                else:
-                    logger.warning(
-                        f"[Verify] productUpdate readback failed {product_id}: "
-                        f"status={verify_resp.status_code} body={verify_resp.text}"
-                    )
-            except Exception as e:
-                logger.warning(f"[Verify] productUpdate readback error {product_id}: {e}")
+                        if not vtitle or not vbody:
+                            logger.warning(
+                                f"[Verify] productUpdate returned empty title/body for pid={product_id}. "
+                                f"raw_response={verify_json}"
+                            )
+                    else:
+                        logger.warning(
+                            f"[Verify] productUpdate readback failed {product_id}: "
+                            f"status={verify_resp.status_code} body={verify_resp.text}"
+                        )
+                except Exception as e:
+                    logger.warning(f"[Verify] productUpdate readback error {product_id}: {e}")
     
     # IF SECONDARY: Use GraphQL Translation mutation (Prevents "Master" overwrite)
     else:
