@@ -1,2 +1,0 @@
-2025-12-18 10:01:51,533 - src.main.api.controller - ERROR - ❌ Failed to save product 12345 for test-shop.myshopify.com. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
-2025-12-18 10:01:51,543 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
