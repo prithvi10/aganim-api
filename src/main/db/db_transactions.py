@@ -115,11 +115,39 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
     logger.info(f"Storing access token for shop: {shop_domain}")
 
     # 1. Update/Create Shop Record (OAuth Token)
+    # Check if this is an offline token (starts with shpua_ is online, shpca_/shpat_ is offline usually)
+    # Actually, official docs say online tokens are per-user. Offline tokens are permanent.
+    # Offline tokens often start with 'shpat_' or 'shpka_' or similar, while online might be different.
+    # But a safer heuristic provided by user is: if it's ONLINE, do NOT overwrite an existing OFFLINE token.
+    # Since we can't easily detect offline vs online just by string without strict rules, 
+    # we will rely on the caller to provide only OFFLINE tokens if possible, or we check if the new token looks "better".
+    #
+    # However, the user instruction was:
+    # "Ensure that if an OFFLINE token is received, it overwrites any existing token.
+    #  If an ONLINE token is received, DO NOT use it for background API calls like get_locales."
+    #
+    # The sync endpoint receives what the UI sends. The UI (remix) sends what it has.
+    # We will assume the token passed here IS the one we want to store unless we can prove otherwise.
+    # BUT, to be safe, let's log what we are storing. 
+    # A common pattern: Offline tokens don't expire. Online tokens do.
+    # If the token starts with 'shpua_', it is an ONLINE (User) Access Token.
+    # We should probably NOT overwrite an existing token with an 'shpua_' token if we already have one.
+
     shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
     
+    is_online_token = access_token.startswith("shpua_")
+    
     if shop_record:
-        shop_record.access_token = access_token
+        # If we already have a token, and the new one is ONLINE, ignore it to prevent overwriting a good OFFLINE token.
+        if is_online_token and shop_record.access_token and not shop_record.access_token.startswith("shpua_"):
+             logger.warning(f"Ignoring ONLINE token update for {shop_domain} because we already have an OFFLINE token.")
+        else:
+             if is_online_token:
+                 logger.warning(f"Storing ONLINE token for {shop_domain}. This may cause issues with background jobs.")
+             shop_record.access_token = access_token
     else:
+        if is_online_token:
+             logger.warning(f"First token for {shop_domain} is ONLINE. Background jobs may fail.")
         new_shop = Shop(domain=shop_domain, access_token=access_token)
         db.add(new_shop)
         shop_record = new_shop

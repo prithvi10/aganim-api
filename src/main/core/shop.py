@@ -24,6 +24,9 @@ async def fetch_shop_locales(db: Session, shop_domain: str):
     if not access_token:
         raise HTTPException(status_code=401, detail="Shop not authenticated")
 
+    token_preview = access_token[:5] + "..." if access_token else "None"
+    logger.info(f"Fetching locales for {shop_domain} using token: {token_preview}")
+
     graphql_query = """
     {
       shopLocales {
@@ -50,7 +53,10 @@ async def fetch_shop_locales(db: Session, shop_domain: str):
             
             data = response.json()
             if "errors" in data:
-                 logger.error(f"GraphQL Errors: {data['errors']}")
+                 error_msg = str(data['errors'])
+                 logger.error(f"GraphQL Errors: {error_msg}")
+                 if "Invalid API key or access token" in error_msg:
+                     raise HTTPException(status_code=401, detail="Invalid Shopify Access Token")
                  raise HTTPException(status_code=500, detail="Shopify GraphQL Error")
             
             locales = data.get("data", {}).get("shopLocales", [])
@@ -62,8 +68,15 @@ async def fetch_shop_locales(db: Session, shop_domain: str):
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Shopify GraphQL Request Failed: {e.response.text}")
+        # Detect Invalid API Key error explicitly
+        if "Invalid API key or access token" in e.response.text:
+            logger.error(f"Authentication failed for {shop_domain}. Triggering re-auth.")
+            raise HTTPException(status_code=401, detail="Invalid Shopify Access Token")
         raise HTTPException(status_code=500, detail="Failed to fetch locales from Shopify")
     except Exception as e:
+        # Also catch it if it came from the generic Exception block (though raise_for_status handles 4xx/5xx)
+        if "Invalid API key or access token" in str(e):
+             raise HTTPException(status_code=401, detail="Invalid Shopify Access Token")
         logger.error(f"Unexpected error fetching locales: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
