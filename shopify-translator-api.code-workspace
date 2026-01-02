@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../shopify-translator-ui"
+		}
+	],
+	"settings": {
+		"python.experiments.optInto": ["pythonTestAdapter"],
+		"python.testing.pytestEnabled": true,
+		"python.testing.unittestEnabled": false,
+		"python.testing.pytestArgs": [
+			"--cov=src/main", 
+			"--cov-report=xml:coverage.xml", 
+			"src/test" 
+		],
+		"testing.coverageBarThresholds": {
+			"red": 0,
+			"yellow": 60,
+			"green": 90
+		}
+	}
+}

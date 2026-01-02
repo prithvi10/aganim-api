@@ -1,0 +1,3 @@
+2025-12-11 11:06:16,238 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-11 11:06:16,241 - src.main.service.onboarding - ERROR - Failed to create API key record: DB Error
+2025-12-11 11:06:16,262 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash

@@ -1,0 +1,544 @@
+2025-12-26 10:53:38,053 - src.main.service.shopify_service - ERROR - Error fetching digests: object MagicMock can't be used in 'await' expression
+2025-12-26 10:53:38,090 - src.main.service.shopify_service - ERROR - Error fetching digests: object MagicMock can't be used in 'await' expression
+2025-12-26 10:53:38,093 - src.main.service.shopify_service - ERROR - Error fetching digests: object MagicMock can't be used in 'await' expression
+2025-12-26 10:53:38,097 - src.main.service.shopify_service - ERROR - Error fetching digests: object MagicMock can't be used in 'await' expression
+2025-12-26 10:53:38,102 - src.main.service.shopify_service - ERROR - Error fetching digests: object MagicMock can't be used in 'await' expression
+2025-12-26 10:53:38,125 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 10:53:52,800 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 10:53:52,800 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 10:53:52,802 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 10:53:52,802 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 10:53:52,804 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 10:53:52,804 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 10:53:52,805 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 10:53:52,805 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 10:53:52,828 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 10:57:00,532 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 11:34:07,540 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 11:34:07,543 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 11:34:07,552 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 11:34:07,552 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 11:34:07,557 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 11:34:07,558 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 11:34:07,576 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 11:34:07,577 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 11:34:08,232 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 11:34:08,690 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 11:34:09,205 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 11:34:09,206 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 11:34:09,235 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 11:34:09,287 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 11:34:09,313 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 11:34:09,332 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 11:34:09,799 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 11:34:09,971 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 11:36:33,335 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 11:37:30,112 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 11:37:30,113 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 11:37:30,122 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 11:37:30,122 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 11:37:30,132 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 11:37:30,132 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 11:37:30,140 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 11:37:30,140 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 11:37:30,692 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 11:37:31,189 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 11:37:31,828 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 11:37:31,868 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 11:37:31,883 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 11:37:31,902 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 11:37:31,927 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 11:37:31,952 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 11:37:32,225 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 11:37:32,538 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 11:40:08,551 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 11:40:27,905 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 11:40:27,917 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 11:40:28,053 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 11:40:28,087 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 11:40:28,107 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 11:40:28,121 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 11:40:28,279 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 11:40:28,311 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 11:40:28,318 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 11:40:28,322 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 11:40:28,323 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 11:40:28,324 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 11:40:28,324 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 11:40:28,326 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 11:40:28,326 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 11:40:28,327 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 11:40:28,327 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 11:40:28,330 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 12:15:47,661 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 12:15:47,672 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 12:15:47,676 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 12:15:47,676 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 12:15:47,677 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 12:15:47,677 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 12:15:47,679 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 12:15:47,679 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 12:15:47,681 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 12:15:47,681 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 12:15:47,691 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 12:15:47,700 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 12:16:26,574 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 12:16:26,585 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 12:16:26,735 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 12:16:26,768 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 12:16:26,789 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 12:16:26,805 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 12:16:26,958 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 12:16:26,992 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 12:16:27,000 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 12:16:27,004 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 12:16:27,004 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 12:16:27,006 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 12:16:27,006 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 12:16:27,007 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 12:16:27,007 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 12:16:27,009 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 12:16:27,009 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 12:16:27,012 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 12:26:51,929 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 12:26:51,940 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 12:26:52,075 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 12:26:52,106 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 12:26:52,126 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 12:26:52,141 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 12:26:52,316 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 12:26:52,347 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 12:26:52,355 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 12:26:52,359 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 12:26:52,359 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 12:26:52,360 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 12:26:52,360 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 12:26:52,362 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 12:26:52,362 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 12:26:52,364 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 12:26:52,364 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 12:26:52,367 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 12:33:42,382 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 12:33:42,394 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 12:33:42,398 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 12:33:42,398 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 12:33:42,399 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 12:33:42,400 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 12:33:42,401 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 12:33:42,401 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 12:33:42,402 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 12:33:42,402 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 12:36:50,490 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 12:36:50,527 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 12:39:49,187 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 12:39:49,198 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 12:39:49,330 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 12:39:49,366 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 12:39:49,385 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 12:39:49,401 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 12:39:49,551 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 12:39:49,584 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 12:39:49,592 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 12:39:49,596 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 12:39:49,596 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 12:39:49,597 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 12:39:49,597 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 12:39:49,599 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 12:39:49,599 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 12:39:49,601 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 12:39:49,601 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 12:39:49,604 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 12:40:12,944 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 12:40:12,955 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 12:40:13,090 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 12:40:13,125 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 12:40:13,145 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 12:40:13,159 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 12:40:13,314 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 12:40:13,346 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 12:40:13,354 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 12:40:13,358 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 12:40:13,358 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 12:40:13,360 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 12:40:13,360 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 12:40:13,362 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 12:40:13,362 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 12:40:13,364 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 12:40:13,364 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 12:40:13,366 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 12:54:17,062 - src.main.api.controller - ERROR - ❌ Failed to save product 12345. Status: 422, Detail: {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 12:54:17,073 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 12:54:17,246 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 12:54:17,276 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 12:54:17,300 - src.main.api.controller - ERROR - ❌ Failed to save translation: GraphQL Service Down
+2025-12-26 12:54:17,318 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 12:54:17,503 - src.main.api.controller - ERROR - ❌ Failed to save translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 12:54:17,549 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 12:54:17,557 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 12:54:17,562 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 12:54:17,562 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 12:54:17,563 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 12:54:17,563 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 12:54:17,565 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 12:54:17,565 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 12:54:17,567 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 12:54:17,567 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 12:54:17,570 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 12:59:10,968 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 12:59:10,969 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Failed to update product: 422
+2025-12-26 12:59:10,979 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 12:59:11,132 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 12:59:11,166 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 12:59:11,294 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 12:59:11,564 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 12:59:11,572 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 12:59:11,580 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 12:59:11,580 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 12:59:11,582 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 12:59:11,582 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 12:59:11,586 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 12:59:11,586 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 12:59:11,588 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 12:59:11,588 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 12:59:11,591 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 13:01:01,363 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 13:01:01,363 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Failed to update product: 422
+2025-12-26 13:01:01,372 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 13:01:01,506 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 13:01:01,544 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 13:01:01,566 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: GraphQL Service Down
+2025-12-26 13:01:01,583 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 13:01:01,755 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 13:01:01,791 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 13:01:01,800 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 13:01:01,804 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 13:01:01,804 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 13:01:01,806 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 13:01:01,806 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 13:01:01,808 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 13:01:01,808 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 13:01:01,809 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 13:01:01,809 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 13:01:01,812 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 13:04:48,034 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 13:04:48,035 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Failed to update product: 422
+2025-12-26 13:04:48,046 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 13:04:48,199 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 13:04:48,235 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 13:04:48,258 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: GraphQL Service Down
+2025-12-26 13:04:48,272 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 13:04:48,438 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 13:04:48,470 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 13:04:48,477 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 13:04:48,481 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 13:04:48,481 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 13:04:48,483 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 13:04:48,483 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 13:04:48,485 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 13:04:48,485 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 13:04:48,487 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 13:04:48,487 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 13:04:48,489 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:14:23,915 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:14:23,916 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Failed to update product: 422
+2025-12-26 14:14:23,925 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:14:24,110 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:14:24,155 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:14:24,176 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: GraphQL Service Down
+2025-12-26 14:14:24,190 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:14:24,342 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:14:24,382 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:14:24,391 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:14:24,394 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:14:24,394 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:14:24,396 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:14:24,396 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:14:24,397 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:14:24,397 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:14:24,399 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:14:24,399 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:14:24,402 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:16:47,013 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:16:47,014 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Failed to update product: 422
+2025-12-26 14:16:47,025 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:16:47,165 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:16:47,206 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:16:47,228 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: GraphQL Service Down
+2025-12-26 14:16:47,242 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:16:47,407 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:16:47,435 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:16:47,444 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:16:47,447 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:16:47,447 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:16:47,450 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:16:47,450 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:16:47,451 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:16:47,451 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:16:47,453 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:16:47,453 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:16:47,456 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:18:26,684 - src.main.api.controller - ERROR - ❌ Error processing request for test-shop.myshopify.com: (psycopg2.errors.UndefinedColumn) column usage_records.user_id does not exist
+LINE 1: ...ords.token_count + 100), last_updated=now() WHERE usage_reco...
+                                                             ^
+
+[SQL: UPDATE usage_records SET token_count=(usage_records.token_count + %(token_count_1)s), last_updated=now() WHERE usage_records.user_id = %(user_id_1)s AND usage_records.billing_cycle_start IS NULL]
+[parameters: {'token_count_1': 100, 'user_id_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 14:21:57,998 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:21:57,998 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Failed to update product: 422
+2025-12-26 14:21:58,010 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:21:58,134 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:21:58,171 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:21:58,193 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: GraphQL Service Down
+2025-12-26 14:21:58,208 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:21:58,371 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:21:58,399 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:21:58,407 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:21:58,410 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:21:58,410 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:21:58,411 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:21:58,412 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:21:58,413 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:21:58,413 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:21:58,415 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:21:58,415 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:21:58,417 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:23:53,721 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:23:53,721 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Failed to update product: 422
+2025-12-26 14:23:53,730 - src.main.api.controller - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:23:53,868 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:23:53,911 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:23:53,931 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: GraphQL Service Down
+2025-12-26 14:23:53,946 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:23:54,104 - src.main.api.controller - ERROR - ❌ Failed to save product/translation: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:23:54,150 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:23:54,158 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:23:54,162 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:23:54,162 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:23:54,164 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:23:54,164 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:23:54,166 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:23:54,166 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:23:54,167 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:23:54,167 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:23:54,172 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:32:26,410 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:32:26,447 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:32:26,476 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:32:26,774 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:32:26,783 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:32:26,787 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:32:26,787 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:32:26,789 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:32:26,789 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:32:26,791 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:32:26,791 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:32:26,792 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:32:26,793 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:32:26,796 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:33:35,249 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:33:35,249 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 14:33:35,260 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:33:35,432 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:33:35,482 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:33:35,511 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:33:35,782 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:33:35,789 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:33:35,794 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:33:35,794 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:33:35,796 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:33:35,796 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:33:35,797 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:33:35,798 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:33:35,799 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:33:35,800 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:33:35,803 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:33:51,075 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:33:51,075 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 14:33:51,085 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:33:51,206 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:33:51,242 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:33:51,265 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:33:51,533 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:33:51,541 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:33:51,546 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:33:51,546 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:33:51,547 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:33:51,547 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:33:51,549 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:33:51,549 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:33:51,551 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:33:51,552 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:33:51,555 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:34:15,367 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:34:15,368 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 14:34:15,377 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:34:15,528 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:34:15,569 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:34:15,596 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:34:15,779 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:34:15,815 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:34:15,824 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:34:15,829 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:34:15,829 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:34:15,830 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:34:15,831 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:34:15,833 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:34:15,833 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:34:15,835 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:34:15,835 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:34:15,839 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:37:20,683 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:37:20,683 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 14:37:20,693 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:37:20,842 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:37:20,871 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:37:20,895 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:37:21,066 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:37:21,116 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:37:21,125 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:37:21,128 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:37:21,128 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:37:21,130 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:37:21,130 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:37:21,132 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:37:21,132 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:37:21,134 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:37:21,134 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:37:21,137 - src.main.service.streaming_utils - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:38:34,575 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:38:34,575 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 14:38:34,586 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:38:34,733 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:38:34,768 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:38:34,793 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:38:34,961 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:38:34,997 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:38:35,001 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:38:35,009 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:38:35,012 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:38:35,012 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:38:35,013 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:38:35,014 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:38:35,015 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:38:35,015 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:38:35,017 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:38:35,017 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:57:42,246 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:57:42,247 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 14:57:42,256 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:57:42,395 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:57:42,424 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:57:42,448 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:57:42,609 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:57:42,646 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:57:42,683 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:57:42,691 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:57:42,694 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:57:42,694 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:57:42,696 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:57:42,696 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:57:42,698 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:57:42,698 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:57:42,699 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:57:42,699 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 14:58:00,046 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 14:58:00,047 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 14:58:00,056 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 14:58:00,181 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 14:58:00,218 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 14:58:00,240 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 14:58:00,397 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 14:58:00,435 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 14:58:00,439 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 14:58:00,448 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 14:58:00,450 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 14:58:00,450 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 14:58:00,451 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 14:58:00,452 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 14:58:00,453 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 14:58:00,453 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 14:58:00,454 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 14:58:00,454 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 15:42:47,237 - src.main.service.shopify_service - ERROR - ❌ Failed REST update 12345 (test-shop.myshopify.com): 422 {"errors": {"title": ["cannot be blank"]}}
+2025-12-26 15:42:47,722 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 15:42:47,755 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 15:42:47,781 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 15:42:48,143 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 15:42:48,147 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 15:42:48,154 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 15:42:48,157 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 15:42:48,157 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 15:42:48,159 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 15:42:48,159 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 15:42:48,160 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 15:42:48,160 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 15:42:48,161 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 15:42:48,162 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 15:44:50,040 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 15:45:25,669 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 15:46:13,809 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 15:46:13,821 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 15:46:13,834 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 15:46:21,012 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 15:46:21,022 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 15:46:21,198 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 15:46:21,233 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 15:46:21,255 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 15:46:21,419 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 15:46:21,452 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 15:46:21,457 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 15:46:21,465 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 15:46:21,468 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 15:46:21,468 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 15:46:21,470 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 15:46:21,470 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 15:46:21,471 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 15:46:21,471 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 15:46:21,473 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 15:46:21,473 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 15:47:23,654 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 15:47:23,665 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 15:47:23,680 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 15:47:23,684 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 15:47:23,684 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 15:47:23,686 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 15:47:23,686 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 15:47:23,687 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 15:47:23,687 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 15:47:23,689 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 15:47:23,689 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 16:10:34,630 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 16:10:34,643 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 16:10:34,872 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 16:10:34,900 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 16:10:34,926 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 16:10:35,099 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 16:10:35,131 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 16:10:35,135 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 16:10:35,144 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 16:10:35,148 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 16:10:35,148 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 16:10:35,150 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 16:10:35,150 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 16:10:35,153 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 16:10:35,153 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 16:10:35,154 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 16:10:35,154 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
+2025-12-26 16:57:19,504 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Failed to update product: 422
+2025-12-26 16:57:19,515 - src.main.core.generation - ERROR - ❌ Access Token missing for shop test-shop.myshopify.com during product update.
+2025-12-26 16:57:19,681 - src.main.api.controller - ERROR - OAuth redirect verification failed: Invalid HMAC signature
+2025-12-26 16:57:19,721 - src.main.api.controller - ERROR - Token exchange failed: {"error":"invalid_request"}
+2025-12-26 16:57:19,746 - src.main.api.controller - ERROR - Unexpected error processing webhook: Unexpected Crash
+2025-12-26 16:57:19,908 - src.main.core.generation - ERROR - ❌ Error processing request for test-shop.myshopify.com: Shopify Translation Error: Locale 'de' is not enabled for this shop.
+2025-12-26 16:57:19,945 - src.main.service.onboarding - ERROR - Failed to create user: DB Error
+2025-12-26 16:57:19,949 - src.main.service.open_ai_api_service - ERROR - ❌ Error during streaming: Stream Error
+2025-12-26 16:57:19,957 - src.main.security.security - ERROR - ⚠️ Unknown Security Error: Boom
+2025-12-26 16:57:19,961 - src.main.service.shopify_service - ERROR - ❌ Failed to fetch digests. Status: 401, Body: Unauthorized
+2025-12-26 16:57:19,961 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests: 401
+2025-12-26 16:57:19,963 - src.main.service.shopify_service - ERROR - ❌ GraphQL Errors fetching digest: [{'message': 'Syntax Error'}]
+2025-12-26 16:57:19,963 - src.main.service.shopify_service - ERROR - Error fetching digests: Failed to fetch content digests due to GraphQL error.
+2025-12-26 16:57:19,965 - src.main.service.shopify_service - ERROR - ❌ GraphQL Mutation Failed. Status: 500, Body: Server Error
+2025-12-26 16:57:19,965 - src.main.service.shopify_service - ERROR - Error registering translation: Failed to register translation.
+2025-12-26 16:57:19,966 - src.main.service.shopify_service - ERROR - ❌ Translation API Errors: [{'message': 'Digest mismatch', 'field': ['digest']}]
+2025-12-26 16:57:19,966 - src.main.service.shopify_service - ERROR - Error registering translation: Shopify Translation Error: Digest mismatch
