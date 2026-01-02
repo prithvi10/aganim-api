@@ -102,7 +102,7 @@ def create_user(db: Session, username: str, email: str | None, plan_id: int) -> 
     db.refresh(new_user)
     return new_user
 
-def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
+def store_shop_access_token(db: Session, shop_domain: str, access_token: str, token_type: str = "offline"):
     """
     Stores or updates the access token for a given shop.
     ALSO ensures a corresponding User record exists for billing/quota.
@@ -112,46 +112,40 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str):
     from src.main.logging.logger import get_logger
     logger = get_logger(__name__)
 
-    logger.info(f"Storing access token for shop: {shop_domain}")
+    logger.info(f"Storing access token for shop: {shop_domain} (type={token_type})")
 
     # 1. Update/Create Shop Record (OAuth Token)
-    # Check if this is an offline token (starts with shpua_ is online, shpca_/shpat_ is offline usually)
-    # Actually, official docs say online tokens are per-user. Offline tokens are permanent.
-    # Offline tokens often start with 'shpat_' or 'shpka_' or similar, while online might be different.
-    # But a safer heuristic provided by user is: if it's ONLINE, do NOT overwrite an existing OFFLINE token.
-    # Since we can't easily detect offline vs online just by string without strict rules, 
-    # we will rely on the caller to provide only OFFLINE tokens if possible, or we check if the new token looks "better".
-    #
-    # However, the user instruction was:
-    # "Ensure that if an OFFLINE token is received, it overwrites any existing token.
-    #  If an ONLINE token is received, DO NOT use it for background API calls like get_locales."
-    #
-    # The sync endpoint receives what the UI sends. The UI (remix) sends what it has.
-    # We will assume the token passed here IS the one we want to store unless we can prove otherwise.
-    # BUT, to be safe, let's log what we are storing. 
-    # A common pattern: Offline tokens don't expire. Online tokens do.
-    # If the token starts with 'shpua_', it is an ONLINE (User) Access Token.
-    # We should probably NOT overwrite an existing token with an 'shpua_' token if we already have one.
+    # Rules:
+    # - If token_type is 'offline', ALWAYS overwrite (it's the permanent token).
+    # - If token_type is 'online', ONLY overwrite if we don't have a token, or if the current token is also online.
+    #   (Though realistically we can't definitively know if the current DB token is online/offline without storing type,
+    #    we will assume if we are sent an ONLINE token, we should be careful not to nuke a working OFFLINE one).
 
     shop_record = db.query(Shop).filter(Shop.domain == shop_domain).first()
     
-    is_online_token = access_token.startswith("shpua_")
-    
-    if shop_record:
-        # If we already have a token, and the new one is ONLINE, ignore it to prevent overwriting a good OFFLINE token.
-        if is_online_token and shop_record.access_token and not shop_record.access_token.startswith("shpua_"):
-             logger.warning(f"Ignoring ONLINE token update for {shop_domain} because we already have an OFFLINE token.")
-        else:
-             if is_online_token:
-                 logger.warning(f"Storing ONLINE token for {shop_domain}. This may cause issues with background jobs.")
-             shop_record.access_token = access_token
-    else:
-        if is_online_token:
-             logger.warning(f"First token for {shop_domain} is ONLINE. Background jobs may fail.")
-        new_shop = Shop(domain=shop_domain, access_token=access_token)
-        db.add(new_shop)
-        shop_record = new_shop
+    should_update = True
+    if shop_record and shop_record.access_token:
+        # If we have an existing token...
+        if token_type == "online":
+            # Heuristic: If existing token looks like an offline token (starts with shp), don't overwrite it with online (starts with shpua)
+            # Actually, let's trust the input logic: If it's ONLINE, we treat it as temporary.
+            # If the existing token is present, we assume it might be offline (preferred).
+            # So we SKIP updating if we are given an online token and already have ANY token.
+            # Exception: unless the existing token is known to be broken (but we don't know that here).
+            logger.warning(f"Skipping update for {shop_domain} because we received an ONLINE token and already have a token stored.")
+            should_update = False
+        elif token_type == "offline":
+            # Always overwrite with offline token
+            should_update = True
 
+    if should_update:
+        if shop_record:
+            shop_record.access_token = access_token
+        else:
+            new_shop = Shop(domain=shop_domain, access_token=access_token)
+            db.add(new_shop)
+            shop_record = new_shop
+    
     # 2. Update/Create User Record (Billing Identity)
     user = db.query(User).filter(User.username == shop_domain).first()
     

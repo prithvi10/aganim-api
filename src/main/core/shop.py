@@ -70,12 +70,15 @@ async def fetch_shop_locales(db: Session, shop_domain: str):
         logger.error(f"Shopify GraphQL Request Failed: {e.response.text}")
         # Detect Invalid API Key error explicitly
         if "Invalid API key or access token" in e.response.text:
-            logger.error(f"Authentication failed for {shop_domain}. Triggering re-auth.")
+            token_type_log = "online" if access_token.startswith("shpua_") else "offline"
+            logger.error(f"Authentication failed for {shop_domain}. Triggering re-auth. (Failed Token Type: {token_type_log})")
             raise HTTPException(status_code=401, detail="Invalid Shopify Access Token")
         raise HTTPException(status_code=500, detail="Failed to fetch locales from Shopify")
     except Exception as e:
         # Also catch it if it came from the generic Exception block (though raise_for_status handles 4xx/5xx)
         if "Invalid API key or access token" in str(e):
+             token_type_log = "online" if access_token.startswith("shpua_") else "offline"
+             logger.error(f"Authentication failed (Exception) for {shop_domain}. (Failed Token Type: {token_type_log})")
              raise HTTPException(status_code=401, detail="Invalid Shopify Access Token")
         logger.error(f"Unexpected error fetching locales: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
