@@ -141,3 +141,8 @@ cython_debug/
 *.swp
 *.swo
 .DS_Store
+
+# Custom
+logs/
+node_modules/
+shopify-translator-api.code-workspace
