@@ -198,12 +198,13 @@ async def sync_token(
     shop = payload.get("shop")
     access_token = payload.get("access_token")
     token_type = payload.get("token_type", "offline") # Default to offline if not specified
+    force = bool(payload.get("force", False))
 
     if not shop or not access_token:
         raise HTTPException(status_code=400, detail="Missing shop or access_token")
 
-    logger.info(f"[Sync Token] Storing token for shop={shop}, type={token_type}")
-    store_shop_access_token(db, shop, access_token, token_type=token_type)
+    logger.info(f"[Sync Token] Storing token for shop={shop}, type={token_type}, force={force}")
+    store_shop_access_token(db, shop, access_token, token_type=token_type, force=force)
     return Response(status_code=204)
 
 @router.post("/webhooks/subscription-activated")

@@ -102,7 +102,7 @@ def create_user(db: Session, username: str, email: str | None, plan_id: int) -> 
     db.refresh(new_user)
     return new_user
 
-def store_shop_access_token(db: Session, shop_domain: str, access_token: str, token_type: str = "offline"):
+def store_shop_access_token(db: Session, shop_domain: str, access_token: str, token_type: str = "offline", force: bool = False):
     """
     Stores or updates the access token for a given shop.
     ALSO ensures a corresponding User record exists for billing/quota.
@@ -126,7 +126,7 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
     should_update = True
     if shop_record and shop_record.access_token:
         # If we have an existing token...
-        if token_type == "online":
+        if token_type == "online" and not force:
             # Heuristic: If existing token looks like an offline token (starts with shp), don't overwrite it with online (starts with shpua)
             # Actually, let's trust the input logic: If it's ONLINE, we treat it as temporary.
             # If the existing token is present, we assume it might be offline (preferred).
