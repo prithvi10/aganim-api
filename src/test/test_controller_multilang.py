@@ -1,5 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
+import hmac
+import hashlib
 from unittest.mock import patch, MagicMock, AsyncMock
 from sqlalchemy.orm import Session
 from datetime import date
@@ -7,6 +9,7 @@ from datetime import date
 from src.main.api.main import app
 from src.main.db.database import get_db
 from src.main.db.db_models import User, Plan
+from src.main.security.security import SHOPIFY_API_SECRET
 
 client = TestClient(app)
 
@@ -41,7 +44,14 @@ async def test_get_shop_locales_success(mock_auth_context):
     with patch("src.main.api.controller.fetch_shop_locales", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = {"status": "success", "locales": mock_locales}
 
-        response = client.get(f"/api/proxy/shop/locales?shop={shop}")
+        canonical = f"shop={shop}"
+        signature = hmac.new(
+            (SHOPIFY_API_SECRET or "").encode("utf-8"),
+            canonical.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        response = client.get(f"/api/proxy/shop/locales?shop={shop}&signature={signature}")
 
         assert response.status_code == 200
         assert len(response.json()["locales"]) == 2
