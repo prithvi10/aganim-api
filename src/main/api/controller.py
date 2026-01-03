@@ -14,6 +14,7 @@ from src.main.security.security import (
     verify_shopify_session, 
     verify_webhook_signature, 
     verify_shopify_redirect,
+    verify_shopify_proxy_request,
     SHOPIFY_API_KEY,
     SHOPIFY_API_SECRET
 )
@@ -377,12 +378,15 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
 #  4. SHOP LOCALES ENDPOINT
 # ==============================================================================
 @router.get("/api/proxy/shop/locales")
-async def get_shop_locales(request: Request, db: Session = Depends(get_db)):
+async def get_shop_locales(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(verify_shopify_proxy_request),
+):
     """
     Fetches the enabled locales for the shop.
     Delegates to Core layer.
     """
     params = dict(request.query_params)
     logger.info(f"PROXY REQ locales: {params}")
-    shop_domain = request.query_params.get("shop")
-    return await fetch_shop_locales(db, shop_domain)
+    return await fetch_shop_locales(db, shop)
