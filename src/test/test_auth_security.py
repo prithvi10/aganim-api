@@ -35,9 +35,9 @@ def generate_proxy_signature(secret, params):
     if "signature" in params_to_sign:
         del params_to_sign["signature"]
         
-    # 2. Sort and Encode (using & separator as per security.py implementation)
-    sorted_items = sorted(params_to_sign.items())
-    canonical_string = urlencode(sorted_items)
+    # 2. Sort and join decoded params as `k=v&k2=v2` (matches security.py App Proxy verifier)
+    sorted_items = sorted(params_to_sign.items(), key=lambda kv: (kv[0], kv[1]))
+    canonical_string = "&".join([f"{k}={v}" for (k, v) in sorted_items])
     
     # 3. Sign
     digest = hmac.new(
