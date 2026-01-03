@@ -204,8 +204,14 @@ async def verify_shopify_proxy_request(request: Request):
     # IMPORTANT: Do NOT use `urlencode()` here; it will re-encode characters (e.g. `/` -> `%2F`)
     # and can cause signature mismatches.
     #
-    # Use Starlette's QueryParams multi_items() to preserve empty values reliably.
-    items = list(request.query_params.multi_items())
+    # Use Starlette's QueryParams multi_items() when available to preserve empty values reliably.
+    # Tests may pass a plain dict for query_params, so fall back to `.items()` in that case.
+    qp = request.query_params
+    if hasattr(qp, "multi_items"):
+        items = list(qp.multi_items())  # type: ignore[attr-defined]
+    else:
+        items = list(dict(qp).items())
+
     items = [(k, v) for (k, v) in items if k != "signature"]
     sorted_items = sorted(items, key=lambda kv: (kv[0], kv[1]))
     canonical_string = "&".join([f"{k}={v}" for (k, v) in sorted_items])
