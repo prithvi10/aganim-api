@@ -198,16 +198,17 @@ async def verify_shopify_proxy_request(request: Request):
     # We rely on the core six: shop, path_prefix, timestamp, etc.
 
     # 3. Construct the canonical query string
-    # We use urlencode on the sorted parameters list.
-    # Note: urlencode on a list of tuples automatically sorts them.
-    
-    # We must ensure the parameters are processed correctly for the HMAC:
-    
-    # Convert dict items to a list of tuples, sort them, and encode with '&'
-    sorted_items = sorted(params_for_hmac.items())
-
-    # We use urlencode() to get the string: key1=value1&key2=value2...
-    canonical_string = urlencode(sorted_items)
+    # Shopify App Proxy signatures are calculated over the *decoded* query parameters
+    # (excluding `signature`), sorted lexicographically, joined as `k=v&k2=v2`.
+    #
+    # IMPORTANT: Do NOT use `urlencode()` here; it will re-encode characters (e.g. `/` -> `%2F`)
+    # and can cause signature mismatches.
+    #
+    # Use Starlette's QueryParams multi_items() to preserve empty values reliably.
+    items = list(request.query_params.multi_items())
+    items = [(k, v) for (k, v) in items if k != "signature"]
+    sorted_items = sorted(items, key=lambda kv: (kv[0], kv[1]))
+    canonical_string = "&".join([f"{k}={v}" for (k, v) in sorted_items])
 
     # 4. Calculate HMAC
     calculated_signature = hmac.new(
