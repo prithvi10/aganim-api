@@ -35,8 +35,13 @@ def generate_proxy_signature(secret, params):
     if "signature" in params_to_sign:
         del params_to_sign["signature"]
         
-    # 2. Sort and join decoded params as `k=v&k2=v2` (matches security.py App Proxy verifier)
-    sorted_items = sorted(params_to_sign.items(), key=lambda kv: (kv[0], kv[1]))
+    # 2. Sort and join RAW (percent-encoded) params as `k=v&k2=v2` (matches security.py App Proxy verifier)
+    # Shopify sends `path_prefix` percent-encoded in the query string.
+    params_raw = params_to_sign.copy()
+    if "path_prefix" in params_raw:
+        params_raw["path_prefix"] = params_raw["path_prefix"].replace("/", "%2F")
+
+    sorted_items = sorted(params_raw.items(), key=lambda kv: (kv[0], kv[1]))
     canonical_string = "&".join([f"{k}={v}" for (k, v) in sorted_items])
     
     # 3. Sign
@@ -110,6 +115,16 @@ async def test_verify_shopify_proxy_success(valid_proxy_params):
     # Mock Request
     mock_request = MagicMock(spec=Request)
     mock_request.query_params = params
+    # Provide raw query string (what Shopify signs) so the verifier uses the raw-path.
+    mock_request.scope = {
+        "query_string": (
+            f"shop={valid_proxy_params['shop']}"
+            f"&logged_in_customer_id={valid_proxy_params['logged_in_customer_id']}"
+            f"&path_prefix={valid_proxy_params['path_prefix'].replace('/', '%2F')}"
+            f"&timestamp={valid_proxy_params['timestamp']}"
+            f"&signature={valid_signature}"
+        ).encode("utf-8")
+    }
     
     with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SECRET):
         result = await verify_shopify_proxy_request(mock_request)
