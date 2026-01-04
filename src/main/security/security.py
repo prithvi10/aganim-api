@@ -249,6 +249,9 @@ async def verify_shopify_proxy_request(request: Request):
         candidates.append("&".join([f"{k}={v}" for (k, v) in raw_items]))
     # Variant C: decoded values, sorted by key then value
     candidates.append("&".join([f"{k}={v}" for (k, v) in sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))]))
+    # Variant D (matches previous working implementation): urlencode(sorted(decoded_items))
+    # This re-encodes characters like "/" -> "%2F", which Shopify commonly signs.
+    candidates.append(urlencode(sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))))
 
     ok = any(hmac.compare_digest(_hmac_hex(c), received_signature) for c in candidates)
     if not ok:
