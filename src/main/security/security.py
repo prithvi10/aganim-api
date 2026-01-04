@@ -197,20 +197,29 @@ async def verify_shopify_proxy_request(request: Request):
     # but they are usually not present in the final proxy query string.
     # We rely on the core six: shop, path_prefix, timestamp, etc.
 
-    # 3. Construct the canonical query string
+    # 3. Construct the canonical query string.
     #
-    # Shopify App Proxy signatures are calculated over the *raw (percent-encoded) query string*
-    # excluding `signature`, sorted lexicographically, joined as `k=v&k2=v2`.
+    # Shopify App Proxy signatures are HMAC-SHA256 over the query string parameters
+    # excluding `signature`. In practice, we may observe differences between:
+    # - raw (percent-encoded) vs decoded values
+    # - sorted vs original parameter order
     #
-    # If we use decoded values (e.g. "/apps/..." instead of "%2Fapps%2F...") we will get mismatches.
+    # To avoid intermittent mismatches while remaining secure, we verify against
+    # multiple canonicalization variants (all still require a valid HMAC under the secret).
+    def _hmac_hex(message: str) -> str:
+        return hmac.new(
+            SHOPIFY_API_SECRET.encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
     raw_qs = None
     try:
-        # Starlette/FastAPI stores the raw query string bytes here.
-        raw_qs = request.scope.get("query_string")
+        raw_qs = request.scope.get("query_string")  # type: ignore[union-attr]
     except Exception:
         raw_qs = None
 
-    items: list[tuple[str, str]] = []
+    raw_items: list[tuple[str, str]] = []
     if raw_qs:
         qs_str = raw_qs.decode("utf-8")
         for part in qs_str.split("&"):
@@ -222,29 +231,33 @@ async def verify_shopify_proxy_request(request: Request):
                 k, v = part, ""
             if k == "signature":
                 continue
-            items.append((k, v))
+            raw_items.append((k, v))
+
+    # Decoded fallback (also used by tests/mocks without `scope.query_string`)
+    qp = request.query_params
+    if hasattr(qp, "multi_items"):
+        decoded_items = list(qp.multi_items())  # type: ignore[attr-defined]
     else:
-        # Fallback for tests/mocks: use decoded query params.
-        qp = request.query_params
-        if hasattr(qp, "multi_items"):
-            items = list(qp.multi_items())  # type: ignore[attr-defined]
-        else:
-            items = list(dict(qp).items())
-        items = [(k, v) for (k, v) in items if k != "signature"]
+        decoded_items = list(dict(qp).items())
+    decoded_items = [(k, v) for (k, v) in decoded_items if k != "signature"]
 
-    sorted_items = sorted(items, key=lambda kv: (kv[0], kv[1]))
-    canonical_string = "&".join([f"{k}={v}" for (k, v) in sorted_items])
+    candidates: list[str] = []
+    if raw_items:
+        # Variant A: raw values, sorted by key then value
+        candidates.append("&".join([f"{k}={v}" for (k, v) in sorted(raw_items, key=lambda kv: (kv[0], kv[1]))]))
+        # Variant B: raw values, original order
+        candidates.append("&".join([f"{k}={v}" for (k, v) in raw_items]))
+    # Variant C: decoded values, sorted by key then value
+    candidates.append("&".join([f"{k}={v}" for (k, v) in sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))]))
 
-    # 4. Calculate HMAC
-    calculated_signature = hmac.new(
-        SHOPIFY_API_SECRET.encode('utf-8'),
-        canonical_string.encode('utf-8'), # <--- Use the correctly encoded string
-        hashlib.sha256
-    ).hexdigest()
-
-    # 5. Compare
-    if not hmac.compare_digest(calculated_signature, received_signature):
-        logger.warning(f"Invalid App Proxy signature. Calculated: {calculated_signature}, Received: {received_signature}")
+    ok = any(hmac.compare_digest(_hmac_hex(c), received_signature) for c in candidates)
+    if not ok:
+        # Log compact debug info for troubleshooting; do not log secrets/tokens.
+        preview = candidates[0][:250] if candidates else ""
+        logger.warning(
+            f"Invalid App Proxy signature. Received: {received_signature}. "
+            f"CandidatePreview: {preview}"
+        )
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     # 6. Success: return the shop domain for use in the controller
