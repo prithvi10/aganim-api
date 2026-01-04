@@ -198,21 +198,40 @@ async def verify_shopify_proxy_request(request: Request):
     # We rely on the core six: shop, path_prefix, timestamp, etc.
 
     # 3. Construct the canonical query string
-    # Shopify App Proxy signatures are calculated over the *decoded* query parameters
-    # (excluding `signature`), sorted lexicographically, joined as `k=v&k2=v2`.
     #
-    # IMPORTANT: Do NOT use `urlencode()` here; it will re-encode characters (e.g. `/` -> `%2F`)
-    # and can cause signature mismatches.
+    # Shopify App Proxy signatures are calculated over the *raw (percent-encoded) query string*
+    # excluding `signature`, sorted lexicographically, joined as `k=v&k2=v2`.
     #
-    # Use Starlette's QueryParams multi_items() when available to preserve empty values reliably.
-    # Tests may pass a plain dict for query_params, so fall back to `.items()` in that case.
-    qp = request.query_params
-    if hasattr(qp, "multi_items"):
-        items = list(qp.multi_items())  # type: ignore[attr-defined]
-    else:
-        items = list(dict(qp).items())
+    # If we use decoded values (e.g. "/apps/..." instead of "%2Fapps%2F...") we will get mismatches.
+    raw_qs = None
+    try:
+        # Starlette/FastAPI stores the raw query string bytes here.
+        raw_qs = request.scope.get("query_string")
+    except Exception:
+        raw_qs = None
 
-    items = [(k, v) for (k, v) in items if k != "signature"]
+    items: list[tuple[str, str]] = []
+    if raw_qs:
+        qs_str = raw_qs.decode("utf-8")
+        for part in qs_str.split("&"):
+            if not part:
+                continue
+            if "=" in part:
+                k, v = part.split("=", 1)
+            else:
+                k, v = part, ""
+            if k == "signature":
+                continue
+            items.append((k, v))
+    else:
+        # Fallback for tests/mocks: use decoded query params.
+        qp = request.query_params
+        if hasattr(qp, "multi_items"):
+            items = list(qp.multi_items())  # type: ignore[attr-defined]
+        else:
+            items = list(dict(qp).items())
+        items = [(k, v) for (k, v) in items if k != "signature"]
+
     sorted_items = sorted(items, key=lambda kv: (kv[0], kv[1]))
     canonical_string = "&".join([f"{k}={v}" for (k, v) in sorted_items])
 
