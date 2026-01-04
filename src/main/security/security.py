@@ -178,8 +178,17 @@ async def verify_shopify_proxy_request(request: Request):
     Verifies the signature for Shopify App Proxy requests.
     This function should be used as a FastAPI Dependency.
     """
+    debug_proxy = os.getenv("DEBUG_PROXY_SIGNATURE") == "1"
+
+    def _dbg(msg: str):
+        if debug_proxy:
+            logger.info(f"[ProxySigDebug] {msg}")
+
+    _dbg(f"request.url={getattr(request, 'url', None)}")
+
     # 1. Access the query parameters
     query_params = dict(request.query_params)
+    _dbg(f"query_params={query_params}")
 
     if not SHOPIFY_API_SECRET:
          raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
@@ -188,6 +197,7 @@ async def verify_shopify_proxy_request(request: Request):
     received_signature = query_params.get("signature")
     if not received_signature:
         raise HTTPException(status_code=400, detail="Missing signature parameter")
+    _dbg(f"received_signature={received_signature}")
 
     params_for_hmac = query_params.copy()
     if "signature" in params_for_hmac:
@@ -222,6 +232,7 @@ async def verify_shopify_proxy_request(request: Request):
     raw_items: list[tuple[str, str]] = []
     if raw_qs:
         qs_str = raw_qs.decode("utf-8")
+        _dbg(f"raw_query_string={qs_str}")
         for part in qs_str.split("&"):
             if not part:
                 continue
@@ -232,6 +243,9 @@ async def verify_shopify_proxy_request(request: Request):
             if k == "signature":
                 continue
             raw_items.append((k, v))
+        _dbg(f"raw_items_no_signature={raw_items}")
+    else:
+        _dbg("raw_query_string=<missing>")
 
     # Decoded fallback (also used by tests/mocks without `scope.query_string`)
     qp = request.query_params
@@ -240,28 +254,53 @@ async def verify_shopify_proxy_request(request: Request):
     else:
         decoded_items = list(dict(qp).items())
     decoded_items = [(k, v) for (k, v) in decoded_items if k != "signature"]
+    _dbg(f"decoded_items_no_signature={decoded_items}")
 
     candidates: list[str] = []
     if raw_items:
         # Variant A: raw values, sorted by key then value
-        candidates.append("&".join([f"{k}={v}" for (k, v) in sorted(raw_items, key=lambda kv: (kv[0], kv[1]))]))
+        cand_a = "&".join([f"{k}={v}" for (k, v) in sorted(raw_items, key=lambda kv: (kv[0], kv[1]))])
+        candidates.append(cand_a)
+        _dbg(f"cand[A]=raw_sorted: {cand_a}")
         # Variant B: raw values, original order
-        candidates.append("&".join([f"{k}={v}" for (k, v) in raw_items]))
+        cand_b = "&".join([f"{k}={v}" for (k, v) in raw_items])
+        candidates.append(cand_b)
+        _dbg(f"cand[B]=raw_original_order: {cand_b}")
     # Variant C: decoded values, sorted by key then value
-    candidates.append("&".join([f"{k}={v}" for (k, v) in sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))]))
+    cand_c = "&".join([f"{k}={v}" for (k, v) in sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))])
+    candidates.append(cand_c)
+    _dbg(f"cand[C]=decoded_sorted: {cand_c}")
     # Variant D (matches previous working implementation): urlencode(sorted(decoded_items))
     # This re-encodes characters like "/" -> "%2F", which Shopify commonly signs.
-    candidates.append(urlencode(sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))))
+    cand_d = urlencode(sorted(decoded_items, key=lambda kv: (kv[0], kv[1])))
+    candidates.append(cand_d)
+    _dbg(f"cand[D]=urlencode(decoded_sorted): {cand_d}")
 
-    ok = any(hmac.compare_digest(_hmac_hex(c), received_signature) for c in candidates)
+    digests = [_hmac_hex(c) for c in candidates]
+    for i, (c, d) in enumerate(zip(candidates, digests)):
+        _dbg(f"digest[{i}]={d} for cand[{i}]={c}")
+    ok = any(hmac.compare_digest(d, received_signature) for d in digests)
     if not ok:
-        # Log compact debug info for troubleshooting; do not log secrets/tokens.
+        # Debugging without leaking secrets:
+        # - safe to log the candidate strings (they're derived from request query params)
+        # - safe to log calculated digests (request already contains the received signature)
         preview = candidates[0][:250] if candidates else ""
-        logger.warning(
+        msg = (
             f"Invalid App Proxy signature. Received: {received_signature}. "
             f"CandidatePreview: {preview}"
         )
+        if debug_proxy:
+            try:
+                raw_present = bool(raw_qs)
+                msg += f" | raw_qs_present={raw_present}"
+                for i, (c, d) in enumerate(zip(candidates, digests)):
+                    msg += f" | cand[{i}]={c} | digest[{i}]={d}"
+            except Exception:
+                pass
+        logger.warning(msg)
         raise HTTPException(status_code=401, detail="Invalid signature")
 
+    _dbg("signature_match=TRUE")
     # 6. Success: return the shop domain for use in the controller
+    _dbg(f"shop_returned={query_params.get('shop')}")
     return query_params.get("shop")
