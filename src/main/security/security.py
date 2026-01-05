@@ -112,6 +112,7 @@ async def verify_webhook_signature(request: Request):
         logger.error("Missing SHOPIFY_API_SECRET")
         raise HTTPException(status_code=500, detail="Server Configuration Error")
 
+    debug_webhook = os.getenv("DEBUG_WEBHOOK_SIGNATURE") == "1"
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
     if not hmac_header:
         logger.warning("Missing X-Shopify-Hmac-Sha256 header")
@@ -129,6 +130,12 @@ async def verify_webhook_signature(request: Request):
     computed_hmac = base64.b64encode(digest).decode('utf-8')
 
     if not hmac.compare_digest(computed_hmac, hmac_header):
+        if debug_webhook:
+            logger.info(
+                "[WebhookSigDebug] "
+                f"received={hmac_header} computed={computed_hmac} "
+                f"body_len={len(body)} content_type={request.headers.get('content-type')}"
+            )
         logger.warning("Invalid webhook signature")
         raise HTTPException(status_code=401, detail="Unauthorized")
     
@@ -214,8 +221,14 @@ async def verify_shopify_proxy_request(request: Request):
     # - raw (percent-encoded) vs decoded values
     # - sorted vs original parameter order
     #
-    # To avoid intermittent mismatches while remaining secure, we verify against
-    # multiple canonicalization variants (all still require a valid HMAC under the secret).
+    # Shopify App Proxy signatures are computed by:
+    # - removing `signature`
+    # - sorting parameters lexicographically (by key, then value)
+    # - concatenating as `k=v` pairs *with no separators*
+    #
+    # Shopify behavior can still vary in whether values are signed raw (percent-encoded)
+    # or decoded + re-encoded. To avoid brittle failures, we verify against a small set
+    # of equivalent canonicalization variants (all still require a valid HMAC under the secret).
     def _hmac_hex(message: str) -> str:
         return hmac.new(
             SHOPIFY_API_SECRET.encode("utf-8"),
@@ -258,21 +271,21 @@ async def verify_shopify_proxy_request(request: Request):
 
     candidates: list[str] = []
     if raw_items:
-        # Variant A: raw values, sorted by key then value
-        cand_a = "&".join([f"{k}={v}" for (k, v) in sorted(raw_items, key=lambda kv: (kv[0], kv[1]))])
+        # Variant A: raw values, sorted by key then value, concatenated with NO separators
+        cand_a = "".join([f"{k}={v}" for (k, v) in sorted(raw_items, key=lambda kv: (kv[0], kv[1]))])
         candidates.append(cand_a)
         _dbg(f"cand[A]=raw_sorted: {cand_a}")
-        # Variant B: raw values, original order
-        cand_b = "&".join([f"{k}={v}" for (k, v) in raw_items])
+        # Variant B: raw values, original order, concatenated with NO separators
+        cand_b = "".join([f"{k}={v}" for (k, v) in raw_items])
         candidates.append(cand_b)
         _dbg(f"cand[B]=raw_original_order: {cand_b}")
-    # Variant C: decoded values, sorted by key then value
-    cand_c = "&".join([f"{k}={v}" for (k, v) in sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))])
+    # Variant C: decoded values, sorted by key then value, concatenated with NO separators
+    cand_c = "".join([f"{k}={v}" for (k, v) in sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))])
     candidates.append(cand_c)
     _dbg(f"cand[C]=decoded_sorted: {cand_c}")
-    # Variant D (matches previous working implementation): urlencode(sorted(decoded_items))
+    # Variant D: re-encode sorted decoded params via urlencode (adds '&'), then remove '&'
     # This re-encodes characters like "/" -> "%2F", which Shopify commonly signs.
-    cand_d = urlencode(sorted(decoded_items, key=lambda kv: (kv[0], kv[1])))
+    cand_d = urlencode(sorted(decoded_items, key=lambda kv: (kv[0], kv[1]))).replace("&", "")
     candidates.append(cand_d)
     _dbg(f"cand[D]=urlencode(decoded_sorted): {cand_d}")
 
