@@ -14,8 +14,19 @@ logger = get_logger(__name__)
 load_dotenv()
 
 # Configuration
-SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET")
-SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY")
+def _env_strip(name: str) -> str | None:
+    """
+    Read an env var and strip surrounding whitespace.
+    This avoids subtle production issues where secrets get pasted with newlines/spaces.
+    """
+    val = os.getenv(name)
+    if val is None:
+        return None
+    val = val.strip()
+    return val or None
+
+SHOPIFY_API_SECRET = _env_strip("SHOPIFY_API_SECRET")
+SHOPIFY_API_KEY = _env_strip("SHOPIFY_API_KEY")
 
 # ---------------------------------------------------------
 # 1. API Key Logic (For Billing/Quota Checks)
@@ -117,6 +128,7 @@ async def verify_webhook_signature(request: Request):
     if not hmac_header:
         logger.warning("Missing X-Shopify-Hmac-Sha256 header")
         raise HTTPException(status_code=401, detail="Unauthorized")
+    hmac_header = hmac_header.strip()
 
     body = await request.body()
     
@@ -131,10 +143,19 @@ async def verify_webhook_signature(request: Request):
 
     if not hmac.compare_digest(computed_hmac, hmac_header):
         if debug_webhook:
+            body_sha256 = hashlib.sha256(body).hexdigest()
             logger.info(
                 "[WebhookSigDebug] "
                 f"received={hmac_header} computed={computed_hmac} "
-                f"body_len={len(body)} content_type={request.headers.get('content-type')}"
+                f"body_len={len(body)} body_sha256={body_sha256} "
+                f"content_type={request.headers.get('content-type')} "
+                f"content_encoding={request.headers.get('content-encoding')} "
+                f"transfer_encoding={request.headers.get('transfer-encoding')} "
+                f"topic={request.headers.get('x-shopify-topic')} "
+                f"shop={request.headers.get('x-shopify-shop-domain')} "
+                f"webhook_id={request.headers.get('x-shopify-webhook-id')} "
+                f"api_version={request.headers.get('x-shopify-api-version')} "
+                f"secret_len={len(SHOPIFY_API_SECRET) if SHOPIFY_API_SECRET else 0}"
             )
         logger.warning("Invalid webhook signature")
         raise HTTPException(status_code=401, detail="Unauthorized")
