@@ -35,14 +35,15 @@ def generate_proxy_signature(secret, params):
     if "signature" in params_to_sign:
         del params_to_sign["signature"]
         
-    # 2. Sort and join RAW (percent-encoded) params as `k=v&k2=v2` (matches security.py App Proxy verifier)
+    # 2. Sort and join RAW (percent-encoded) params as `k=v` concatenated with NO separators
+    # (matches Shopify App Proxy signing rules)
     # Shopify sends `path_prefix` percent-encoded in the query string.
     params_raw = params_to_sign.copy()
     if "path_prefix" in params_raw:
         params_raw["path_prefix"] = params_raw["path_prefix"].replace("/", "%2F")
 
     sorted_items = sorted(params_raw.items(), key=lambda kv: (kv[0], kv[1]))
-    canonical_string = "&".join([f"{k}={v}" for (k, v) in sorted_items])
+    canonical_string = "".join([f"{k}={v}" for (k, v) in sorted_items])
     
     # 3. Sign
     digest = hmac.new(
