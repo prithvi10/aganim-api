@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query, Header
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 import secrets
 import os
+import jwt
 
 from .models import RewriteRequest, OnboardingRequest, BulkRewriteRequest
 from src.main.db.db_models import User
@@ -34,6 +35,35 @@ router = APIRouter()
 SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
 SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
 TOKEN_SYNC_SECRET = os.getenv("TOKEN_SYNC_SECRET")
+
+
+# ==============================================================================
+#  Shared dependency: determine the shop for both Theme App Proxy and Admin UI Extensions
+#  - Theme App Proxy: verify Shopify proxy signature in query params
+#  - Admin UI Extensions: verify Shopify session token in Authorization header
+# ==============================================================================
+# Pseudo-code for your controller dependency
+async def resolve_shop_domain(request: Request):
+    auth_header = request.headers.get("Authorization")
+
+    # Path A: Admin Action (JWT)
+    if auth_header and auth_header.startswith("Bearer "):
+        try:
+            # 1. Verify JWT signature using Shopify's public keys + Your App Secret
+            # 2. Extract 'dest' claim (e.g., "https://my-shop.myshopify.com")
+            payload = verify_shopify_session(auth_header) 
+            return payload['dest'].replace("https://", "")
+        except jwt.InvalidTokenError:
+            raise HTTPException(401, "Invalid Admin Token")
+
+    # Path B: Theme Proxy (HMAC)
+    else:
+        # 1. Grab query params: shop, timestamp, signature
+        # 2. Re-calculate SHA256 HMAC and compare
+        if verify_shopify_proxy_request(request.query_params):
+             return request.query_params.get("shop")
+        else:
+             raise HTTPException(401, "Invalid Proxy Signature")
 
 # ==============================================================================
 #  0. OAUTH ENTRY POINT (Install App)
@@ -97,17 +127,14 @@ async def proxy_generate_copy(
 @router.post("/api/proxy/generate-bulk")
 async def proxy_generate_bulk(
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    shop_domain: str = Depends(resolve_shop_domain),
 ):
     try:
         body = await request.json()
         bulk_request = BulkRewriteRequest(**body)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
-
-    shop_domain = request.query_params.get("shop")
-    if not shop_domain:
-         raise HTTPException(status_code=400, detail="Missing shop parameter")
 
     auth_context = validate_shop_and_quota(db, shop_domain)
     
@@ -118,6 +145,46 @@ async def proxy_generate_bulk(
         plan=auth_context["plan"],
         user_id=auth_context["user_id"],
         billing_cycle_start=auth_context["billing_cycle_start"]
+    )
+
+
+# ==============================================================================
+#  1B. ADMIN EXTENSION ENDPOINT (Used by Shopify Admin UI Extensions)
+#      NOTE: Admin extensions are hosted on https://extensions.shopifycdn.com
+#      and will send Authorization: Bearer <Shopify session token>.
+# ==============================================================================
+@router.options("/apps/cross-border/generate-bulk")
+async def admin_ext_generate_bulk_preflight():
+    # CORSMiddleware will generally handle this, but we provide an explicit
+    # handler to avoid surprises in some deployment/proxy setups.
+    return Response(status_code=204)
+
+
+@router.post("/apps/cross-border/generate-bulk")
+async def admin_ext_generate_bulk(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Bulk generation endpoint for Shopify Admin Action extensions.
+    Authenticated using a Shopify Session Token (JWT) sent via Authorization header.
+    """
+    try:
+        body = await request.json()
+        bulk_request = BulkRewriteRequest(**body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    auth_context = validate_shop_and_quota(db, shop)
+
+    return await process_bulk_generation_request(
+        db=db,
+        request=bulk_request,
+        user=auth_context["user"],
+        plan=auth_context["plan"],
+        user_id=auth_context["user_id"],
+        billing_cycle_start=auth_context["billing_cycle_start"],
     )
 
 
