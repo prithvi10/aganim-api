@@ -69,6 +69,8 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:8000",
     # Shopify Admin (Admin Action extensions run with this origin)
     "https://admin.shopify.com",
+    # Shopify-hosted extensions origin (Admin UI Extensions)
+    "https://extensions.shopifycdn.com",
 ]
 
 # Add deployed URL from env if available
