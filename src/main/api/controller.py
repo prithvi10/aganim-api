@@ -39,31 +39,28 @@ TOKEN_SYNC_SECRET = os.getenv("TOKEN_SYNC_SECRET")
 
 # ==============================================================================
 #  Shared dependency: determine the shop for both Theme App Proxy and Admin UI Extensions
-#  - Theme App Proxy: verify Shopify proxy signature in query params
-#  - Admin UI Extensions: verify Shopify session token in Authorization header
+#  - Theme App Proxy: verify Shopify proxy signature (HMAC) on the full Request
+#  - Admin UI Extensions: verify Shopify session token (JWT) from Authorization header
+#
+#  IMPORTANT:
+#  - `verify_shopify_session()` already returns a shop domain string (not a payload dict)
+#  - `verify_shopify_proxy_request()` expects the full FastAPI Request
 # ==============================================================================
-# Pseudo-code for your controller dependency
-async def resolve_shop_domain(request: Request):
-    auth_header = request.headers.get("Authorization")
+async def resolve_shop_domain(request: Request) -> str:
+    auth_header = request.headers.get("Authorization") or ""
 
-    # Path A: Admin Action (JWT)
-    if auth_header and auth_header.startswith("Bearer "):
+    # Path A: Admin Action / embedded app call (JWT)
+    if auth_header.startswith("Bearer "):
         try:
-            # 1. Verify JWT signature using Shopify's public keys + Your App Secret
-            # 2. Extract 'dest' claim (e.g., "https://my-shop.myshopify.com")
-            payload = verify_shopify_session(auth_header) 
-            return payload['dest'].replace("https://", "")
+            return verify_shopify_session(auth_header)
         except jwt.InvalidTokenError:
-            raise HTTPException(401, "Invalid Admin Token")
+            raise HTTPException(status_code=401, detail="Invalid Admin Token")
 
-    # Path B: Theme Proxy (HMAC)
-    else:
-        # 1. Grab query params: shop, timestamp, signature
-        # 2. Re-calculate SHA256 HMAC and compare
-        if verify_shopify_proxy_request(request.query_params):
-             return request.query_params.get("shop")
-        else:
-             raise HTTPException(401, "Invalid Proxy Signature")
+    # Path B: Theme App Proxy (HMAC)
+    try:
+        return await verify_shopify_proxy_request(request)
+    except HTTPException:
+        raise
 
 # ==============================================================================
 #  0. OAUTH ENTRY POINT (Install App)
