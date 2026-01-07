@@ -126,6 +126,19 @@ async def verify_webhook_signature(request: Request):
     debug_webhook = os.getenv("DEBUG_WEBHOOK_SIGNATURE") == "1"
     hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
     if not hmac_header:
+        # Some Shopify delivery contexts may not include the HMAC header (or intermediary
+        # infrastructure may drop it). If an Authorization bearer token is present,
+        # fall back to verifying it as a Shopify session token.
+        auth_header = request.headers.get("Authorization") or ""
+        if auth_header.startswith("Bearer "):
+            try:
+                verify_shopify_session(auth_header)
+                return True
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
         logger.warning("Missing X-Shopify-Hmac-Sha256 header")
         raise HTTPException(status_code=401, detail="Unauthorized")
     hmac_header = hmac_header.strip()
