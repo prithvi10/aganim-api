@@ -65,7 +65,7 @@ This application serves as the backend for a Shopify App. It provides two main i
 1.  **Public API**: Used by the store's frontend or background workers to generate content, authenticated via API Keys.
 2.  **Admin API**: Used for app configuration and setup, authenticated via Shopify Session Tokens (JWT).
 
-## ✨ Key Features
+## Key Features
 
 *   **AI-Powered Translation**: Context-aware translation using OpenAI's GPT models.
 *   **Dual Authentication Strategy**:
