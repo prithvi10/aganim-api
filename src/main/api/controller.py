@@ -5,7 +5,7 @@ import secrets
 import os
 import jwt
 
-from .models import RewriteRequest, OnboardingRequest, BulkRewriteRequest
+from .models import RewriteRequest, OnboardingRequest, BulkRewriteRequest, AgentRequest
 from src.main.db.db_models import User
 from src.main.db.database import get_db
 from src.main.db.db_transactions import get_plan_by_name, store_shop_access_token
@@ -27,6 +27,7 @@ from src.main.logging.logger import get_logger
 # Import core business logic
 from src.main.core.generation import process_generation_request, process_bulk_generation_request
 from src.main.core.shop import fetch_shop_locales
+from src.main.core.agent_actions import run_agent_action
 
 logger = get_logger(__name__)
 
@@ -183,6 +184,45 @@ async def admin_ext_generate_bulk(
         user_id=auth_context["user_id"],
         billing_cycle_start=auth_context["billing_cycle_start"],
     )
+
+
+# ==============================================================================
+#  1C. ADMIN EXTENSION AGENT ENDPOINT (Action-based, backend-agnostic)
+#      Standardized payload:
+#        { "action": string, "context": object, "product_data": object }
+#      Standardized response:
+#        { "status": "success", "data": { "text": string, "metadata": object } }
+# ==============================================================================
+@router.options("/apps/cross-border/agent")
+async def admin_ext_agent_preflight():
+    return Response(status_code=204)
+
+
+@router.post("/apps/cross-border/agent")
+async def admin_ext_agent(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Action-based endpoint for Shopify Admin UI extensions.
+    Authenticated using a Shopify OpenID Connect ID token / session token (JWT) via Authorization header.
+    """
+    try:
+        body = await request.json()
+        agent_req = AgentRequest(**body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    auth_context = validate_shop_and_quota(db, shop)
+
+    result = run_agent_action(
+        action=agent_req.action,
+        context=agent_req.context or {},
+        product_data=agent_req.product_data or {},
+    )
+
+    return {"status": "success", "data": {"text": result.get("text", ""), "metadata": result.get("metadata", {})}}
 
 
 # ==============================================================================
