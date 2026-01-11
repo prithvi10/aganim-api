@@ -62,6 +62,31 @@ class OpenAIService:
         
         return response # Return full object to access usage stats
 
+    def generate_json(
+        self,
+        system_prompt: str,
+        user_json: dict,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+    ) -> str:
+        """
+        Generic helper for action-based agents: returns raw model text (expected to be JSON).
+        Keeps existing copy-generation API intact while allowing new features to share the same client.
+        """
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+
+        response = self.client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content or ""
+
     def generate_copy_stream(self, product_name: str, category: str, japanese_description: str, system_prompt: str | None = None):
         """
         Returns a generator (stream) from OpenAI.
