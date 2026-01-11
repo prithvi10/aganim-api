@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from src.main.config.configs import DEFAULT_PRODUCT_CATEGORY
+from typing import Any, Literal
 
 class RewriteRequest(BaseModel):
     product_name: str
@@ -26,3 +27,20 @@ class OnboardingResponse(BaseModel):
     username: str
     plan_name: str
     api_key: str # The raw API key (shown only once)
+
+
+# ==============================================================================
+# Admin Extension Agent (Action-based) API
+# ==============================================================================
+class AgentRequest(BaseModel):
+    """
+    Agnostic, action-based payload for Admin UI extensions and other clients.
+    """
+    action: str
+    context: dict[str, Any] = {}
+    product_data: dict[str, Any] = {}
+
+
+class AgentResponse(BaseModel):
+    status: Literal["success"]
+    data: dict[str, Any]
