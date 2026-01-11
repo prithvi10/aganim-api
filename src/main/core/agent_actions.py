@@ -281,12 +281,94 @@ def seasonal_campaign_agent_action(product_data: dict[str, Any], context: dict[s
     }
 
 
+def seasonal_campaign_caption_action(product_data: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """
+    Generates a seasonal, holiday-tied caption for the selected product.
+    Intended for the /app/marketing UI to request an additional caption that matches
+    the upcoming seasonal campaign vibe.
+    """
+    product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
+    category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
+    tags = product_data.get("tags") or []
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(",") if t.strip()]
+
+    today_raw = context.get("current_date") or context.get("date") or context.get("today")
+    try:
+        if isinstance(today_raw, str) and today_raw:
+            today = datetime.fromisoformat(today_raw.replace("Z", "+00:00")).date()
+        else:
+            today = date.today()
+    except Exception:
+        today = date.today()
+
+    holiday = _next_upcoming_holiday(today)
+    if not holiday:
+        return {"text": "", "metadata": {"should_show": False}}
+
+    days_until = (holiday.date - today).days
+    should_show = days_until <= 42
+
+    hashtags = _suggest_hashtags(product_title, category, tags if isinstance(tags, list) else None)
+    discount_code = _discount_code_name(holiday.name, category, holiday.date.year)
+    campaign_title = f"{holiday.name} {category} Campaign"
+
+    use_ai = bool(os.getenv("OPENAI_API_KEY"))
+    caption = ""
+
+    if use_ai and product_title:
+        system = (
+            "You are a senior social media strategist. "
+            "Return ONLY valid JSON. No markdown fences."
+        )
+        user = {
+            "platform": "instagram",
+            "holiday": {"name": holiday.name, "date": holiday.date.isoformat(), "days_until": days_until},
+            "product": {"title": product_title, "category": category, "tags": tags},
+            "constraints": {
+                "caption_max_chars": 220,
+                "tone": "warm, seasonal, authentic",
+                "no_invented_claims": True,
+            },
+            "output_schema": {"caption": "string", "cta": "string"},
+        }
+        raw = openai_service.generate_json(
+            system_prompt=system,
+            user_json=user,
+            temperature=0.8,
+            max_tokens=220,
+        )
+        parsed = parse_llm_json(raw) or {}
+        caption = str(parsed.get("caption") or "").strip()
+
+    if not caption:
+        # Deterministic fallback
+        caption = (
+            f"{holiday.name} is coming 💡 Treat yourself (or someone you love) to {product_title or 'a favorite'}.\n"
+            f"Use code {discount_code} (limited time)."
+        ).strip()
+
+    return {
+        "text": _format_caption(caption, hashtags),
+        "metadata": {
+            "should_show": should_show,
+            "holiday": {"name": holiday.name, "date": holiday.date.isoformat(), "days_until": days_until},
+            "campaign": {"title": campaign_title, "discount_code_name": discount_code},
+            "caption": caption,
+            "hashtags": hashtags,
+            "copy_text": _format_caption(caption, hashtags),
+        },
+    }
+
+
 def run_agent_action(action: str, product_data: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     action = (action or "").strip()
     if action == "social_hook_architect":
         return social_hook_architect_action(product_data=product_data, context=context)
     if action == "seasonal_campaign_agent":
         return seasonal_campaign_agent_action(product_data=product_data, context=context)
+    if action == "seasonal_campaign_caption":
+        return seasonal_campaign_caption_action(product_data=product_data, context=context)
 
     raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
