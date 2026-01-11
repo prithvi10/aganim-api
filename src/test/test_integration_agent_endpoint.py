@@ -109,6 +109,26 @@ def test_agent_endpoint_seasonal_happy_path(client, seed_shop):
     assert "title" in body["data"]["metadata"]["campaign"]
 
 
+def test_agent_endpoint_seasonal_caption_happy_path(client, seed_shop, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
+        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
+    ):
+        resp = client.post(
+            "/apps/cross-border/agent",
+            headers=_auth_headers(),
+            json={
+                "action": "seasonal_campaign_caption",
+                "context": {"current_date": "2026-04-10T00:00:00Z"},
+                "product_data": {"title": "Test Product", "category": "General", "tags": ["gift"]},
+            },
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "success"
+    assert "copy_text" in body["data"]["metadata"]
+
 def test_agent_endpoint_unknown_action_returns_400(client, seed_shop):
     with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
         "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"

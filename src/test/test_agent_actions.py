@@ -116,3 +116,16 @@ def test_seasonal_campaign_agent_invalid_date_string_does_not_crash():
     assert "campaign" in out["metadata"]
 
 
+def test_seasonal_campaign_caption_fallback_happy_path(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    out = run_agent_action(
+        "seasonal_campaign_caption",
+        product_data={"title": "Leather Wallet", "category": "Accessories", "tags": ["gift"]},
+        context={"current_date": "2026-04-10T00:00:00Z"},
+    )
+    assert "text" in out and isinstance(out["text"], str)
+    assert "metadata" in out
+    assert "copy_text" in out["metadata"]
+    assert "hashtags" in out["metadata"] and isinstance(out["metadata"]["hashtags"], list)
+
