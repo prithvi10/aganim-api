@@ -197,16 +197,42 @@ async def process_bulk_generation_request(
 
         processed_desc = detect_and_label_sections(request.japanese_description)
 
-        # 3. Parallelize generations
-        tasks = [
-            _generate_and_save_for_locale(
-                db, shop, request.product_id, request.product_name, request.category,
-                processed_desc, locale, primary_locale, access_token, user_id, billing_cycle_start
-            )
-            for locale in request.target_locales
-        ]
+        # 3. Save ordering to avoid translation digest invalidation:
+        # If the primary locale is included, update it LAST. Otherwise translationsRegister for
+        # secondary locales can fail with "Translatable content hash is invalid" if primary content
+        # changes during the digest->register window.
+        target_locales = list(request.target_locales or [])
+        non_primary_locales = [l for l in target_locales if l != primary_locale]
+        primary_locales = [l for l in target_locales if l == primary_locale]
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        def _task(locale: str):
+            return _generate_and_save_for_locale(
+                db,
+                shop,
+                request.product_id,
+                request.product_name,
+                request.category,
+                processed_desc,
+                locale,
+                primary_locale,
+                access_token,
+                user_id,
+                billing_cycle_start,
+            )
+
+        results: list = []
+
+        # Phase 1: run non-primary locales in parallel
+        if non_primary_locales:
+            results.extend(
+                await asyncio.gather(*[_task(l) for l in non_primary_locales], return_exceptions=True)
+            )
+
+        # Phase 2: run primary locale LAST (typically one locale)
+        if primary_locales:
+            results.extend(
+                await asyncio.gather(*[_task(l) for l in primary_locales], return_exceptions=True)
+            )
         
         success_locales = []
         failed_locales = []
