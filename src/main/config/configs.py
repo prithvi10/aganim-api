@@ -93,7 +93,7 @@ LOCALE_PERSONA_MAP = {
 # key -> { "match": regex alternation, "hint": short factual guidance }
 MADE_IN_JAPAN_GLOSSARY: dict[str, dict[str, str]] = {
     # --- Lacquer & Surface Art ---
-    " Urushi": {
+    "Urushi": {
         "match": r"(?:urushi|漆|lacquerware)",
         "hint": "Urushi is a 'living' lacquer harvested by hand from rare sap. Unlike plastic, it hardens over decades, becoming more lustrous and durable with age and touch.",
     },
@@ -146,6 +146,10 @@ MADE_IN_JAPAN_GLOSSARY: dict[str, dict[str, str]] = {
     "Sashimono": {
         "match": r"(?:sashimono|指物|joinery)",
         "hint": "Precision 'Blind Joinery.' Pieces are joined using complex interlocking wood-to-wood structures without a single nail or screw, designed to last for generations.",
+    },
+    "Arita":{
+        "match": r"(?:\bArita\b|有田)",
+        "hint": "Arita is one of Japan’s most celebrated porcelain regions with centuries of kiln heritage.",
     }
 }
 
@@ -254,6 +258,14 @@ DISCOVERY_MAP: dict[str, dict[str, str]] = {
         "suggested_content": (
             "Sashimono (指物) emphasizes precise joinery—wood-to-wood structures designed to last for generations. "
             "It represents longevity and engineering-as-art."
+        ),
+    },
+    "Arita": {
+        "category": "Regional Pedigree",
+        "title": "Arita Porcelain Heritage",
+        "suggested_content": (
+            "Arita (有田) is one of Japan’s most celebrated porcelain regions with centuries of kiln heritage. "
+            "It’s known for its fine, delicate porcelain made from high-quality kaolin clay."
         ),
     },
 }

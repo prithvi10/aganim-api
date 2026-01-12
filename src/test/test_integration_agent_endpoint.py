@@ -129,6 +129,25 @@ def test_agent_endpoint_seasonal_caption_happy_path(client, seed_shop, monkeypat
     assert body["status"] == "success"
     assert "copy_text" in body["data"]["metadata"]
 
+
+def test_agent_endpoint_value_discovery_happy_path(client, seed_shop):
+    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
+        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
+    ):
+        resp = client.post(
+            "/apps/cross-border/agent",
+            headers=_auth_headers(),
+            json={
+                "action": "value_discovery",
+                "context": {},
+                "product_data": {"title": "Kyoto bowl", "description": "Made in Kyoto."},
+            },
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "success"
+    assert isinstance(body["data"]["metadata"]["discoveries"], list)
+
 def test_agent_endpoint_unknown_action_returns_400(client, seed_shop):
     with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
         "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
