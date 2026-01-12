@@ -29,18 +29,31 @@ class ValueDiscoveryService:
         full_text = f"{text_title}\n{text_desc}"
 
         discoveries: list[dict[str, Any]] = []
+        seen_titles: set[str] = set()
 
-        # Special Kyoto rule (requested explicitly)
-        for m in self.KYOTO_PATTERN.finditer(full_text):
-            rule = DISCOVERY_MAP["Kyoto"]
+        def _add_discovery(*, rule: dict[str, Any], evidence_text: str) -> None:
+            """
+            Deduplicate by rule title (not by evidence occurrence).
+            This prevents duplicate cards like "Regional Pedigree" appearing multiple
+            times when the same keyword is present in both title and description.
+            """
+            title_key = str(rule.get("title") or "").strip()
+            if not title_key or title_key in seen_titles:
+                return
+            seen_titles.add(title_key)
             discoveries.append(
                 {
                     "category": rule["category"],
                     "title": rule["title"],
-                    "evidence_text": m.group(0),
+                    "evidence_text": evidence_text,
                     "suggested_content": rule["suggested_content"],
                 }
             )
+
+        # Special Kyoto rule (requested explicitly)
+        for m in self.KYOTO_PATTERN.finditer(full_text):
+            rule = DISCOVERY_MAP["Kyoto"]
+            _add_discovery(rule=rule, evidence_text=m.group(0))
 
         # Glossary-driven rules
         for raw_key, meta in (MADE_IN_JAPAN_GLOSSARY or {}).items():
@@ -55,14 +68,7 @@ class ValueDiscoveryService:
                 # If we don't have a curated rule, skip (strict logic: only suggest when we know what to suggest)
                 if not rule:
                     continue
-                discoveries.append(
-                    {
-                        "category": rule["category"],
-                        "title": rule["title"],
-                        "evidence_text": m.group(0),
-                        "suggested_content": rule["suggested_content"],
-                    }
-                )
+                _add_discovery(rule=rule, evidence_text=m.group(0))
 
         return discoveries
 

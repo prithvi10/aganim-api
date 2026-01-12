@@ -10,9 +10,10 @@ def test_value_discovery_no_match_returns_empty_list():
 def test_value_discovery_kyoto_rule():
     svc = ValueDiscoveryService()
     out = svc.discover(title="Kyoto artisan bowl", description="Handmade in Kyoto.")
-    assert len(out) >= 1
-    assert out[0]["category"] == "Regional Pedigree"
-    assert "Kyoto" in out[0]["evidence_text"] or "京都" in out[0]["evidence_text"]
+    kyoto = [d for d in out if d["title"] == "Kyoto Heritage Craft"]
+    assert len(kyoto) == 1
+    assert kyoto[0]["category"] == "Regional Pedigree"
+    assert "Kyoto" in kyoto[0]["evidence_text"] or "京都" in kyoto[0]["evidence_text"]
 
 
 def test_value_discovery_urushi_rule_detects_japanese_and_english():
@@ -25,5 +26,15 @@ def test_value_discovery_urushi_rule_detects_japanese_and_english():
     assert any(d["title"] == "Urushi Lacquer Story" for d in out)
     # Evidence should be one of the triggering substrings
     assert any(d["evidence_text"] in ("漆", "Urushi", "urushi") for d in out)
+
+
+def test_value_discovery_dedupes_same_rule_across_multiple_occurrences():
+    svc = ValueDiscoveryService()
+    out = svc.discover(
+        title="Kyoto Kyoto Kyoto",
+        description="Made in Kyoto. 京都 craftsmanship from Kyoto.",
+    )
+    kyoto = [d for d in out if d["title"] == "Kyoto Heritage Craft"]
+    assert len(kyoto) == 1
 
 

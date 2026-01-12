@@ -1,5 +1,4 @@
 import os
-import re
 import httpx
 import asyncio
 from fastapi import HTTPException
@@ -12,7 +11,6 @@ from src.main.config.configs import (
     LOCAL_RATE_LIMIT_CONFIG,
     SYSTEM_PROMPT,
     LOCALE_PERSONA_MAP,
-    MADE_IN_JAPAN_GLOSSARY,
 )
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
@@ -20,69 +18,119 @@ from src.main.logging.logger import get_logger
 from src.main.db.db_transactions import update_token_usage, get_shop_access_token
 from src.main.service.shopify_service import save_product_content_with_locale
 from src.main.api.validation import validate_rewrite_request
-from src.main.service.value_discovery_service import ValueDiscoveryService
 
 logger = get_logger(__name__)
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
 openai_service = OpenAIService()
-value_discovery_service = ValueDiscoveryService()
+
+ALLOWED_DISCOVERY_CATEGORIES = {
+    "Regional Pedigree",
+    "Tactile & Sensory",
+    "Time-as-Luxury",
+    "Artisan Master",
+}
 
 
-def _detect_made_in_japan_terms(source_text: str) -> list[str]:
-    text = (source_text or "").lower()
-    found: list[str] = []
-    for term, meta in MADE_IN_JAPAN_GLOSSARY.items():
-        pat = meta.get("match") or ""
-        if not pat:
+def _normalize_discovered_values(raw: object) -> list[dict]:
+    """
+    Normalizes model output for discovered_values into a strict, JSON-serializable list.
+    Drops any items that don't meet the schema or contain invalid categories.
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
             continue
-        try:
-            if re.search(pat, source_text, flags=re.IGNORECASE):
-                found.append(term)
-        except Exception:
-            # fallback: plain substring
-            if term.lower() in text:
-                found.append(term)
-    return found
+        category = str(item.get("category") or "").strip()
+        evidence = str(item.get("evidence") or "").strip()
+        explanation = str(item.get("explanation") or "").strip()
+        suggested_footer = str(item.get("suggested_footer") or "").strip()
+        if category not in ALLOWED_DISCOVERY_CATEGORIES:
+            continue
+        if not evidence or not explanation or not suggested_footer:
+            continue
+        out.append(
+            {
+                "category": category,
+                "evidence": evidence,
+                "explanation": explanation,
+                "suggested_footer": suggested_footer,
+            }
+        )
+    return out
 
 
-def _made_in_japan_footer_prompt(target_locale: str, terms: list[str]) -> str:
+def _to_frontend_discoveries(discovered_values: list[dict]) -> list[dict]:
     """
-    Build the premium branding instruction. This is prompt-only; the model must still keep JSON valid.
+    Backwards-compatible shape for existing UI cards:
+    { category, title, evidence_text, suggested_content }.
     """
-    if not terms:
-        return ""
-    lines = []
-    for t in terms:
-        hint = MADE_IN_JAPAN_GLOSSARY.get(t, {}).get("hint")
-        if hint:
-            lines.append(f"- {t}: {hint}")
-    glossary_block = "\n".join(lines) if lines else ""
-
-    return f"""
-
-MADE IN JAPAN STORYTELLER (Premium Branding):
-- If (and ONLY if) the source text contains any of these craftsmanship keywords: {", ".join(terms)}
-- Append a footer at the END of the HTML description:
-  <hr />
-  <div class="cultural-context-footer">
-    <h3>Cultural Context — Made in Japan</h3>
-    <p>Explain why these terms signal rare craftsmanship and premium value.</p>
-    <ul><li>Term: explanation...</li></ul>
-  </div>
-- Write the footer in the TARGET LANGUAGE ({target_locale}) only.
-- Include ONLY terms that appear in the source; do NOT add extra terms.
-- Keep it factual and concise; do NOT invent product-specific claims.
-
-GLOSSARY HINTS (use as a factual guide; translate into the target language):
-{glossary_block}
-""".strip()
+    discoveries: list[dict] = []
+    for v in discovered_values or []:
+        evidence = str(v.get("evidence") or "").strip()
+        category = str(v.get("category") or "").strip()
+        title = f"{category} — {evidence[:24]}".strip()
+        discoveries.append(
+            {
+                "category": category,
+                "title": title,
+                "evidence_text": evidence,
+                "suggested_content": str(v.get("suggested_footer") or "").strip(),
+            }
+        )
+    return discoveries
 
 
-def _build_dynamic_prompt(target_locale: str, *, enable_storyteller: bool = False, storyteller_terms: list[str] | None = None) -> str:
+def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
+    """
+    Parses LLM output. Preferred schema (contract-safe):
+      { "title": "...", "description": "...", "discovered_values": [...] }
+    Back-compat:
+      { "rewritten_description": "...", "discovered_values": [...] }
+    """
+    parsed = parse_llm_json(raw_content)
+
+    # Contract-safe schema: title + description + optional discovered_values
+    if isinstance(parsed, dict) and (
+        isinstance(parsed.get("title"), str) or isinstance(parsed.get("description"), str)
+    ):
+        discovered_values = _normalize_discovered_values(parsed.get("discovered_values"))
+        data = {
+            "title": str(parsed.get("title") or "").strip(),
+            "description": str(parsed.get("description") or "").strip(),
+        }
+        if not data["description"]:
+            data["description"] = raw_content
+        return data, discovered_values
+
+    # Back-compat schema: rewritten_description + optional discovered_values
+    if isinstance(parsed, dict) and isinstance(parsed.get("rewritten_description"), str):
+        discovered_values = _normalize_discovered_values(parsed.get("discovered_values"))
+        data = {
+            "title": "",
+            "description": parsed.get("rewritten_description") or "",
+        }
+        if not data["description"]:
+            data["description"] = raw_content
+        return data, discovered_values
+
+    legacy = parsed if isinstance(parsed, dict) else None
+    legacy = legacy or recover_title_desc(raw_content)
+    if isinstance(legacy, dict):
+        return (
+            {
+                "title": str(legacy.get("title") or ""),
+                "description": str(legacy.get("description") or raw_content),
+            },
+            [],
+        )
+
+    return ({"title": "", "description": raw_content}, [])
+
+
+def _build_dynamic_prompt(target_locale: str) -> str:
     market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
-    footer = ""
-    if enable_storyteller and storyteller_terms:
-        footer = _made_in_japan_footer_prompt(target_locale, storyteller_terms)
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
@@ -93,11 +141,11 @@ ADDITIONAL LOCALIZATION RULES:
 - Use local idioms and market-specific triggers for {market_persona}. Avoid literal English/Japanese if not the target.
 - For zh-TW: prefer Taiwanese Mandarin expressions and highlight CP値/CP ratio.
 - For ko: keep tone natural for Korean shoppers.
-- Keep JSON shape exactly: {{"title": "...", "description": "..."}}.
+- Keep JSON shape exactly: {{"title": "...", "description": "...", "discovered_values": [...]}}.
+- Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned.
 
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
-{footer}
 """
 
 async def _generate_and_save_for_locale(
@@ -112,18 +160,11 @@ async def _generate_and_save_for_locale(
     access_token: str | None,
     user_id: int,
     billing_cycle_start,
-    *,
-    made_in_japan_storyteller: bool = False,
-    storyteller_terms: list[str] | None = None,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
     """
-    dynamic_prompt = _build_dynamic_prompt(
-        target_locale,
-        enable_storyteller=made_in_japan_storyteller,
-        storyteller_terms=storyteller_terms or [],
-    )
+    dynamic_prompt = _build_dynamic_prompt(target_locale)
     
     openai_response = openai_service.generate_copy(
         product_name=product_name,
@@ -137,24 +178,33 @@ async def _generate_and_save_for_locale(
         update_token_usage(db, user_id, total_tokens, billing_cycle_start)
 
     raw_content = openai_response.choices[0].message.content
-    parsed = parse_llm_json(raw_content) or recover_title_desc(raw_content)
-    
-    if not parsed:
-        parsed = {"title": "Generated Copy", "description": raw_content}
+    parsed, discovered_values = _parse_model_json(raw_content or "")
+    # Preserve existing contract: always return a title string to clients.
+    if not str(parsed.get("title") or "").strip():
+        parsed["title"] = product_name or "Generated Copy"
+    if not str(parsed.get("description") or "").strip():
+        parsed["description"] = raw_content or ""
 
     if product_id and access_token:
-        logger.info(f"[Save] shop={shop} pid={product_id} target={target_locale} primary={primary_locale} title_sample={parsed.get('title','')[:80]}")
+        title_to_save = parsed.get("title") or product_name or "Translated Product"
+        desc_to_save = parsed.get("description") or raw_content or ""
+        logger.info(f"[Save] shop={shop} pid={product_id} target={target_locale} primary={primary_locale} title_sample={title_to_save[:80]}")
         await save_product_content_with_locale(
             shop_domain=shop,
             access_token=access_token,
             product_id=product_id,
-            title=parsed.get("title", "Translated Product"),
-            description=parsed.get("description", raw_content),
+            title=title_to_save,
+            description=desc_to_save,
             target_locale=target_locale,
             shop_primary_locale=primary_locale,
         )
     
-    return {"locale": target_locale, "data": parsed, "tokens": total_tokens}
+    return {
+        "locale": target_locale,
+        "data": parsed,
+        "tokens": total_tokens,
+        "discovered_values": discovered_values,
+    }
 
 async def process_generation_request(
     db: Session,
@@ -172,20 +222,9 @@ async def process_generation_request(
         raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
 
     target_locale = request.target_locale or "en"
-    storyteller_terms: list[str] = []
-    if getattr(request, "made_in_japan_storyteller", False):
-        storyteller_terms = _detect_made_in_japan_terms(request.japanese_description)
-    dynamic_prompt = _build_dynamic_prompt(
-        target_locale,
-        enable_storyteller=getattr(request, "made_in_japan_storyteller", False),
-        storyteller_terms=storyteller_terms,
-    )
+    dynamic_prompt = _build_dynamic_prompt(target_locale)
 
     try:
-        discoveries = value_discovery_service.discover(
-            title=request.product_name,
-            description=request.japanese_description,
-        )
         if request.stream:
             logger.info(f"🌊 Initiating Streaming Response for: {shop}")
             return openai_service.create_streaming_response(
@@ -222,13 +261,13 @@ async def process_generation_request(
         result = await _generate_and_save_for_locale(
             db, shop, request.product_id, request.product_name, request.category,
             processed_desc, target_locale, primary_locale, access_token, user_id, billing_cycle_start,
-            made_in_japan_storyteller=getattr(request, "made_in_japan_storyteller", False),
-            storyteller_terms=storyteller_terms,
         )
         
         resp = {"status": "success", "data": result["data"]}
-        if discoveries:
-            resp["discoveries"] = discoveries
+        discovered_values = result.get("discovered_values") or []
+        if discovered_values:
+            resp["discovered_values"] = discovered_values
+            resp["discoveries"] = _to_frontend_discoveries(discovered_values)
         return resp
 
     except HTTPException:
@@ -276,10 +315,6 @@ async def process_bulk_generation_request(
             except Exception: pass
 
         processed_desc = detect_and_label_sections(request.japanese_description)
-        discoveries = value_discovery_service.discover(
-            title=request.product_name,
-            description=request.japanese_description,
-        )
 
         # 3. Save ordering to avoid translation digest invalidation:
         # If the primary locale is included, update it LAST. Otherwise translationsRegister for
@@ -288,10 +323,6 @@ async def process_bulk_generation_request(
         target_locales = list(request.target_locales or [])
         non_primary_locales = [l for l in target_locales if l != primary_locale]
         primary_locales = [l for l in target_locales if l == primary_locale]
-
-        storyteller_terms: list[str] = []
-        if getattr(request, "made_in_japan_storyteller", False):
-            storyteller_terms = _detect_made_in_japan_terms(request.japanese_description)
 
         def _task(locale: str):
             return _generate_and_save_for_locale(
@@ -306,8 +337,6 @@ async def process_bulk_generation_request(
                 access_token,
                 user_id,
                 billing_cycle_start,
-                made_in_japan_storyteller=getattr(request, "made_in_japan_storyteller", False),
-                storyteller_terms=storyteller_terms,
             )
 
         results: list = []
@@ -343,8 +372,18 @@ async def process_bulk_generation_request(
             "failed": failed_locales,
             "results": results_data
         }
-        if discoveries:
-            resp["discoveries"] = discoveries
+        # Use discovered_values from the first successful locale (they should be stable across locales).
+        first_values: list[dict] = []
+        for res in results:
+            if isinstance(res, Exception):
+                continue
+            vals = res.get("discovered_values") or []
+            if vals:
+                first_values = vals
+                break
+        if first_values:
+            resp["discovered_values"] = first_values
+            resp["discoveries"] = _to_frontend_discoveries(first_values)
         return resp
     except HTTPException:
         raise

@@ -146,3 +146,4 @@ cython_debug/
 logs/
 node_modules/
 shopify-translator-api.code-workspace
+test.db
