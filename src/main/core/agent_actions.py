@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 from src.main.logging.logger import get_logger
 from src.main.service.open_ai_api_service import OpenAIService
 from src.main.utils.llm_parser import parse_llm_json
+from src.main.service.value_discovery_service import ValueDiscoveryService
 
 logger = get_logger(__name__)
 openai_service = OpenAIService()
+value_discovery_service = ValueDiscoveryService()
 
 
 def _clean_hashtag(tag: str) -> str | None:
@@ -361,6 +363,21 @@ def seasonal_campaign_caption_action(product_data: dict[str, Any], context: dict
     }
 
 
+def value_discovery_action(product_data: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """
+    Deterministic evidence-discovery for Japanese craftsmanship value.
+    Returns a list of discovery objects; returns an empty list if no matches.
+    """
+    title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
+    description = str(product_data.get("description") or product_data.get("japanese_description") or "").strip()
+    discoveries = value_discovery_service.discover(title=title, description=description)
+    return {
+        "text": "",
+        "metadata": {
+            "discoveries": discoveries,
+        },
+    }
+
 def run_agent_action(action: str, product_data: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     action = (action or "").strip()
     if action == "social_hook_architect":
@@ -369,6 +386,8 @@ def run_agent_action(action: str, product_data: dict[str, Any], context: dict[st
         return seasonal_campaign_agent_action(product_data=product_data, context=context)
     if action == "seasonal_campaign_caption":
         return seasonal_campaign_caption_action(product_data=product_data, context=context)
+    if action == "value_discovery":
+        return value_discovery_action(product_data=product_data, context=context)
 
     raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 

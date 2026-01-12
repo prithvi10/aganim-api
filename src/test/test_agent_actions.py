@@ -129,3 +129,22 @@ def test_seasonal_campaign_caption_fallback_happy_path(monkeypatch):
     assert "copy_text" in out["metadata"]
     assert "hashtags" in out["metadata"] and isinstance(out["metadata"]["hashtags"], list)
 
+
+def test_value_discovery_action_strict_empty_when_no_match():
+    out = run_agent_action(
+        "value_discovery",
+        product_data={"title": "Plain product", "description": "Nothing special here."},
+        context={},
+    )
+    assert out["metadata"]["discoveries"] == []
+
+
+def test_value_discovery_action_kyoto_match():
+    out = run_agent_action(
+        "value_discovery",
+        product_data={"title": "Kyoto bowl", "description": "Made in Kyoto."},
+        context={},
+    )
+    assert isinstance(out["metadata"]["discoveries"], list)
+    assert len(out["metadata"]["discoveries"]) >= 1
+
