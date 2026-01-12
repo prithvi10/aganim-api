@@ -118,3 +118,37 @@ async def test_process_generation_updates_secondary_locale_via_graphql(mock_db, 
         kwargs = mock_save_content.call_args[1]
         assert kwargs["target_locale"] == "fr"
 
+
+@pytest.mark.asyncio
+async def test_made_in_japan_storyteller_injects_cultural_context_prompt(mock_db, mock_user, mock_plan, mock_openai_response):
+    """
+    When enabled and keywords are present, the system prompt should instruct the model
+    to append a Cultural Context footer.
+    """
+    request = RewriteRequest(
+        product_name="Lacquer Bowl",
+        japanese_description="伝統的な漆（Urushi）で仕上げた器です。",
+        product_id=None,
+        target_locale="en",
+        made_in_japan_storyteller=True,
+    )
+
+    with patch("src.main.core.generation.update_token_usage"), \
+         patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate, \
+         patch("src.main.core.generation.limiter.is_allowed", return_value=True):
+
+        result = await process_generation_request(
+            db=mock_db,
+            request=request,
+            user=mock_user,
+            plan=mock_plan,
+            user_id=1,
+            billing_cycle_start=date(2023, 1, 1),
+        )
+
+        assert result["status"] == "success"
+        assert mock_generate.called
+        system_prompt = mock_generate.call_args.kwargs.get("system_prompt", "")
+        assert "Cultural Context" in system_prompt
+        assert "Made in Japan" in system_prompt
+
