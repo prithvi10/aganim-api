@@ -26,7 +26,13 @@ def mock_plan():
 @pytest.fixture
 def mock_openai_response():
     mock_resp = MagicMock()
-    mock_resp.choices = [MagicMock(message=MagicMock(content='{"title": "New", "description": "New"}'))]
+    mock_resp.choices = [
+        MagicMock(
+            message=MagicMock(
+                content='{"title": "New", "description": "<div>New</div>", "discovered_values": []}'
+            )
+        )
+    ]
     mock_resp.usage.total_tokens = 10
     return mock_resp
 
@@ -117,4 +123,5 @@ async def test_process_generation_updates_secondary_locale_via_graphql(mock_db, 
         mock_save_content.assert_called_once()
         kwargs = mock_save_content.call_args[1]
         assert kwargs["target_locale"] == "fr"
+
 
