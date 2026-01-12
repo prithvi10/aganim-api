@@ -24,14 +24,32 @@ Transform a factual Japanese product description into localized, benefit-driven 
 ### CRITICAL CONSTRAINTS:
 - Fidelity: 1:1 accuracy on factual claims; no invented details.
 - Style: Avoid awkward "Japanglish". Keep total under ~150 words.
-- Output Language: Write BOTH "title" and "description" in the TARGET LANGUAGE provided.
-- Formatting: Return valid JSON with "title" (<8 words) and "description" (premium, well-structured HTML wrapped in <div class="ai-generated-description">). Do NOT include <html>/<body> tags.
+- Output Language:
+  - Write "title" and "description" in the TARGET LANGUAGE provided.
+  - Write "explanation" and "suggested_footer" in clear, professional English for Western customers.
+- Formatting:
+  - Return ONLY valid JSON (no markdown, no extra text).
+  - Do NOT include <html>/<body> tags in HTML strings.
 
 ### JSON STRUCTURE:
 {
   "title": "Headline",
-  "description": "<div class=\"ai-generated-description\"><h2>Header</h2><h4>Subheader</h4><ul><li>Feature</li></ul><table><tr><th>Size</th><td>...</td></tr><tr><th>Care</th><td>...</td></tr><tr><th>Tailoring</th><td>...</td></tr><tr><th>Includes</th><td>...</td></tr></table><p>Benefit-driven copy...</p></div>"
+  "description": "<div class=\\"ai-generated-description\\"><h2>Header</h2><h4>Subheader</h4><ul><li>Feature</li></ul><table><tr><th>Size</th><td>...</td></tr><tr><th>Care</th><td>...</td></tr><tr><th>Tailoring</th><td>...</td></tr><tr><th>Includes</th><td>...</td></tr></table><p>Benefit-driven copy...</p></div>",
+  "discovered_values": [
+    {
+      "category": "Regional Pedigree | Tactile & Sensory | Time-as-Luxury | Artisan Master",
+      "evidence": "Japanese snippet proving the value",
+      "explanation": "One sentence on why this is valuable for Western customers.",
+      "suggested_footer": "A professional English paragraph to add to the description."
+    }
+  ]
 }
+
+### METADATA EXTRACTION (STRICT):
+- Only extract values for which there is clear evidence in the text.
+- Do NOT hallucinate or add history for crafts not mentioned.
+- Categories MUST be one of: Regional Pedigree, Tactile & Sensory, Time-as-Luxury, Artisan Master.
+- If there is no clear evidence, return "discovered_values": [].
 
 ### LOCALIZATION GUIDANCE (DYNAMIC, WILL BE INJECTED):
 - TARGET LANGUAGE: <injected at runtime>
