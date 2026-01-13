@@ -175,6 +175,37 @@ async def verify_webhook_signature(request: Request):
     
     return True
 
+
+# ---------------------------------------------------------
+# 3B. Shopify Webhook Verification (Agnostic Helper)
+# ---------------------------------------------------------
+def verify_shopify_webhook(raw_body: bytes, hmac_header: str | None, api_secret: str | None) -> bool:
+    """
+    Verifies the Shopify webhook signature using the RAW request body bytes.
+
+    Shopify sends `X-Shopify-Hmac-Sha256` as Base64(HMAC_SHA256(secret, raw_body)).
+    This helper is intentionally framework-agnostic for reuse across FastAPI/Flask.
+    """
+    if not api_secret:
+        raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
+
+    if not hmac_header:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    received = hmac_header.strip()
+
+    digest = hmac.new(
+        api_secret.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).digest()
+    computed = base64.b64encode(digest).decode("utf-8")
+
+    if not hmac.compare_digest(computed, received):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    return True
+
 # ---------------------------------------------------------
 # 4. Shopify OAuth Redirect Verification
 # ---------------------------------------------------------

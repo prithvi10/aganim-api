@@ -22,7 +22,7 @@ from src.main.security.security import (
 from src.main.api.validation import validate_rewrite_request, validate_shop_and_quota 
 from src.main.service.onboarding import onboard_user
 from src.main.config.configs import SHOPIFY_UI_URL
-from src.main.logging.logger import get_logger
+from src.main.logging.logger import get_logger, get_security_logger
 
 # Import core business logic
 from src.main.core.generation import process_generation_request, process_bulk_generation_request
@@ -30,6 +30,7 @@ from src.main.core.shop import fetch_shop_locales
 from src.main.core.agent_actions import run_agent_action
 
 logger = get_logger(__name__)
+security_logger = get_security_logger("security.webhooks")
 
 router = APIRouter()
 
@@ -381,6 +382,97 @@ async def handle_subscription_activated(
         return Response(status_code=200)
 
     return Response(status_code=200)
+
+@router.post("/api/webhooks/compliance")
+async def compliance_webhooks(request: Request, db: Session = Depends(get_db)):
+    """
+    Mandatory Shopify GDPR webhooks endpoint.
+
+    Requirements:
+    - Extract X-Shopify-Topic immediately
+    - Verify webhook HMAC using RAW request body bytes
+    - Return 200 OK quickly (avoid retries)
+    - Log to security.log for audit
+    """
+    # Requirement 1: topic first (no JSON parsing yet)
+    topic = (request.headers.get("X-Shopify-Topic") or "").strip().lower()
+    shop_domain = (request.headers.get("X-Shopify-Shop-Domain") or "").strip()
+    webhook_id = (request.headers.get("X-Shopify-Webhook-Id") or "").strip()
+
+    raw_body = await request.body()
+    hmac_header = request.headers.get("X-Shopify-Hmac-Sha256")
+
+    # Requirement 4: reject immediately if verification fails
+    try:
+        from src.main.security.security import verify_shopify_webhook, SHOPIFY_API_SECRET
+        verify_shopify_webhook(raw_body=raw_body, hmac_header=hmac_header, api_secret=SHOPIFY_API_SECRET)
+    except HTTPException:
+        # Keep audit trail even for rejected requests (do not log raw body)
+        security_logger.warning(
+            f"[GDPR] REJECTED topic={topic or '<missing>'} shop={shop_domain or '<missing>'} "
+            f"webhook_id={webhook_id or '<missing>'} body_len={len(raw_body)}"
+        )
+        raise
+
+    # Audit log (success path) — avoid storing PII; do not log payload contents
+    security_logger.info(
+        f"[GDPR] ACCEPTED topic={topic or '<missing>'} shop={shop_domain or '<missing>'} "
+        f"webhook_id={webhook_id or '<missing>'} body_len={len(raw_body)}"
+    )
+
+    # Requirement 2: keep handlers lightweight and always return 200 fast.
+    # We do best-effort DB cleanup for shop/redact; other topics are acknowledgements.
+    try:
+        if topic == "customers/data_request":
+            security_logger.info(
+                f"[GDPR] customers/data_request acknowledged shop={shop_domain or '<missing>'} "
+                f"(no customer PII stored by Cross-Border AI)"
+            )
+            return {"status": "ok", "message": "No customer personal data stored."}
+
+        if topic == "customers/redact":
+            security_logger.info(
+                f"[GDPR] customers/redact acknowledged shop={shop_domain or '<missing>'} "
+                f"(no customer-linked records to delete)"
+            )
+            return {"status": "ok", "message": "Customer data redaction acknowledged."}
+
+        if topic == "shop/redact":
+            # 48 hours after uninstall: delete all merchant-related records (best-effort).
+            # NOTE: We do not log request payload; shop_domain is from header.
+            from src.main.db.db_models import Shop, User, UsageRecord
+
+            if shop_domain:
+                user = db.query(User).filter(User.username == shop_domain).first()
+                if user:
+                    # Delete usage records for this merchant
+                    db.query(UsageRecord).filter(UsageRecord.user_id == user.id).delete(synchronize_session=False)
+                    db.delete(user)
+
+                shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+                if shop_rec:
+                    db.delete(shop_rec)
+
+                db.commit()
+                security_logger.info(f"[GDPR] shop/redact deleted merchant records shop={shop_domain}")
+            else:
+                security_logger.warning("[GDPR] shop/redact missing X-Shopify-Shop-Domain header")
+
+            return {"status": "ok", "message": "Shop data redaction processed."}
+
+        # Unknown/other: acknowledge to avoid retries
+        security_logger.info(f"[GDPR] unknown_topic acknowledged topic={topic or '<missing>'} shop={shop_domain or '<missing>'}")
+        return {"status": "ok", "message": "Webhook acknowledged."}
+    except Exception as e:
+        # Never block Shopify retries with long work; log and ACK.
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        security_logger.error(
+            f"[GDPR] handler_error topic={topic or '<missing>'} shop={shop_domain or '<missing>'} err={e}"
+        )
+        return {"status": "ok", "message": "Webhook acknowledged."}
 
 
 @router.post("/webhooks/app/uninstalled")
