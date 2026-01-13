@@ -35,6 +35,8 @@ Transform a factual Japanese product description into localized, benefit-driven 
 {
   "title": "Headline",
   "description": "<div class=\\"ai-generated-description\\"><h2>Header</h2><h4>Subheader</h4><ul><li>Feature</li></ul><table><tr><th>Size</th><td>...</td></tr><tr><th>Care</th><td>...</td></tr><tr><th>Tailoring</th><td>...</td></tr><tr><th>Includes</th><td>...</td></tr></table><p>Benefit-driven copy...</p></div>",
+  "seo_title": "SEO Title (<= 70 characters)",
+  "seo_description": "SEO Meta Description (<= 160 characters, CTA focused)",
   "discovered_values": [
     {
       "category": "Regional Pedigree | Tactile & Sensory | Time-as-Luxury | Artisan Master",

@@ -85,7 +85,7 @@ def _to_frontend_discoveries(discovered_values: list[dict]) -> list[dict]:
 def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
     """
     Parses LLM output. Preferred schema (contract-safe):
-      { "title": "...", "description": "...", "discovered_values": [...] }
+      { "title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "discovered_values": [...] }
     Back-compat:
       { "rewritten_description": "...", "discovered_values": [...] }
     """
@@ -99,6 +99,8 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
         data = {
             "title": str(parsed.get("title") or "").strip(),
             "description": str(parsed.get("description") or "").strip(),
+            "seo_title": str(parsed.get("seo_title") or "").strip(),
+            "seo_description": str(parsed.get("seo_description") or "").strip(),
         }
         if not data["description"]:
             data["description"] = raw_content
@@ -110,6 +112,8 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
         data = {
             "title": "",
             "description": parsed.get("rewritten_description") or "",
+            "seo_title": str(parsed.get("seo_title") or "").strip(),
+            "seo_description": str(parsed.get("seo_description") or "").strip(),
         }
         if not data["description"]:
             data["description"] = raw_content
@@ -122,11 +126,13 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
             {
                 "title": str(legacy.get("title") or ""),
                 "description": str(legacy.get("description") or raw_content),
+                "seo_title": str(legacy.get("seo_title") or ""),
+                "seo_description": str(legacy.get("seo_description") or ""),
             },
             [],
         )
 
-    return ({"title": "", "description": raw_content}, [])
+    return ({"title": "", "description": raw_content, "seo_title": "", "seo_description": ""}, [])
 
 
 def _build_dynamic_prompt(target_locale: str) -> str:
@@ -141,8 +147,16 @@ ADDITIONAL LOCALIZATION RULES:
 - Use local idioms and market-specific triggers for {market_persona}. Avoid literal English/Japanese if not the target.
 - For zh-TW: prefer Taiwanese Mandarin expressions and highlight CP値/CP ratio.
 - For ko: keep tone natural for Korean shoppers.
-- Keep JSON shape exactly: {{"title": "...", "description": "...", "discovered_values": [...]}}.
+- Keep JSON shape exactly:
+  {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "discovered_values": [...]}}.
 - Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned.
+
+SEO METADATA (STRICT):
+- Generate locale-specific SEO metadata for TARGET LANGUAGE ({target_locale}) and MARKET PERSONA ({market_persona}).
+- Use high-volume keywords relevant to that target market, but do NOT invent product specs.
+- Tone must be Call-to-Action focused (e.g., "Shop the authentic ...", "Discover ...").
+- seo_title must be <= 70 characters.
+- seo_description must be <= 160 characters.
 
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
