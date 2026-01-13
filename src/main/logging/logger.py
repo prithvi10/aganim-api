@@ -29,6 +29,9 @@ console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(detailed_formatter)
 handlers.append(console_handler)
 
+# Dedicated security/audit handlers (kept separate so we can log high-signal compliance events).
+security_handlers = [console_handler]
+
 # 2. File Handlers (Only if directory exists/was created)
 if LOG_DIR:
     # Info Logger (application.log)
@@ -55,6 +58,18 @@ if LOG_DIR:
     error_handler.setFormatter(detailed_formatter)
     handlers.append(error_handler)
 
+    # Security Logger (security.log) - used for compliance/audit logs (GDPR, etc.)
+    security_handler = TimedRotatingFileHandler(
+        f"{LOG_DIR}/security.log",
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+    )
+    security_handler.setLevel(logging.INFO)
+    security_handler.setFormatter(detailed_formatter)
+    security_handlers.append(security_handler)
+
 def get_logger(name: str):
     """
     Returns a configured logger instance.
@@ -68,4 +83,19 @@ def get_logger(name: str):
         for handler in handlers:
             logger.addHandler(handler)
         
+    return logger
+
+
+def get_security_logger(name: str = "security"):
+    """
+    Returns a logger configured to write to `logs/security.log` (and console).
+    Intended for audit logging (Shopify compliance/GDPR webhooks, etc.).
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+
+    if not logger.handlers:
+        for handler in security_handlers:
+            logger.addHandler(handler)
+
     return logger
