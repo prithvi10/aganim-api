@@ -65,6 +65,7 @@ def _ensure_shop_columns_exist():
             add("reset_anchor_date TEXT", "reset_anchor_date")
             add("next_reset_date TEXT", "next_reset_date")
             add("fair_use_last_notified_at TEXT", "fair_use_last_notified_at")
+            add("monthly_cost_accumulated REAL DEFAULT 0", "monthly_cost_accumulated")
             conn.commit()
         return
 
@@ -74,6 +75,7 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS reset_anchor_date TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS next_reset_date TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS fair_use_last_notified_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_cost_accumulated NUMERIC(12,2) DEFAULT 0"))
         conn.commit()
 
 def seed_data():

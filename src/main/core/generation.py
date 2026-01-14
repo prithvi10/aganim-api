@@ -18,7 +18,7 @@ from src.main.logging.logger import get_logger
 from src.main.db.db_transactions import get_shop_access_token
 from src.main.service.shopify_service import save_product_content_with_locale
 from src.main.api.validation import validate_rewrite_request
-from src.main.service.fair_use import record_token_usage, notify_fair_use_if_needed, should_degrade_model
+from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
 
 logger = get_logger(__name__)
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
@@ -179,10 +179,8 @@ async def _generate_and_save_for_locale(
     """
     dynamic_prompt = _build_dynamic_prompt(target_locale)
 
-    model_override = None
-    if should_degrade_model(db, shop):
-        # Optional safety valve: if 10x over threshold, downgrade model without blocking.
-        model_override = (os.getenv("OPENAI_MODEL_DEGRADED") or "gpt-4o-mini").strip() or None
+    base_model = get_base_model_for_shop(db, shop)
+    model_override = get_effective_model(db, shop, base_model)
 
     openai_response = openai_service.generate_copy(
         product_name=product_name,
@@ -192,18 +190,12 @@ async def _generate_and_save_for_locale(
         model=model_override,
     )
 
-    # Internal-only token accounting + fair-use notification (never blocks)
+    # Internal-only cost accounting + fair-use monitoring (never blocks)
     try:
         usage = getattr(openai_response, "usage", None)
-        completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
-        total_tokens = getattr(usage, "total_tokens", None) if usage else None
-        # Bill on output tokens; if missing, fall back to total tokens.
-        to_record = int(completion_tokens or total_tokens or 0)
-        if to_record > 0:
-            record_token_usage(db, shop, to_record)
-            notify_fair_use_if_needed(db, shop)
+        record_cost_from_usage(db, shop, usage, model_used=model_override)
     except Exception as e:
-        logger.warning(f"[FairUse] Token accounting skipped for shop={shop}: {e}")
+        logger.warning(f"[FairUse] Cost accounting skipped for shop={shop}: {e}")
     
     raw_content = openai_response.choices[0].message.content
     parsed, discovered_values = _parse_model_json(raw_content or "")

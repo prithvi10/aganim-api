@@ -45,6 +45,7 @@ class Shop(Base):
     # Internal fair-use monitoring (NEVER shown to merchant)
     # -----------------------------------------------------------------------------
     fair_use_last_notified_at = Column(DateTime(timezone=True), nullable=True)
+    monthly_cost_accumulated = Column(Numeric(12, 2), nullable=False, default=0, server_default="0")
 
 class UsageRecord(Base):
     __tablename__ = "usage_records"
