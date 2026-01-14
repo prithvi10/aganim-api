@@ -321,6 +321,14 @@ async def process_bulk_generation_request(
         )
 
     try:
+        logger.debug(
+            "[BulkCore] start shop=%s plan=%s product_id=%s target_locales=%s desc_len=%s",
+            shop,
+            getattr(plan, "name", None),
+            getattr(request, "product_id", None),
+            list(getattr(request, "target_locales", []) or []),
+            len(getattr(request, "japanese_description", "") or ""),
+        )
         access_token = get_shop_access_token(db, shop) if request.product_id else None
         if request.product_id and not access_token:
             raise HTTPException(status_code=500, detail="Shopify Access Token not found.")
@@ -381,7 +389,7 @@ async def process_bulk_generation_request(
         
         for res in results:
             if isinstance(res, Exception):
-                logger.error(f"Bulk item failed: {res}")
+                logger.exception("[BulkCore] item_failed shop=%s err=%s", shop, res)
                 failed_locales.append(str(res))
             else:
                 locale = res["locale"]
@@ -406,9 +414,16 @@ async def process_bulk_generation_request(
         if first_values:
             resp["discovered_values"] = first_values
             resp["discoveries"] = _to_frontend_discoveries(first_values)
+        logger.debug(
+            "[BulkCore] done shop=%s success=%s failed=%s primary_locale=%s",
+            shop,
+            len(success_locales),
+            len(failed_locales),
+            primary_locale,
+        )
         return resp
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error in bulk processing for {shop}: {e}")
+        logger.exception(f"❌ Error in bulk processing for {shop}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
