@@ -15,7 +15,7 @@ from src.main.config.configs import (
 )
 from src.main.logging.logger import get_logger
 from src.main.db.db_transactions import increment_monthly_rewrites_used
-from src.main.service.fair_use import record_token_usage, notify_fair_use_if_needed, should_degrade_model
+from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
 
 logger = get_logger(__name__)
 
@@ -150,9 +150,8 @@ class OpenAIService:
         """
         
         try:
-            model_override = None
-            if should_degrade_model(db, shop_domain):
-                model_override = (os.getenv("OPENAI_MODEL_DEGRADED") or "gpt-4o-mini").strip() or None
+            base_model = get_base_model_for_shop(db, shop_domain)
+            model_override = get_effective_model(db, shop_domain, base_model)
 
             stream = self.generate_copy_stream(
                 product_name=product_name,
@@ -177,12 +176,12 @@ class OpenAIService:
             if total_usage == 0 and full_content:
                  total_usage = len(full_content) // 4 + 100 
 
-            # Internal-only token accounting (best-effort)
+            # Internal-only cost accounting (best-effort)
             try:
-                record_token_usage(db, shop_domain, int(total_usage or 0))
-                notify_fair_use_if_needed(db, shop_domain)
+                # Streaming does not always provide a clean breakdown; record with total tokens.
+                record_cost_from_usage(db, shop_domain, {"total_tokens": int(total_usage or 0)}, model_used=model_override)
             except Exception as e:
-                logger.warning(f"[FairUse] Token accounting skipped for shop={shop_domain}: {e}")
+                logger.warning(f"[FairUse] Cost accounting skipped for shop={shop_domain}: {e}")
 
             # Product-based gating: count 1 rewrite per successful request
             try:

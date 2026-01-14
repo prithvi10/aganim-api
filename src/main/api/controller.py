@@ -395,6 +395,8 @@ async def handle_subscription_activated(
                     from datetime import datetime, timedelta, timezone
                     now = datetime.now(timezone.utc)
                     shop_rec.monthly_rewrites_used = 0
+                    shop_rec.monthly_cost_accumulated = 0
+                    shop_rec.fair_use_last_notified_at = None
                     shop_rec.reset_anchor_date = now
                     shop_rec.next_reset_date = now + timedelta(days=30)
                     db.add(shop_rec)

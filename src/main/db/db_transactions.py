@@ -38,6 +38,8 @@ def sync_usage_limits(db: Session, shop: Shop) -> Shop:
     nr = getattr(shop, 'next_reset_date', None)
     if isinstance(nr, datetime) and now >= nr:
         shop.monthly_rewrites_used = 0
+        shop.monthly_cost_accumulated = 0
+        shop.fair_use_last_notified_at = None
         while isinstance(shop.next_reset_date, datetime) and now >= shop.next_reset_date:
             shop.next_reset_date = shop.next_reset_date + timedelta(days=30)
 
