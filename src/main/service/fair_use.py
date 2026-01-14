@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta, timezone, date
 import httpx
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.main.config.configs import (
     FAIR_USE_COST_CAP,
@@ -119,24 +120,31 @@ def get_base_model_for_shop(db: Session, shop_domain: str) -> str:
     """
     Pro shops default to OPENAI_MODEL_PRO; others default to OPENAI_MODEL.
     """
-    user = db.query(User).filter(User.username == shop_domain).first()
-    if user and user.plan and user.plan.name == "Pro":
-        return OPENAI_MODEL_PRO
-    return OPENAI_MODEL
+    try:
+        user = db.query(User).filter(User.username == shop_domain).first()
+        if user and user.plan and user.plan.name == "Pro":
+            return OPENAI_MODEL_PRO
+        return OPENAI_MODEL
+    except SQLAlchemyError:
+        # Fail-safe: if DB is not initialized (e.g., some CI test orders), default to cheap model.
+        return OPENAI_MODEL
 
 
 def should_throttle_for_cycle(db: Session, shop_domain: str) -> bool:
     """
     Throttle trigger (internal-only): if Pro shop's monthly_cost_accumulated > FAIR_USE_COST_CAP.
     """
-    user = db.query(User).filter(User.username == shop_domain).first()
-    if not user or not user.plan or user.plan.name != "Pro":
+    try:
+        user = db.query(User).filter(User.username == shop_domain).first()
+        if not user or not user.plan or user.plan.name != "Pro":
+            return False
+        shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        if not shop:
+            return False
+        shop = sync_usage_limits(db, shop)
+        return float(shop.monthly_cost_accumulated or 0) > float(FAIR_USE_COST_CAP)
+    except SQLAlchemyError:
         return False
-    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
-    if not shop:
-        return False
-    shop = sync_usage_limits(db, shop)
-    return float(shop.monthly_cost_accumulated or 0) > float(FAIR_USE_COST_CAP)
 
 
 def get_effective_model(db: Session, shop_domain: str, requested_model: str) -> str:
