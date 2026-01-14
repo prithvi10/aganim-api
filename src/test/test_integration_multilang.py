@@ -14,7 +14,21 @@ client = TestClient(app, raise_server_exceptions=False)
 def mock_get_db():
     return MagicMock(spec=Session)
 
-app.dependency_overrides[get_db] = mock_get_db
+@pytest.fixture(autouse=True)
+def _ensure_db_override():
+    """
+    CI note: other test modules may delete/replace app.dependency_overrides[get_db] in teardown.
+    Ensure our override is active for the duration of each test in this module.
+    """
+    prev = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = mock_get_db
+    try:
+        yield
+    finally:
+        if prev is None:
+            app.dependency_overrides.pop(get_db, None)
+        else:
+            app.dependency_overrides[get_db] = prev
 
 @pytest.fixture
 def mock_auth_context():
