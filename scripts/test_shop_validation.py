@@ -22,7 +22,7 @@ db = SessionLocal()
 def setup_data():
     print("--- Setting up Test Data ---")
     # 1. Plan
-    plan = Plan(name="Proxy Plan", monthly_token_quota=1000, max_request_rate=10, is_active=True)
+    plan = Plan(name="Proxy Plan", monthly_rewrite_limit=1000, max_request_rate=10, is_active=True)
     db.add(plan)
     db.commit()
     print(f"Created Plan: {plan.name}")

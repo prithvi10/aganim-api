@@ -20,7 +20,7 @@ erDiagram
         int id PK
         string name UK "Basic, Standard, Pro"
         decimal price_usd_monthly
-        bigint monthly_token_quota "Hard limit for generation"
+        bigint monthly_rewrite_limit (db column: monthly_token_quota) "Hard limit for generation"
         int max_request_rate "Rate limit per minute"
         boolean can_stream_responses "Feature gate"
         boolean is_active

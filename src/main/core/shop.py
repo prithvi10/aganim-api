@@ -18,7 +18,7 @@ async def fetch_shop_locales(db: Session, shop_domain: str):
 
     # 1. Fetch User and Plan
     user = db.query(User).filter(User.username == shop_domain).first()
-    plan_name = user.plan.name if user and user.plan else "Free"
+    plan_name = user.plan.name if user and user.plan else "Basic"
 
     access_token = get_shop_access_token(db, shop_domain)
     if not access_token:

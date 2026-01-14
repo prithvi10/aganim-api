@@ -6,8 +6,9 @@ from unittest.mock import patch, MagicMock
 
 from src.main.api.main import app
 from src.main.db.database import Base, get_db
-from src.main.db.db_models import User, Plan, UsageRecord, Shop
+from src.main.db.db_models import User, Plan, Shop
 # Removed APIKey import and key hashing
+from datetime import datetime, timedelta, timezone
 
 # 1. Setup In-Memory Integration DB
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -48,13 +49,12 @@ def setup_data():
     db = TestingSessionLocal()
     
     # Reset tables
-    db.query(UsageRecord).delete()
     db.query(User).delete()
     db.query(Plan).delete()
     db.query(Shop).delete()
     db.commit()
 
-    plan = Plan(name="Integration Plan", monthly_token_quota=1000, max_request_rate=100, can_stream_responses=True)
+    plan = Plan(name="Integration Plan", monthly_rewrite_limit=1000, max_request_rate=100, can_stream_responses=True)
     db.add(plan)
     db.commit()
     
@@ -62,7 +62,14 @@ def setup_data():
     db.add(user)
     db.commit()
     
-    shop = Shop(domain="integration-shop.myshopify.com", access_token="integration_token")
+    now = datetime.now(timezone.utc)
+    shop = Shop(
+        domain="integration-shop.myshopify.com",
+        access_token="integration_token",
+        monthly_rewrites_used=0,
+        reset_anchor_date=now,
+        next_reset_date=now + timedelta(days=30),
+    )
     db.add(shop)
     db.commit()
     
@@ -107,31 +114,22 @@ def test_integration_generate_copy_flow(client, setup_data):
         # 2. Verify OpenAI was called
         mock_generate.assert_called_once()
         
-        # 3. Verify DB Update (Usage should be 50)
+        # 3. Verify DB Update (Rewrites should increment by 1)
         db = TestingSessionLocal()
-        user = db.query(User).filter_by(username=shop_domain).first()
-        
-        usage_record = db.query(UsageRecord).filter_by(user_id=user.id).first()
-        assert usage_record is not None
-        assert usage_record.token_count == 50
+        shop = db.query(Shop).filter_by(domain=shop_domain).first()
+        assert shop is not None
+        assert shop.monthly_rewrites_used == 1
         db.close()
 
 def test_integration_quota_exceeded(client, setup_data):
-    """Test that the DB correctly blocks requests when quota is exceeded."""
+    """Test that the DB correctly blocks requests when monthly rewrite limit is exceeded."""
     shop_domain = setup_data
     
-    # Manually set usage to limit (1000)
+    # Manually set rewrites to limit (1000 via monthly_token_quota fallback in Integration Plan)
     db = TestingSessionLocal()
-    user = db.query(User).filter_by(username=shop_domain).first()
-    
-    # Create record with MAX quota usage
-    from datetime import date
-    today = date.today()
-    cycle_start = date(today.year, today.month, 1)
-    
-    usage_record = UsageRecord(user_id=user.id, billing_cycle_start=cycle_start, token_count=1000)
-    db.add(usage_record)
-    
+    shop = db.query(Shop).filter_by(domain=shop_domain).first()
+    assert shop is not None
+    shop.monthly_rewrites_used = 1000
     db.commit()
     db.close()
     
@@ -144,5 +142,5 @@ def test_integration_quota_exceeded(client, setup_data):
         }
     )
     
-    assert response.status_code == 429
-    assert "Monthly token quota exceeded" in response.json()["detail"]
+    assert response.status_code == 403
+    assert "Monthly limit reached" in response.json()["detail"]

@@ -22,19 +22,17 @@ async def test_stream_openai_response_logic():
     with patch.object(OpenAIService, 'generate_copy_stream', return_value=iter([chunk1, chunk2])):
         # Mock DB Session and Update Function
         mock_db = MagicMock()
-        user_id = 1 
-        billing_start = "2023-01-01"
+        shop_domain = "test-shop.myshopify.com"
         
         # We need to patch the DB update function since it's imported in the service
-        with patch("src.main.service.open_ai_api_service.update_token_usage") as mock_update:
+        with patch("src.main.service.open_ai_api_service.increment_monthly_rewrites_used") as mock_inc:
             
             generator = service.stream_openai_response(
                 product_name="Test",
                 category="Test",
                 japanese_description="Test",
                 db=mock_db,
-                user_id=user_id,
-                billing_cycle_start=billing_start
+                shop_domain=shop_domain,
             )
             
             # Collect yielded content
@@ -45,8 +43,8 @@ async def test_stream_openai_response_logic():
             # Verify content
             assert "".join(content) == "Hello World"
             
-            # Verify DB Update was called with the correct token count (5) and user_id
-            mock_update.assert_called_once_with(mock_db, user_id, 5, billing_start)
+            # Verify rewrite increment was called once after stream completed
+            mock_inc.assert_called_once_with(mock_db, shop_domain, amount=1)
 
 @pytest.mark.asyncio
 async def test_stream_openai_response_error_handling():
@@ -65,8 +63,7 @@ async def test_stream_openai_response_error_handling():
             category="Test",
             japanese_description="Test",
             db=mock_db,
-            user_id=1,
-            billing_cycle_start="2023-01-01"
+            shop_domain="test-shop.myshopify.com",
         )
         
         content = []

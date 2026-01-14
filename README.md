@@ -127,7 +127,7 @@ The application uses **SQLAlchemy** with **PostgreSQL**.
 
 *   **User**: Represents a Shopify Merchant. Links to a `Plan` and holds multiple `APIKey`s.
 *   **Plan**: Defines the service tier.
-    *   `monthly_token_quota`: Max tokens allowed per month.
+    *   `monthly_rewrite_limit (db column: monthly_token_quota)`: Max product rewrites allowed per month.
     *   `max_request_rate`: Rate limit threshold.
     *   `can_stream_responses`: Feature flag for streaming.
 *   **APIKey**: Credentials for the Public API.

@@ -2,8 +2,22 @@ import os
 
 # OpenAI Configuration
 OPENAI_MODEL = "gpt-4o-mini"
+# Pro-only model (may be throttled down by Fair Use Monitoring)
+OPENAI_MODEL_PRO = os.getenv("OPENAI_MODEL_PRO", "gpt-5-pro")
+# Model used when Fair Use throttle is active for a shop
+OPENAI_MODEL_DEGRADED = os.getenv("OPENAI_MODEL_DEGRADED", "gpt-4o-mini")
 OPENAI_TEMPERATURE = 0.5
 OPENAI_MAX_TOKENS = 700
+
+# ------------------------------------------------------------------------------
+# Internal Fair Use Monitoring (never shown to merchants)
+# ------------------------------------------------------------------------------
+FAIR_USE_COST_CAP = float(os.getenv("FAIR_USE_COST_CAP", "150.0"))
+# Default pricing: only output tokens are costed at $10 / 1M (per your spec).
+# If you want full input/output/reasoning pricing, set these env vars.
+FAIR_USE_USD_PER_1M_INPUT = float(os.getenv("FAIR_USE_USD_PER_1M_INPUT", "0"))
+FAIR_USE_USD_PER_1M_OUTPUT = float(os.getenv("FAIR_USE_USD_PER_1M_OUTPUT", "10"))
+FAIR_USE_USD_PER_1M_REASONING = float(os.getenv("FAIR_USE_USD_PER_1M_REASONING", "0"))
 
 # Defaults
 DEFAULT_PRODUCT_CATEGORY = "General Goods"

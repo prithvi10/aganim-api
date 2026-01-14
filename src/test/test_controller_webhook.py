@@ -27,7 +27,7 @@ MOCK_SHOPIFY_SECRET = "test_secret_key"
 def webhook_payload():
     return {
         "myshopify_domain": "test-store.myshopify.com",
-        "billing_plan": "Basic Plan",
+        "billing_plan": "Basic",
         "email": "merchant@example.com"
     }
 
@@ -35,7 +35,7 @@ def webhook_payload():
 def mock_plan():
     plan = MagicMock(spec=Plan)
     plan.id = 1
-    plan.name = "Basic Plan"
+    plan.name = "Basic"
     return plan
 
 def generate_hmac(secret, body):
