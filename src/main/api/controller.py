@@ -274,7 +274,12 @@ async def get_usage(
         "current_usage": usage,
         "monthly_token_quota": plan.monthly_token_quota,
         "plan_name": plan.name,
-        "is_pro": plan.name == "Pro" or plan.name == "Growth" # Flag for the widget
+        # New unified plan fields (seeded by scripts/seed_db.py)
+        "product_limit": plan.product_limit,
+        "max_locales": plan.max_locales,
+        "features_json": plan.features_json,
+        # Backward-compatible flag: treat Standard + Pro as "pro-tier" for gating.
+        "is_pro": plan.name in ("Standard", "Pro"),
     }
 
 

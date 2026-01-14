@@ -21,7 +21,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 def test_integration_onboarding_webhook_flow():
     """
     Integration Test for User Onboarding via Webhook:
-    1. Seed 'Basic Plan' in DB.
+    1. Seed 'Basic' in DB.
     2. Send valid Webhook request with HMAC.
     3. Verify User is created in DB.
     """

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Date, BigInteger, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Date, BigInteger, Numeric, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -55,6 +55,14 @@ class Plan(Base):
     # CORE QUOTA DEFINITIONS
     monthly_token_quota = Column(BigInteger)
     max_request_rate = Column(Integer)
+
+    # NEW: unified pricing/feature-gating fields (backfilled by seed_db.py)
+    # - product_limit: monthly product/sync limit (-1 = unlimited)
+    # - max_locales: max locales per operation (-1 = unlimited)
+    # - features_json: UI-facing bullet list stored as JSON string
+    product_limit = Column(Integer, nullable=True)
+    max_locales = Column(Integer, nullable=True)
+    features_json = Column(Text, nullable=True)
     
     # FEATURE GATES
     can_access_live_currency = Column(Boolean, default=False)
