@@ -18,7 +18,7 @@ def add_custom_user():
             custom_plan = Plan(
                 name=plan_name,
                 price_usd_monthly=5.00,
-                monthly_token_quota=100,      # 100 tokens
+                monthly_rewrite_limit=100,      # 100 tokens
                 max_request_rate=3,           # 3 requests per month (effectively) or minute depending on logic
                 can_stream_responses=False    # No streaming
             )

@@ -14,7 +14,8 @@ from src.main.config.configs import (
     OPENAI_MAX_TOKENS
 )
 from src.main.logging.logger import get_logger
-from src.main.db.db_transactions import update_token_usage
+from src.main.db.db_transactions import increment_monthly_rewrites_used
+from src.main.service.fair_use import record_token_usage, notify_fair_use_if_needed, should_degrade_model
 
 logger = get_logger(__name__)
 
@@ -35,7 +36,14 @@ class OpenAIService:
         )
         self.system_prompt = SYSTEM_PROMPT
 
-    def generate_copy(self, product_name: str, category: str, japanese_description: str, system_prompt: str | None = None) -> object:
+    def generate_copy(
+        self,
+        product_name: str,
+        category: str,
+        japanese_description: str,
+        system_prompt: str | None = None,
+        model: str | None = None,
+    ) -> object:
         user_content = f"""
         Product Name: {product_name}
         Category: {category}
@@ -51,7 +59,7 @@ class OpenAIService:
         
         # Non-streaming call
         response = self.client.chat.completions.create(
-            model=OPENAI_MODEL, 
+            model=model or OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": prompt_to_use},
                 {"role": "user", "content": user_content}
@@ -87,7 +95,14 @@ class OpenAIService:
         )
         return response.choices[0].message.content or ""
 
-    def generate_copy_stream(self, product_name: str, category: str, japanese_description: str, system_prompt: str | None = None):
+    def generate_copy_stream(
+        self,
+        product_name: str,
+        category: str,
+        japanese_description: str,
+        system_prompt: str | None = None,
+        model: str | None = None,
+    ):
         """
         Returns a generator (stream) from OpenAI.
         """
@@ -104,7 +119,7 @@ class OpenAIService:
 
         # Streaming call
         stream = self.client.chat.completions.create(
-            model=OPENAI_MODEL, 
+            model=model or OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": prompt_to_use},
                 {"role": "user", "content": user_content}
@@ -123,8 +138,7 @@ class OpenAIService:
         category: str,
         japanese_description: str,
         db: Session,
-        user_id: int,
-        billing_cycle_start: date,
+        shop_domain: str,
         system_prompt: str | None = None
     ):
         """
@@ -136,11 +150,16 @@ class OpenAIService:
         """
         
         try:
+            model_override = None
+            if should_degrade_model(db, shop_domain):
+                model_override = (os.getenv("OPENAI_MODEL_DEGRADED") or "gpt-4o-mini").strip() or None
+
             stream = self.generate_copy_stream(
                 product_name=product_name,
                 category=category,
                 japanese_description=japanese_description,
-                system_prompt=system_prompt
+                system_prompt=system_prompt,
+                model=model_override,
             )
 
             full_content = ""
@@ -158,9 +177,18 @@ class OpenAIService:
             if total_usage == 0 and full_content:
                  total_usage = len(full_content) // 4 + 100 
 
-            if total_usage > 0:
-                logger.info(f"📝 Stream complete. Updating usage: {total_usage} tokens.")
-                update_token_usage(db, user_id, total_usage, billing_cycle_start)
+            # Internal-only token accounting (best-effort)
+            try:
+                record_token_usage(db, shop_domain, int(total_usage or 0))
+                notify_fair_use_if_needed(db, shop_domain)
+            except Exception as e:
+                logger.warning(f"[FairUse] Token accounting skipped for shop={shop_domain}: {e}")
+
+            # Product-based gating: count 1 rewrite per successful request
+            try:
+                increment_monthly_rewrites_used(db, shop_domain, amount=1)
+            except Exception as e:
+                logger.warning(f"Unable to increment monthly rewrites for shop={shop_domain}: {e}")
                 
         except Exception as e:
             logger.error(f"❌ Error during streaming: {e}")
@@ -172,8 +200,7 @@ class OpenAIService:
         category: str,
         japanese_description: str,
         db: Session,
-        user_id: int,
-        billing_cycle_start: date,
+        shop_domain: str,
         system_prompt: str | None = None
     ):
         return StreamingResponse(
@@ -182,8 +209,7 @@ class OpenAIService:
                 category=category, 
                 japanese_description=japanese_description, 
                 db=db, 
-                user_id=user_id, 
-                billing_cycle_start=billing_cycle_start,
+                shop_domain=shop_domain, 
                 system_prompt=system_prompt
             ),
             media_type="text/event-stream" 

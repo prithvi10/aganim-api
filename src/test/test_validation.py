@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota
-from src.main.db.db_models import User, Plan
+from src.main.db.db_models import User, Plan, Shop
 
 # --- Tests for validate_api_key_and_quota ---
 
@@ -93,14 +93,17 @@ def test_validate_shop_valid(mock_get_context):
     mock_user = MagicMock(spec=User)
     mock_user.username = shop_domain
     mock_plan = MagicMock(spec=Plan)
-    mock_plan.monthly_token_quota = 1000
+    mock_plan.product_limit = 100
+
+    mock_shop = MagicMock(spec=Shop)
+    mock_shop.next_reset_date = None
     
     mock_context = {
         "user": mock_user,
         "plan": mock_plan,
-        "user_id": 1,
-        "billing_cycle_start": "2023-01-01",
-        "current_usage": 500,
+        "shop": mock_shop,
+        "rewrites_used": 10,
+        "rewrite_limit": 100,
         "is_active": True
     }
     mock_get_context.return_value = mock_context
@@ -130,21 +133,26 @@ def test_validate_shop_invalid(mock_get_context):
 
 @patch("src.main.api.validation.get_shop_quota_context")
 def test_validate_shop_quota_exceeded(mock_get_context):
-    """Test validation when shop quota is exceeded."""
+    """Test validation when monthly rewrite limit is exceeded."""
     mock_db = MagicMock(spec=Session)
     
     mock_plan = MagicMock(spec=Plan)
-    mock_plan.monthly_token_quota = 100
+    mock_plan.product_limit = 100
+
+    mock_shop = MagicMock(spec=Shop)
+    mock_shop.next_reset_date = None
     
     mock_context = {
         "user": MagicMock(username="heavy_shop"),
         "plan": mock_plan,
-        "current_usage": 150,
+        "shop": mock_shop,
+        "rewrites_used": 150,
+        "rewrite_limit": 100,
         "is_active": True
     }
     mock_get_context.return_value = mock_context
     
     with pytest.raises(HTTPException) as exc:
         validate_shop_and_quota(mock_db, "heavy_shop")
-    assert exc.value.status_code == 429
-    assert "Monthly token quota exceeded" in exc.value.detail
+    assert exc.value.status_code == 403
+    assert "Monthly limit reached" in exc.value.detail

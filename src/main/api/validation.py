@@ -14,10 +14,10 @@ def validate_api_key_and_quota(db: Session, key_hash: str):
     """
     raise HTTPException(status_code=410, detail="API Key authentication is deprecated. Please use the Shopify App Proxy.")
 
-def validate_shop_and_quota(db: Session, shop_domain: str):
+def validate_shop_and_quota(db: Session, shop_domain: str, *, enforce_limit: bool = True):
     """
-    Validates the Shop (User) and ensures they have sufficient quota.
-    Uses the User ID for metering.
+    Validates the Shop (User) and ensures they have sufficient rewrite quota (unless enforce_limit=False).
+    Uses the Shop record for metering and self-healing monthly resets.
     Raises HTTPException if validation fails.
     """
     if not shop_domain:
@@ -32,15 +32,21 @@ def validate_shop_and_quota(db: Session, shop_domain: str):
 
     user = context["user"]
     plan = context["plan"]
-    current_usage = context["current_usage"]
+    shop = context["shop"]
+    rewrites_used = context["rewrites_used"]
+    rewrite_limit = context["rewrite_limit"]
 
     # 2. Check Quota Logic
-    if current_usage >= plan.monthly_token_quota:
-        logger.warning(f"⛔ Quota Exceeded: User {user.username} (Usage: {current_usage} / Limit: {plan.monthly_token_quota})")
-        raise HTTPException(
-            status_code=429, 
-            detail=f"Monthly token quota exceeded. ({current_usage}/{plan.monthly_token_quota})"
-        )
+    if enforce_limit and rewrite_limit is not None and int(rewrite_limit) != -1:
+        if int(rewrites_used) >= int(rewrite_limit):
+            reset_on = shop.next_reset_date.isoformat() if getattr(shop, "next_reset_date", None) else "unknown"
+            logger.warning(
+                f"⛔ Monthly Limit Reached: shop={user.username} (used={rewrites_used} / limit={rewrite_limit}) reset_on={reset_on}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Monthly limit reached. Your limit resets on {reset_on}.",
+            )
 
     return context
 

@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.main.api.main import app
 from src.main.db.database import Base, get_db
-from src.main.db.db_models import Plan, User, UsageRecord
+from src.main.db.db_models import Plan, User, Shop
 
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -45,17 +45,21 @@ def seed_shop():
     Seed the dev-shop used by security.verify_shopify_session("Bearer dev-token-123").
     """
     db = TestingSessionLocal()
-    db.query(UsageRecord).delete()
     db.query(User).delete()
+    db.query(Shop).delete()
     db.query(Plan).delete()
     db.commit()
 
-    plan = Plan(name="Pro", monthly_token_quota=1000, max_request_rate=100, can_stream_responses=True)
+    plan = Plan(name="Pro", monthly_rewrite_limit=1000, max_request_rate=100, can_stream_responses=True)
     db.add(plan)
     db.commit()
 
     user = User(username="dev-shop.myshopify.com", plan_id=plan.id)
     db.add(user)
+    db.commit()
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    db.add(Shop(domain="dev-shop.myshopify.com", access_token="dev-token-123", monthly_rewrites_used=0, reset_anchor_date=now, next_reset_date=now + timedelta(days=30)))
     db.commit()
     db.close()
 
@@ -184,14 +188,13 @@ def test_agent_endpoint_invalid_token_returns_401(client, seed_shop):
     assert resp.status_code == 401
 
 
-def test_agent_endpoint_quota_exceeded_returns_429(client, seed_shop):
+def test_agent_endpoint_quota_exceeded_returns_403(client, seed_shop):
     db = TestingSessionLocal()
     user = db.query(User).filter_by(username="dev-shop.myshopify.com").first()
     assert user is not None
-    today = date.today()
-    cycle_start = date(today.year, today.month, 1)
-    # monthly_token_quota is 1000, so this blocks all requests
-    db.add(UsageRecord(user_id=user.id, billing_cycle_start=cycle_start, token_count=1000))
+    shop = db.query(Shop).filter_by(domain="dev-shop.myshopify.com").first()
+    assert shop is not None
+    shop.monthly_rewrites_used = 1000
     db.commit()
     db.close()
 
@@ -203,6 +206,6 @@ def test_agent_endpoint_quota_exceeded_returns_429(client, seed_shop):
             headers=_auth_headers(),
             json={"action": "social_hook_architect", "context": {}, "product_data": {}},
         )
-    assert resp.status_code == 429
+    assert resp.status_code == 403
 
 

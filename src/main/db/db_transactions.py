@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import update
-from datetime import date
-from .db_models import User, UsageRecord, Plan
+from datetime import datetime, timedelta, timezone
+from .db_models import User, Plan, Shop
 
 # NOTE: get_user_quota_context was used for API Key validation.
 # Since we are removing API Keys, we might need a different way to validate external requests if we still support them.
@@ -9,14 +8,50 @@ from .db_models import User, UsageRecord, Plan
 # If direct API access is still needed, we'd need to authenticate the User directly (e.g. via a token on the User model).
 # For this refactor, I will focus on the Proxy flow which uses Shop Domain.
 
+def sync_usage_limits(db: Session, shop: Shop) -> Shop:
+    """
+    Self-healing monthly reset:
+    - If next_reset_date is missing, initialize it as reset_anchor_date + 30 days
+    - If current time is past next_reset_date, reset monthly_rewrites_used to 0 and
+      advance next_reset_date by 30 days until it's in the future.
+
+    Defensive note: some unit tests pass MagicMock "shops" (mocked DB sessions).
+    In that case, we avoid datetime comparisons and just no-op / initialize.
+    """
+    now = datetime.now(timezone.utc)
+
+    def _coerce_utc(dt: datetime) -> datetime:
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+    ra = getattr(shop, 'reset_anchor_date', None)
+    if isinstance(ra, datetime):
+        shop.reset_anchor_date = _coerce_utc(ra)
+    else:
+        shop.reset_anchor_date = now
+
+    nr = getattr(shop, 'next_reset_date', None)
+    if isinstance(nr, datetime):
+        shop.next_reset_date = _coerce_utc(nr)
+    else:
+        shop.next_reset_date = shop.reset_anchor_date + timedelta(days=30)
+
+    nr = getattr(shop, 'next_reset_date', None)
+    if isinstance(nr, datetime) and now >= nr:
+        shop.monthly_rewrites_used = 0
+        while isinstance(shop.next_reset_date, datetime) and now >= shop.next_reset_date:
+            shop.next_reset_date = shop.next_reset_date + timedelta(days=30)
+
+    db.add(shop)
+    db.commit()
+    db.refresh(shop)
+    return shop
+
+
 def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
     """
-    Retrieves user, plan, and usage information based on the Shop Domain (username).
+    Retrieves user, plan, and rewrite usage information based on the Shop Domain (username).
     Returns None if the user/shop is not found.
     """
-    today = date.today()
-    cycle_start = date(today.year, today.month, 1)
-
     # 1. Find User by shop_domain (username)
     user = (
         db.query(User)
@@ -31,60 +66,42 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
     if not plan:
         return None
 
-    # 2. Fetch current usage record linked to USER
-    usage_record = (
-        db.query(UsageRecord)
-        .filter(
-            UsageRecord.user_id == user.id,
-            UsageRecord.billing_cycle_start == cycle_start
-        )
-        .first()
-    )
+    # 2. Fetch shop record linked to domain (usage + reset dates live here)
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        shop = Shop(domain=shop_domain, access_token="")
+        db.add(shop)
+        db.commit()
+        db.refresh(shop)
 
-    current_usage = usage_record.token_count if usage_record else 0
+    shop = sync_usage_limits(db, shop)
+
+    rewrites_used = int(shop.monthly_rewrites_used or 0)
+    rewrite_limit = plan.product_limit if plan.product_limit is not None else plan.monthly_rewrite_limit
 
     return {
         "user": user,
         "plan": plan,
-        "user_id": user.id, # Changed from api_key_id
-        "current_usage": current_usage,
-        "billing_cycle_start": cycle_start,
+        "shop": shop,
+        "rewrites_used": rewrites_used,
+        "rewrite_limit": rewrite_limit,
         "is_active": True # Users are active if they exist and have a plan
     }
 
-def update_token_usage(db: Session, user_id: int, token_usage: int, billing_cycle_start: date):
+def increment_monthly_rewrites_used(db: Session, shop_domain: str, amount: int = 1) -> Shop | None:
     """
-    Atomic update of the usage record.
+    Increment monthly_rewrites_used for a shop after a successful rewrite.
     """
-    
-    # 1. Try to update existing record
-    stmt = (
-        update(UsageRecord)
-        .where(
-            UsageRecord.user_id == user_id,
-            UsageRecord.billing_cycle_start == billing_cycle_start
-        )
-        .values(token_count=UsageRecord.token_count + token_usage)
-        .execution_options(synchronize_session=False)
-    )
-    result = db.execute(stmt)
-    
-    # 2. If no row updated, it means the record doesn't exist for this month yet.
-    if result.rowcount == 0:
-        try:
-            new_record = UsageRecord(
-                user_id=user_id,
-                billing_cycle_start=billing_cycle_start,
-                token_count=token_usage
-            )
-            db.add(new_record)
-            db.commit()
-        except Exception:
-            db.rollback()
-            result = db.execute(stmt)
-            db.commit()
-    else:
-        db.commit()
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        return None
+
+    shop = sync_usage_limits(db, shop)
+    shop.monthly_rewrites_used = int(shop.monthly_rewrites_used or 0) + int(amount or 0)
+    db.add(shop)
+    db.commit()
+    db.refresh(shop)
+    return shop
 
 def get_plan_by_id(db: Session, plan_id: int) -> Plan | None:
     return db.query(Plan).filter(Plan.id == plan_id).first()
@@ -142,7 +159,14 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
         if shop_record:
             shop_record.access_token = access_token
         else:
-            new_shop = Shop(domain=shop_domain, access_token=access_token)
+            now = datetime.now(timezone.utc)
+            new_shop = Shop(
+                domain=shop_domain,
+                access_token=access_token,
+                monthly_rewrites_used=0,
+                reset_anchor_date=now,
+                next_reset_date=now + timedelta(days=30),
+            )
             db.add(new_shop)
             shop_record = new_shop
     
