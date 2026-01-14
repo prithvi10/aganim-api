@@ -144,14 +144,62 @@ async def proxy_generate_bulk(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
+    # DEBUG: safe request summary (never log tokens or full text)
+    try:
+        logger.debug(
+            "[Bulk] incoming shop=%s product_id=%s target_locales=%s desc_len=%s name_len=%s category=%s",
+            shop_domain,
+            getattr(bulk_request, "product_id", None),
+            getattr(bulk_request, "target_locales", None),
+            len(getattr(bulk_request, "japanese_description", "") or ""),
+            len(getattr(bulk_request, "product_name", "") or ""),
+            getattr(bulk_request, "category", None),
+        )
+    except Exception:
+        pass
+
     auth_context = validate_shop_and_quota(db, shop_domain, enforce_limit=True)
+    try:
+        plan = auth_context.get("plan")
+        shop_obj = auth_context.get("shop")
+        logger.debug(
+            "[Bulk] auth ok shop=%s plan=%s rewrites_used=%s rewrite_limit=%s next_reset=%s max_locales=%s",
+            shop_domain,
+            getattr(plan, "name", None),
+            auth_context.get("rewrites_used"),
+            auth_context.get("rewrite_limit"),
+            getattr(shop_obj, "next_reset_date", None),
+            getattr(plan, "max_locales", None),
+        )
+    except Exception:
+        pass
     
-    resp = await process_bulk_generation_request(
-        db=db,
-        request=bulk_request,
-        user=auth_context["user"],
-        plan=auth_context["plan"],
-    )
+    try:
+        resp = await process_bulk_generation_request(
+            db=db,
+            request=bulk_request,
+            user=auth_context["user"],
+            plan=auth_context["plan"],
+        )
+    except HTTPException:
+        logger.exception("[Bulk] HTTPException shop=%s", shop_domain)
+        raise
+    except Exception:
+        logger.exception("[Bulk] Unhandled exception shop=%s", shop_domain)
+        raise
+
+    try:
+        logger.debug(
+            "[Bulk] result shop=%s status=%s processed=%s failed=%s has_results=%s",
+            shop_domain,
+            resp.get("status") if isinstance(resp, dict) else type(resp).__name__,
+            len(resp.get("processed", [])) if isinstance(resp, dict) else None,
+            len(resp.get("failed", [])) if isinstance(resp, dict) else None,
+            bool(resp.get("results")) if isinstance(resp, dict) else None,
+        )
+    except Exception:
+        pass
+
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
             increment_monthly_rewrites_used(db, shop_domain, amount=1)
