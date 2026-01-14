@@ -24,9 +24,9 @@ else:
     
     with engine.connect() as conn:
         print("\n--- ALL PLANS ---")
-        plans = conn.execute(text("SELECT id, name, monthly_token_quota, max_request_rate FROM plans")).fetchall()
+        plans = conn.execute(text("SELECT id, name, monthly_rewrite_limit (db column: monthly_token_quota), max_request_rate FROM plans")).fetchall()
         for plan in plans:
-            print(f"ID: {plan.id} | Name: {plan.name} | Quota: {plan.monthly_token_quota} | Rate: {plan.max_request_rate}")
+            print(f"ID: {plan.id} | Name: {plan.name} | Quota: {plan.monthly_rewrite_limit (db column: monthly_token_quota)} | Rate: {plan.max_request_rate}")
             
         print("\n--- ALL USERS AND THEIR PLANS ---")
         users = conn.execute(text("SELECT u.username, p.name as plan_name FROM users u JOIN plans p ON u.plan_id = p.id")).fetchall()

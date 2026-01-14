@@ -42,12 +42,47 @@ def _ensure_plan_columns_exist():
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS features_json TEXT"))
         conn.commit()
 
+def _ensure_shop_columns_exist():
+    """
+    This project does not currently use migrations, so we opportunistically add new
+    shop columns when running the seed script.
+    - SQLite: ALTER TABLE ADD COLUMN (no IF NOT EXISTS)
+    - Postgres: ALTER TABLE ... ADD COLUMN IF NOT EXISTS
+    """
+    dialect = engine.dialect.name
+
+    if dialect == "sqlite":
+        with engine.connect() as conn:
+            cols = conn.execute(text("PRAGMA table_info(shops)")).fetchall()
+            existing = {c[1] for c in cols}  # pragma: (cid, name, type, notnull, dflt, pk)
+
+            def add(col_sql: str, col_name: str):
+                if col_name in existing:
+                    return
+                conn.execute(text(f"ALTER TABLE shops ADD COLUMN {col_sql}"))
+
+            add("monthly_rewrites_used INTEGER DEFAULT 0", "monthly_rewrites_used")
+            add("reset_anchor_date TEXT", "reset_anchor_date")
+            add("next_reset_date TEXT", "next_reset_date")
+            add("fair_use_last_notified_at TEXT", "fair_use_last_notified_at")
+            conn.commit()
+        return
+
+    # Postgres / others
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_rewrites_used INTEGER DEFAULT 0"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS reset_anchor_date TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS next_reset_date TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS fair_use_last_notified_at TIMESTAMPTZ"))
+        conn.commit()
+
 def seed_data():
     db = SessionLocal()
     try:
         # Ensure tables exist
         Base.metadata.create_all(bind=engine)
         _ensure_plan_columns_exist()
+        _ensure_shop_columns_exist()
 
         # 1. Create/Update Plans (UPSERT by name)
         plans = [
@@ -91,13 +126,13 @@ def seed_data():
             else:
                 print(f"♻️  Updated {p_data['name']} Plan")
 
-            # NOTE: We keep `monthly_token_quota` populated for backward compatibility with older codepaths/UI.
+            # NOTE: We keep the legacy DB column `monthly_token_quota` populated for backward compatibility with older codepaths/UI.
             # It now represents the monthly product/sync limit.
             existing.price_usd_monthly = p_data["price"]
             existing.product_limit = p_data["product_limit"]
             existing.max_locales = p_data["max_locales"]
             existing.features_json = features_json
-            existing.monthly_token_quota = p_data["product_limit"]
+            existing.monthly_rewrite_limit = p_data["product_limit"]
             existing.max_request_rate = p_data["rate"]
             existing.can_stream_responses = p_data["stream"]
             existing.is_active = True
@@ -122,9 +157,14 @@ def seed_data():
         # 3. Create Shop Record (for OAuth/Proxy)
         test_shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
         if not test_shop:
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(timezone.utc)
             test_shop = Shop(
                 domain=shop_domain,
-                access_token="dev-token-123"
+                access_token="dev-token-123",
+                monthly_rewrites_used=0,
+                reset_anchor_date=now,
+                next_reset_date=now + timedelta(days=30),
             )
             db.add(test_shop)
             db.commit()

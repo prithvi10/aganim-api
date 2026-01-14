@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from sqlalchemy.orm import Session
-from datetime import date
 import httpx
 from src.main.core.generation import process_generation_request
 from src.main.db.db_models import User, Plan
@@ -60,8 +59,7 @@ async def test_process_generation_updates_primary_locale_via_rest(mock_db, mock_
         }
     }
 
-    with patch("src.main.core.generation.update_token_usage"), \
-         patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
+    with patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value="token"), \
          patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
          patch("src.main.core.generation.limiter.is_allowed", return_value=True):
@@ -78,8 +76,6 @@ async def test_process_generation_updates_primary_locale_via_rest(mock_db, mock_
             request=request,
             user=mock_user,
             plan=mock_plan,
-            user_id=1,
-            billing_cycle_start=date(2023, 1, 1)
         )
 
         assert result["status"] == "success"
@@ -98,8 +94,7 @@ async def test_process_generation_updates_secondary_locale_via_graphql(mock_db, 
     mock_shop_info_resp.status_code = 200
     mock_shop_info_resp.json.return_value = {"shop": {"primary_locale": "en"}}
 
-    with patch("src.main.core.generation.update_token_usage"), \
-         patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
+    with patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value="token"), \
          patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
          patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
@@ -115,8 +110,6 @@ async def test_process_generation_updates_secondary_locale_via_graphql(mock_db, 
             request=request,
             user=mock_user,
             plan=mock_plan,
-            user_id=1,
-            billing_cycle_start=date(2023, 1, 1)
         )
 
         assert result["status"] == "success"

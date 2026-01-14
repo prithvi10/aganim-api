@@ -31,7 +31,7 @@ def test_integration_onboarding_webhook_flow():
     db = TestingSessionLocal()
     
     # Seed Plan
-    plan = Plan(name="Basic", monthly_token_quota=50000, max_request_rate=60)
+    plan = Plan(name="Basic", monthly_rewrite_limit=50000, max_request_rate=60)
     db.add(plan)
     db.commit()
     plan_id = plan.id # Capture ID before closing session
