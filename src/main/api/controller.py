@@ -8,7 +8,11 @@ import jwt
 from .models import RewriteRequest, OnboardingRequest, BulkRewriteRequest, AgentRequest
 from src.main.db.db_models import User
 from src.main.db.database import get_db
-from src.main.db.db_transactions import get_plan_by_name, store_shop_access_token
+from src.main.db.db_transactions import (
+    get_plan_by_name,
+    store_shop_access_token,
+    increment_monthly_rewrites_used,
+)
 from src.main.db.db_transactions import get_user_by_username
 from src.main.db.db_models import Shop, User
 from src.main.security.security import (
@@ -110,17 +114,22 @@ async def proxy_generate_copy(
     if not shop_domain:
          raise HTTPException(status_code=400, detail="Missing shop parameter")
 
-    auth_context = validate_shop_and_quota(db, shop_domain)
+    auth_context = validate_shop_and_quota(db, shop_domain, enforce_limit=True)
     
     # Delegate business logic to Core layer
-    return await process_generation_request(
+    resp = await process_generation_request(
         db=db,
         request=rewrite_request,
         user=auth_context["user"],
         plan=auth_context["plan"],
-        user_id=auth_context["user_id"],
-        billing_cycle_start=auth_context["billing_cycle_start"]
     )
+    # Increment rewrite usage after successful generation
+    if isinstance(resp, dict) and resp.get("status") == "success":
+        try:
+            increment_monthly_rewrites_used(db, shop_domain, amount=1)
+        except Exception as e:
+            logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
+    return resp
 
 
 @router.post("/api/proxy/generate-bulk")
@@ -135,16 +144,68 @@ async def proxy_generate_bulk(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    auth_context = validate_shop_and_quota(db, shop_domain)
+    # DEBUG: safe request summary (never log tokens or full text)
+    try:
+        logger.debug(
+            "[Bulk] incoming shop=%s product_id=%s target_locales=%s desc_len=%s name_len=%s category=%s",
+            shop_domain,
+            getattr(bulk_request, "product_id", None),
+            getattr(bulk_request, "target_locales", None),
+            len(getattr(bulk_request, "japanese_description", "") or ""),
+            len(getattr(bulk_request, "product_name", "") or ""),
+            getattr(bulk_request, "category", None),
+        )
+    except Exception:
+        pass
+
+    auth_context = validate_shop_and_quota(db, shop_domain, enforce_limit=True)
+    try:
+        plan = auth_context.get("plan")
+        shop_obj = auth_context.get("shop")
+        logger.debug(
+            "[Bulk] auth ok shop=%s plan=%s rewrites_used=%s rewrite_limit=%s next_reset=%s max_locales=%s",
+            shop_domain,
+            getattr(plan, "name", None),
+            auth_context.get("rewrites_used"),
+            auth_context.get("rewrite_limit"),
+            getattr(shop_obj, "next_reset_date", None),
+            getattr(plan, "max_locales", None),
+        )
+    except Exception:
+        pass
     
-    return await process_bulk_generation_request(
-        db=db,
-        request=bulk_request,
-        user=auth_context["user"],
-        plan=auth_context["plan"],
-        user_id=auth_context["user_id"],
-        billing_cycle_start=auth_context["billing_cycle_start"]
-    )
+    try:
+        resp = await process_bulk_generation_request(
+            db=db,
+            request=bulk_request,
+            user=auth_context["user"],
+            plan=auth_context["plan"],
+        )
+    except HTTPException:
+        logger.exception("[Bulk] HTTPException shop=%s", shop_domain)
+        raise
+    except Exception:
+        logger.exception("[Bulk] Unhandled exception shop=%s", shop_domain)
+        raise
+
+    try:
+        logger.debug(
+            "[Bulk] result shop=%s status=%s processed=%s failed=%s has_results=%s",
+            shop_domain,
+            resp.get("status") if isinstance(resp, dict) else type(resp).__name__,
+            len(resp.get("processed", [])) if isinstance(resp, dict) else None,
+            len(resp.get("failed", [])) if isinstance(resp, dict) else None,
+            bool(resp.get("results")) if isinstance(resp, dict) else None,
+        )
+    except Exception:
+        pass
+
+    if isinstance(resp, dict) and resp.get("status") == "success":
+        try:
+            increment_monthly_rewrites_used(db, shop_domain, amount=1)
+        except Exception as e:
+            logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
+    return resp
 
 
 # ==============================================================================
@@ -175,16 +236,20 @@ async def admin_ext_generate_bulk(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    auth_context = validate_shop_and_quota(db, shop)
+    auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
 
-    return await process_bulk_generation_request(
+    resp = await process_bulk_generation_request(
         db=db,
         request=bulk_request,
         user=auth_context["user"],
         plan=auth_context["plan"],
-        user_id=auth_context["user_id"],
-        billing_cycle_start=auth_context["billing_cycle_start"],
     )
+    if isinstance(resp, dict) and resp.get("status") == "success":
+        try:
+            increment_monthly_rewrites_used(db, shop, amount=1)
+        except Exception as e:
+            logger.warning(f"Rewrite increment skipped for shop={shop}: {e}")
+    return resp
 
 
 # ==============================================================================
@@ -215,7 +280,8 @@ async def admin_ext_agent(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    auth_context = validate_shop_and_quota(db, shop)
+    # Agents are also gated by monthly rewrite limits.
+    auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
 
     result = run_agent_action(
         action=agent_req.action,
@@ -264,17 +330,29 @@ async def get_usage(
     if not shop_domain:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
 
-    auth_context = validate_shop_and_quota(db, shop_domain)
+    # Dashboard/status should never hard-fail on quota; it should show the current usage + reset date.
+    auth_context = validate_shop_and_quota(db, shop_domain, enforce_limit=False)
     
     user = auth_context["user"]
     plan = auth_context["plan"]
-    usage = auth_context["current_usage"]
+    shop = auth_context["shop"]
+    rewrites_used = auth_context["rewrites_used"]
+    rewrite_limit = auth_context["rewrite_limit"]
     
     return {
-        "current_usage": usage,
-        "monthly_token_quota": plan.monthly_token_quota,
         "plan_name": plan.name,
-        "is_pro": plan.name == "Pro" or plan.name == "Growth" # Flag for the widget
+        # Product rewrite usage (new system)
+        "monthly_rewrites_used": rewrites_used,
+        "rewrite_limit": rewrite_limit,
+        "next_reset_date": shop.next_reset_date.isoformat() if shop.next_reset_date else None,
+        # Backward compatibility (old keys mapped to new system)
+        "current_usage": rewrites_used,
+        "monthly_token_quota": rewrite_limit,
+        # Feature gating fields
+        "product_limit": plan.product_limit,
+        "max_locales": plan.max_locales,
+        "features_json": plan.features_json,
+        "is_pro": plan.name in ("Standard", "Pro"),
     }
 
 
@@ -357,6 +435,22 @@ async def handle_subscription_activated(
                 user.plan_id = plan.id
                 db.commit()
                 db.refresh(user)
+
+            # Also reset product rewrite usage when a plan changes (new billing cycle anchor)
+            try:
+                shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+                if shop_rec:
+                    from datetime import datetime, timedelta, timezone
+                    now = datetime.now(timezone.utc)
+                    shop_rec.monthly_rewrites_used = 0
+                    shop_rec.monthly_cost_accumulated = 0
+                    shop_rec.fair_use_last_notified_at = None
+                    shop_rec.reset_anchor_date = now
+                    shop_rec.next_reset_date = now + timedelta(days=30)
+                    db.add(shop_rec)
+                    db.commit()
+            except Exception as e:
+                logger.warning(f"Shop rewrite reset skipped for {shop_domain}: {e}")
         except Exception as e:
             logger.warning(f"Plan update skipped for {shop_domain}: {e}")
 

@@ -64,7 +64,7 @@ def seed_shop_records():
     db.query(Plan).delete()
     db.commit()
 
-    plan = Plan(name="Basic", monthly_token_quota=1000, max_request_rate=100, can_stream_responses=False)
+    plan = Plan(name="Basic", monthly_rewrite_limit=1000, max_request_rate=100, can_stream_responses=False)
     db.add(plan)
     db.commit()
 
@@ -77,7 +77,7 @@ def seed_shop_records():
     # Usage row (composite key)
     today = date.today()
     cycle_start = date(today.year, today.month, 1)
-    db.add(UsageRecord(user_id=user.id, billing_cycle_start=cycle_start, token_count=123))
+    db.add(UsageRecord(user_id=user.id, billing_cycle_start=cycle_start, usage_count=123))
     db.add(Shop(domain=shop_domain, access_token="shpua_mock"))
     db.commit()
     db.close()

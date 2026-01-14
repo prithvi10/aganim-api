@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Date, BigInteger, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Date, BigInteger, Numeric, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -32,6 +32,21 @@ class Shop(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
+    # -----------------------------------------------------------------------------
+    # Product-based usage gating (replaces token-based UsageRecord metering)
+    # -----------------------------------------------------------------------------
+    monthly_rewrites_used = Column(Integer, nullable=False, default=0, server_default="0")
+    # The date the merchant installed or last changed plans.
+    reset_anchor_date = Column(DateTime(timezone=True), nullable=True)
+    # Computed as reset_anchor_date + 30 days (self-healed forward as needed).
+    next_reset_date = Column(DateTime(timezone=True), nullable=True)
+
+    # -----------------------------------------------------------------------------
+    # Internal fair-use monitoring (NEVER shown to merchant)
+    # -----------------------------------------------------------------------------
+    fair_use_last_notified_at = Column(DateTime(timezone=True), nullable=True)
+    monthly_cost_accumulated = Column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+
 class UsageRecord(Base):
     __tablename__ = "usage_records"
 
@@ -39,7 +54,8 @@ class UsageRecord(Base):
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True) 
     billing_cycle_start = Column(Date, primary_key=True) 
     
-    token_count = Column(BigInteger, default=0)
+    # Deprecated column name in DB: token_count. Python attr is usage_count.
+    usage_count = Column("token_count", BigInteger, default=0)
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
     # Relationship back to the User
@@ -53,8 +69,17 @@ class Plan(Base):
     price_usd_monthly = Column(Numeric(10, 2))
     
     # CORE QUOTA DEFINITIONS
-    monthly_token_quota = Column(BigInteger)
+    # Deprecated column name in DB: monthly_token_quota. Python attr is monthly_rewrite_limit.
+    monthly_rewrite_limit = Column("monthly_token_quota", BigInteger)
     max_request_rate = Column(Integer)
+
+    # NEW: unified pricing/feature-gating fields (backfilled by seed_db.py)
+    # - product_limit: monthly product/sync limit (-1 = unlimited)
+    # - max_locales: max locales per operation (-1 = unlimited)
+    # - features_json: UI-facing bullet list stored as JSON string
+    product_limit = Column(Integer, nullable=True)
+    max_locales = Column(Integer, nullable=True)
+    features_json = Column(Text, nullable=True)
     
     # FEATURE GATES
     can_access_live_currency = Column(Boolean, default=False)

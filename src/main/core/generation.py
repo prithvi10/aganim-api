@@ -15,9 +15,10 @@ from src.main.config.configs import (
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
 from src.main.logging.logger import get_logger
-from src.main.db.db_transactions import update_token_usage, get_shop_access_token
+from src.main.db.db_transactions import get_shop_access_token
 from src.main.service.shopify_service import save_product_content_with_locale
 from src.main.api.validation import validate_rewrite_request
+from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
 
 logger = get_logger(__name__)
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
@@ -172,25 +173,30 @@ async def _generate_and_save_for_locale(
     target_locale: str,
     primary_locale: str,
     access_token: str | None,
-    user_id: int,
-    billing_cycle_start,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
     """
     dynamic_prompt = _build_dynamic_prompt(target_locale)
-    
+
+    base_model = get_base_model_for_shop(db, shop)
+    model_override = get_effective_model(db, shop, base_model)
+
     openai_response = openai_service.generate_copy(
         product_name=product_name,
         category=category,
         japanese_description=processed_description,
-        system_prompt=dynamic_prompt
+        system_prompt=dynamic_prompt,
+        model=model_override,
     )
-    
-    total_tokens = getattr(openai_response.usage, 'total_tokens', 0) if openai_response.usage else 0
-    if total_tokens > 0:
-        update_token_usage(db, user_id, total_tokens, billing_cycle_start)
 
+    # Internal-only cost accounting + fair-use monitoring (never blocks)
+    try:
+        usage = getattr(openai_response, "usage", None)
+        record_cost_from_usage(db, shop, usage, model_used=model_override)
+    except Exception as e:
+        logger.warning(f"[FairUse] Cost accounting skipped for shop={shop}: {e}")
+    
     raw_content = openai_response.choices[0].message.content
     parsed, discovered_values = _parse_model_json(raw_content or "")
     # Preserve existing contract: always return a title string to clients.
@@ -216,7 +222,6 @@ async def _generate_and_save_for_locale(
     return {
         "locale": target_locale,
         "data": parsed,
-        "tokens": total_tokens,
         "discovered_values": discovered_values,
     }
 
@@ -225,8 +230,6 @@ async def process_generation_request(
     request: RewriteRequest,
     user: User,
     plan,
-    user_id: int,
-    billing_cycle_start
 ):
     shop = user.username
     if not limiter.is_allowed(shop):
@@ -246,8 +249,7 @@ async def process_generation_request(
                 category=request.category,
                 japanese_description=request.japanese_description,
                 db=db,
-                user_id=user_id,
-                billing_cycle_start=billing_cycle_start,
+                shop_domain=shop,
                 system_prompt=dynamic_prompt
             )
 
@@ -273,8 +275,15 @@ async def process_generation_request(
             except Exception: pass
 
         result = await _generate_and_save_for_locale(
-            db, shop, request.product_id, request.product_name, request.category,
-            processed_desc, target_locale, primary_locale, access_token, user_id, billing_cycle_start,
+            db,
+            shop,
+            request.product_id,
+            request.product_name,
+            request.category,
+            processed_desc,
+            target_locale,
+            primary_locale,
+            access_token,
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -295,8 +304,6 @@ async def process_bulk_generation_request(
     request: BulkRewriteRequest,
     user: User,
     plan,
-    user_id: int,
-    billing_cycle_start
 ):
     """
     Core logic for bulk generation requests.
@@ -307,10 +314,21 @@ async def process_bulk_generation_request(
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
 
     # 1. Plan Check for Bulk (Multi-locale)
-    if len(request.target_locales) > 1 and plan.name not in ("Pro", "Growth"):
-        raise HTTPException(status_code=403, detail="Bulk multi-market generation requires Pro plan.")
+    if len(request.target_locales) > 1 and plan.name not in ("Standard", "Pro"):
+        raise HTTPException(
+            status_code=403,
+            detail="Bulk multi-market generation requires Standard or Pro plan.",
+        )
 
     try:
+        logger.debug(
+            "[BulkCore] start shop=%s plan=%s product_id=%s target_locales=%s desc_len=%s",
+            shop,
+            getattr(plan, "name", None),
+            getattr(request, "product_id", None),
+            list(getattr(request, "target_locales", []) or []),
+            len(getattr(request, "japanese_description", "") or ""),
+        )
         access_token = get_shop_access_token(db, shop) if request.product_id else None
         if request.product_id and not access_token:
             raise HTTPException(status_code=500, detail="Shopify Access Token not found.")
@@ -349,8 +367,6 @@ async def process_bulk_generation_request(
                 locale,
                 primary_locale,
                 access_token,
-                user_id,
-                billing_cycle_start,
             )
 
         results: list = []
@@ -373,7 +389,7 @@ async def process_bulk_generation_request(
         
         for res in results:
             if isinstance(res, Exception):
-                logger.error(f"Bulk item failed: {res}")
+                logger.exception("[BulkCore] item_failed shop=%s err=%s", shop, res)
                 failed_locales.append(str(res))
             else:
                 locale = res["locale"]
@@ -398,9 +414,16 @@ async def process_bulk_generation_request(
         if first_values:
             resp["discovered_values"] = first_values
             resp["discoveries"] = _to_frontend_discoveries(first_values)
+        logger.debug(
+            "[BulkCore] done shop=%s success=%s failed=%s primary_locale=%s",
+            shop,
+            len(success_locales),
+            len(failed_locales),
+            primary_locale,
+        )
         return resp
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error in bulk processing for {shop}: {e}")
+        logger.exception(f"❌ Error in bulk processing for {shop}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

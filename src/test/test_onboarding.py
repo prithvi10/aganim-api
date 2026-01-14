@@ -22,7 +22,7 @@ def valid_request():
 def mock_plan():
     plan = MagicMock(spec=Plan)
     plan.id = 1
-    plan.name = "Basic Plan"
+    plan.name = "Basic"
     return plan
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def test_onboard_user_success(mock_db_session, valid_request, mock_plan, mock_us
         assert isinstance(response, OnboardingResponse)
         assert response.user_id == 123
         assert response.username == "test-shop.myshopify.com"
-        assert response.plan_name == "Basic Plan"
+        assert response.plan_name == "Basic"
         # API Key is deprecated but returned as placeholder
         assert response.api_key == "deprecated"
 

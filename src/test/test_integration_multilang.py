@@ -14,7 +14,21 @@ client = TestClient(app, raise_server_exceptions=False)
 def mock_get_db():
     return MagicMock(spec=Session)
 
-app.dependency_overrides[get_db] = mock_get_db
+@pytest.fixture(autouse=True)
+def _ensure_db_override():
+    """
+    CI note: other test modules may delete/replace app.dependency_overrides[get_db] in teardown.
+    Ensure our override is active for the duration of each test in this module.
+    """
+    prev = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = mock_get_db
+    try:
+        yield
+    finally:
+        if prev is None:
+            app.dependency_overrides.pop(get_db, None)
+        else:
+            app.dependency_overrides[get_db] = prev
 
 @pytest.fixture
 def mock_auth_context():
@@ -54,7 +68,7 @@ async def test_integration_multilang_happy_path(mock_auth_context, mock_openai_r
     # 2. Mock Translation Service (GraphQL) Success
     # We mock the service function directly to simulate a successful integration call
     with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.core.generation.update_token_usage"), \
+         patch("src.main.api.controller.increment_monthly_rewrites_used"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value="valid_token"), \
          patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
@@ -117,7 +131,7 @@ async def test_integration_multilang_missing_locale(mock_auth_context, mock_open
     error_message = "Shopify Translation Error: Locale 'de' is not enabled for this shop."
     
     with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.core.generation.update_token_usage"), \
+         patch("src.main.api.controller.increment_monthly_rewrites_used"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value="valid_token"), \
          patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \

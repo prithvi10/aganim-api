@@ -30,9 +30,6 @@ def mock_auth_context():
     return {
         "user": mock_user,
         "plan": mock_plan,
-        "user_id": 1,
-        "billing_cycle_start": date(2023, 1, 1),
-        "current_usage": 0
     }
 
 @pytest.fixture
@@ -59,7 +56,7 @@ async def test_proxy_generate_copy_saves_to_shopify_success(mock_auth_context, m
 
     # Setup mocks
     with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.core.generation.update_token_usage"), \
+         patch("src.main.api.controller.increment_monthly_rewrites_used"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value=access_token) as mock_get_token, \
          patch("src.main.core.generation.save_product_content_with_locale") as mock_save:
@@ -109,7 +106,7 @@ async def test_proxy_generate_copy_shopify_api_failure(mock_auth_context, mock_o
     mock_shopify_response.text = '{"errors": {"title": ["cannot be blank"]}}'
 
     with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.core.generation.update_token_usage"), \
+         patch("src.main.api.controller.increment_monthly_rewrites_used"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value=access_token), \
          patch("src.main.core.generation.save_product_content_with_locale", side_effect=Exception("Failed to update product: 422")):
@@ -134,7 +131,7 @@ async def test_proxy_generate_copy_no_product_id_skips_update(mock_auth_context,
     shop_domain = "test-shop.myshopify.com"
 
     with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.core.generation.update_token_usage"), \
+         patch("src.main.api.controller.increment_monthly_rewrites_used"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token") as mock_get_token, \
          patch("src.main.core.generation.save_product_content_with_locale") as mock_save:
@@ -164,7 +161,7 @@ async def test_proxy_generate_copy_missing_access_token(mock_auth_context, mock_
     product_id = 555
 
     with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.core.generation.update_token_usage"), \
+         patch("src.main.api.controller.increment_monthly_rewrites_used"), \
          patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
          patch("src.main.core.generation.get_shop_access_token", return_value=None): # No token
         
