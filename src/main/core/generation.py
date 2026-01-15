@@ -136,8 +136,24 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
     return ({"title": "", "description": raw_content, "seo_title": "", "seo_description": ""}, [])
 
 
-def _build_dynamic_prompt(target_locale: str) -> str:
+def _is_english_locale(locale: str | None) -> bool:
+    if not locale:
+        return False
+    return str(locale).strip().lower().startswith("en")
+
+
+def _build_dynamic_prompt(target_locale: str, *, auto_convert_units: bool = False) -> str:
     market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
+    unit_conversion_block = ""
+    if auto_convert_units and _is_english_locale(target_locale):
+        unit_conversion_block = """
+
+UNIT CONVERSION (STRICT, ENGLISH ONLY):
+- Scan the SOURCE text for metric measurements: cm, mm, m, g, kg, ml, L (including variants like "10 cm", "10cm", "10㎝").
+- In the ENGLISH output, ALWAYS KEEP the original metric measurement and append the US Customary equivalent in parentheses immediately after it.
+- Never remove or replace the metric value. Japanese brands often require original specs for accuracy.
+- Use "approx." and sensible rounding (typically 0–1 decimals). Choose the most natural US unit (in/ft/oz/lb/fl oz) per context.
+"""
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
@@ -161,6 +177,7 @@ SEO METADATA (STRICT):
 
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
+{unit_conversion_block}
 """
 
 async def _generate_and_save_for_locale(
@@ -173,11 +190,13 @@ async def _generate_and_save_for_locale(
     target_locale: str,
     primary_locale: str,
     access_token: str | None,
+    *,
+    auto_convert_units: bool = False,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
     """
-    dynamic_prompt = _build_dynamic_prompt(target_locale)
+    dynamic_prompt = _build_dynamic_prompt(target_locale, auto_convert_units=auto_convert_units)
 
     base_model = get_base_model_for_shop(db, shop)
     model_override = get_effective_model(db, shop, base_model)
@@ -239,7 +258,9 @@ async def process_generation_request(
         raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
 
     target_locale = request.target_locale or "en"
-    dynamic_prompt = _build_dynamic_prompt(target_locale)
+    dynamic_prompt = _build_dynamic_prompt(
+        target_locale, auto_convert_units=bool(getattr(request, "auto_convert_units", False))
+    )
 
     try:
         if request.stream:
@@ -284,6 +305,7 @@ async def process_generation_request(
             target_locale,
             primary_locale,
             access_token,
+            auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -367,6 +389,7 @@ async def process_bulk_generation_request(
                 locale,
                 primary_locale,
                 access_token,
+                auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
             )
 
         results: list = []
