@@ -3,6 +3,9 @@ import sys
 import os
 from logging.handlers import TimedRotatingFileHandler
 
+# Configure log level (default INFO, overridable for staging/debug)
+LOG_LEVEL = (os.getenv("LOG_LEVEL", "INFO") or "INFO").upper()
+
 # Configure Log Directory
 # Allow overriding via environment variable (useful for Render Disks or specific paths)
 LOG_DIR = os.getenv("LOG_PATH", "logs")
@@ -25,7 +28,7 @@ handlers = []
 # 1. Console Handler (CRITICAL for Render)
 # Render captures stdout/stderr automatically.
 console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
+console_handler.setLevel(LOG_LEVEL)
 console_handler.setFormatter(detailed_formatter)
 handlers.append(console_handler)
 
@@ -42,7 +45,7 @@ if LOG_DIR:
         backupCount=3,
         encoding='utf-8'
     )
-    info_handler.setLevel(logging.INFO)
+    info_handler.setLevel(LOG_LEVEL)
     info_handler.setFormatter(detailed_formatter)
     handlers.append(info_handler)
 
@@ -76,7 +79,8 @@ def get_logger(name: str):
     Usage: logger = get_logger(__name__)
     """
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(LOG_LEVEL)
+    logger.propagate = False
     
     # Avoid adding duplicate handlers if get_logger is called multiple times
     if not logger.handlers:
@@ -92,7 +96,8 @@ def get_security_logger(name: str = "security"):
     Intended for audit logging (Shopify compliance/GDPR webhooks, etc.).
     """
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(LOG_LEVEL)
+    logger.propagate = False
 
     if not logger.handlers:
         for handler in security_handlers:

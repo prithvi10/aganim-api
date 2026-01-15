@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -6,10 +6,15 @@ from sqlalchemy import text
 import uvicorn
 import os
 from contextlib import asynccontextmanager
+from time import perf_counter
+import uuid
 
 from src.main.config.configs import DATABASE_URL, ALLOWED_ORIGINS
 from src.main.db.database import engine, Base, get_db
 from src.main.api.controller import router as api_router
+from src.main.logging.logger import get_logger
+
+request_logger = get_logger("api.request")
 
 
 def _ensure_shop_columns_exist():
@@ -82,6 +87,47 @@ async def lifespan(app: FastAPI):
     # Shutdown: (Cleanup if needed)
 
 app = FastAPI(lifespan=lifespan)
+
+# ------------------------------------------------------------------
+# Request/Response Logging (production-grade, minimal)
+# - Adds/propagates X-Request-Id
+# - Logs method/path/status/latency and safe shop context
+# ------------------------------------------------------------------
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    request_id = (request.headers.get("X-Request-Id") or "").strip() or uuid.uuid4().hex[:12]
+    request.state.request_id = request_id
+
+    method = request.method
+    path = request.url.path
+
+    # Safe context only (never log tokens/signatures/bodies)
+    shop = (
+        (request.headers.get("X-Shopify-Shop-Domain") or "").strip()
+        or (request.query_params.get("shop") or "").strip()
+        or "-"
+    )
+
+    start = perf_counter()
+    try:
+        request_logger.info("[REQ] rid=%s %s %s shop=%s", request_id, method, path, shop)
+        response = await call_next(request)
+    except Exception:
+        dur_ms = (perf_counter() - start) * 1000.0
+        request_logger.exception("[ERR] rid=%s %s %s shop=%s dur_ms=%.1f", request_id, method, path, shop, dur_ms)
+        raise
+
+    dur_ms = (perf_counter() - start) * 1000.0
+    response.headers["X-Request-Id"] = request_id
+    request_logger.info(
+        "[RES] rid=%s %s %s status=%s dur_ms=%.1f",
+        request_id,
+        method,
+        path,
+        getattr(response, "status_code", None),
+        dur_ms,
+    )
+    return response
 
 # ------------------------------------------------------------------
 # CORS Configuration
