@@ -27,6 +27,7 @@ from src.main.api.validation import validate_rewrite_request, validate_shop_and_
 from src.main.service.onboarding import onboard_user
 from src.main.config.configs import SHOPIFY_UI_URL
 from src.main.logging.logger import get_logger, get_security_logger
+from typing import Optional
 
 # Import core business logic
 from src.main.core.generation import process_generation_request, process_bulk_generation_request
@@ -68,18 +69,25 @@ async def resolve_shop_domain(request: Request) -> str:
     except HTTPException:
         raise
 
+
+def _rid(request: Optional[Request]) -> str:
+    try:
+        return str(getattr(getattr(request, "state", None), "request_id", "") or "-")
+    except Exception:
+        return "-"
+
 # ==============================================================================
 #  0. OAUTH ENTRY POINT (Install App)
 # ==============================================================================
 @router.get("/")
-async def install_app(shop: str = Query(..., description="Shopify Shop Domain")):
+async def install_app(request: Request, shop: str = Query(..., description="Shopify Shop Domain")):
     """
     Redirects the user to Shopify's OAuth authorization page.
     """
     if not shop:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
     
-    logger.info(f"[Install] Received install request for shop={shop}")
+    logger.info("[Install] start rid=%s shop=%s", _rid(request), shop)
 
     state = secrets.token_hex(16)
     
@@ -102,19 +110,41 @@ async def proxy_generate_copy(
     request: Request,
     db: Session = Depends(get_db)
 ):
+    rid = _rid(request)
     try:
         body = await request.json()
         rewrite_request = RewriteRequest(**body)
     except Exception:
+        logger.info("[Copy] invalid_json rid=%s", rid)
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     validate_rewrite_request(rewrite_request.model_dump())
 
     shop_domain = request.query_params.get("shop")
     if not shop_domain:
+         logger.info("[Copy] missing_shop rid=%s", rid)
          raise HTTPException(status_code=400, detail="Missing shop parameter")
 
+    logger.info(
+        "[Copy] start rid=%s shop=%s target=%s has_product_id=%s desc_len=%s name_len=%s",
+        rid,
+        shop_domain,
+        getattr(rewrite_request, "target_locale", None),
+        bool(getattr(rewrite_request, "product_id", None)),
+        len(getattr(rewrite_request, "japanese_description", "") or ""),
+        len(getattr(rewrite_request, "product_name", "") or ""),
+    )
+
     auth_context = validate_shop_and_quota(db, shop_domain, enforce_limit=True)
+    try:
+        logger.info(
+            "[Copy] auth_ok rid=%s shop=%s plan=%s",
+            rid,
+            shop_domain,
+            getattr(auth_context.get("plan"), "name", None),
+        )
+    except Exception:
+        pass
     
     # Delegate business logic to Core layer
     resp = await process_generation_request(
@@ -129,6 +159,15 @@ async def proxy_generate_copy(
             increment_monthly_rewrites_used(db, shop_domain, amount=1)
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
+    try:
+        logger.info(
+            "[Copy] done rid=%s shop=%s status=%s",
+            rid,
+            shop_domain,
+            resp.get("status") if isinstance(resp, dict) else type(resp).__name__,
+        )
+    except Exception:
+        pass
     return resp
 
 
@@ -138,10 +177,12 @@ async def proxy_generate_bulk(
     db: Session = Depends(get_db),
     shop_domain: str = Depends(resolve_shop_domain),
 ):
+    rid = _rid(request)
     try:
         body = await request.json()
         bulk_request = BulkRewriteRequest(**body)
     except Exception:
+        logger.info("[Bulk] invalid_json rid=%s", rid)
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     # DEBUG: safe request summary (never log tokens or full text)
@@ -182,10 +223,10 @@ async def proxy_generate_bulk(
             plan=auth_context["plan"],
         )
     except HTTPException:
-        logger.exception("[Bulk] HTTPException shop=%s", shop_domain)
+        logger.exception("[Bulk] http_error rid=%s shop=%s", rid, shop_domain)
         raise
     except Exception:
-        logger.exception("[Bulk] Unhandled exception shop=%s", shop_domain)
+        logger.exception("[Bulk] unhandled_error rid=%s shop=%s", rid, shop_domain)
         raise
 
     try:
@@ -230,12 +271,21 @@ async def admin_ext_generate_bulk(
     Bulk generation endpoint for Shopify Admin Action extensions.
     Authenticated using a Shopify Session Token (JWT) sent via Authorization header.
     """
+    rid = _rid(request)
     try:
         body = await request.json()
         bulk_request = BulkRewriteRequest(**body)
     except Exception:
+        logger.info("[AdminBulk] invalid_json rid=%s", rid)
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
+    logger.info(
+        "[AdminBulk] start rid=%s shop=%s product_id=%s target_locales=%s",
+        rid,
+        shop,
+        getattr(bulk_request, "product_id", None),
+        getattr(bulk_request, "target_locales", None),
+    )
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
 
     resp = await process_bulk_generation_request(
@@ -249,6 +299,17 @@ async def admin_ext_generate_bulk(
             increment_monthly_rewrites_used(db, shop, amount=1)
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop}: {e}")
+    try:
+        logger.info(
+            "[AdminBulk] done rid=%s shop=%s status=%s processed=%s failed=%s",
+            rid,
+            shop,
+            resp.get("status") if isinstance(resp, dict) else type(resp).__name__,
+            len(resp.get("processed", [])) if isinstance(resp, dict) else None,
+            len(resp.get("failed", [])) if isinstance(resp, dict) else None,
+        )
+    except Exception:
+        pass
     return resp
 
 
@@ -274,14 +335,27 @@ async def admin_ext_agent(
     Action-based endpoint for Shopify Admin UI extensions.
     Authenticated using a Shopify OpenID Connect ID token / session token (JWT) via Authorization header.
     """
+    rid = _rid(request)
     try:
         body = await request.json()
         agent_req = AgentRequest(**body)
     except Exception:
+        logger.info("[Agent] invalid_json rid=%s", rid)
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     # Agents are also gated by monthly rewrite limits.
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
+
+    logger.info("[Agent] start rid=%s shop=%s action=%s", rid, shop, agent_req.action)
+
+    # Propagate request id into action context for end-to-end traceability.
+    try:
+        if agent_req.context is None:
+            agent_req.context = {}
+        if isinstance(agent_req.context, dict) and "request_id" not in agent_req.context:
+            agent_req.context["request_id"] = rid
+    except Exception:
+        pass
 
     result = run_agent_action(
         action=agent_req.action,
@@ -289,6 +363,7 @@ async def admin_ext_agent(
         product_data=agent_req.product_data or {},
     )
 
+    logger.info("[Agent] done rid=%s shop=%s action=%s", rid, shop, agent_req.action)
     return {"status": "success", "data": {"text": result.get("text", ""), "metadata": result.get("metadata", {})}}
 
 
@@ -308,8 +383,10 @@ async def generate_copy(
 # ==============================================================================
 @router.get("/api/admin/me")
 async def get_admin_info(
+    request: Request,
     shop: str = Depends(verify_shopify_session)
 ):
+    logger.info("[AdminMe] rid=%s shop=%s", _rid(request), shop)
     return {"status": "authenticated", "shop": shop, "message": "Welcome to the Admin API"}
 
 
@@ -330,6 +407,7 @@ async def get_usage(
     if not shop_domain:
         raise HTTPException(status_code=400, detail="Missing shop parameter")
 
+    logger.info("[Usage] start rid=%s shop=%s", _rid(request), shop_domain)
     # Dashboard/status should never hard-fail on quota; it should show the current usage + reset date.
     auth_context = validate_shop_and_quota(db, shop_domain, enforce_limit=False)
     
@@ -386,7 +464,7 @@ async def sync_token(
     if not shop or not access_token:
         raise HTTPException(status_code=400, detail="Missing shop or access_token")
 
-    logger.info(f"[Sync Token] Storing token for shop={shop}, type={token_type}, force={force}")
+    logger.info("[SyncToken] start rid=%s shop=%s type=%s force=%s", _rid(request), shop, token_type, force)
     store_shop_access_token(db, shop, access_token, token_type=token_type, force=force)
     return Response(status_code=204)
 
@@ -396,6 +474,12 @@ async def handle_subscription_activated(
     db: Session = Depends(get_db)
 ):
     await verify_webhook_signature(request)
+    logger.info(
+        "[Webhook] subscription_activated rid=%s shop=%s webhook_id=%s",
+        _rid(request),
+        (request.headers.get("X-Shopify-Shop-Domain") or "").strip() or "-",
+        (request.headers.get("X-Shopify-Webhook-Id") or "").strip() or "-",
+    )
     
     try:
         payload = await request.json()
@@ -583,7 +667,7 @@ async def handle_app_uninstalled(
         payload = await request.json()
         shop_domain = payload.get("myshopify_domain") or request.headers.get("X-Shopify-Shop-Domain")
 
-        logger.info(f"🗑️ app/uninstalled received for {shop_domain}")
+        logger.info("[Webhook] app_uninstalled rid=%s shop=%s", _rid(request), shop_domain or "-")
 
         if shop_domain:
             # Delete Shop and User records if they exist (best-effort).
@@ -646,7 +730,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             access_token = token_data.get("access_token")
             
             logger.info(f"Successfully exchanged token for shop: {shop}")
-            logger.info(f"Auth callback params: host={host}, state={params.get('state')}, timestamp={params.get('timestamp')}")
+            logger.info(f"Auth callback params: host={host}, timestamp={params.get('timestamp')}")
             store_shop_access_token(db, shop, access_token)
             
             # Redirect to the Remix UI's login route to ensure the UI also authenticates
@@ -678,6 +762,16 @@ async def get_shop_locales(
     Fetches the enabled locales for the shop.
     Delegates to Core layer.
     """
-    params = dict(request.query_params)
-    logger.info(f"PROXY REQ locales: {params}")
-    return await fetch_shop_locales(db, shop)
+    rid = _rid(request)
+    logger.info("[Locales] start rid=%s shop=%s", rid, shop)
+    resp = await fetch_shop_locales(db, shop)
+    try:
+        logger.info(
+            "[Locales] done rid=%s shop=%s locales=%s",
+            rid,
+            shop,
+            len(resp.get("locales", [])) if isinstance(resp, dict) else None,
+        )
+    except Exception:
+        pass
+    return resp

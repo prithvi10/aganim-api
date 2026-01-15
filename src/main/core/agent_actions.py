@@ -131,6 +131,7 @@ def _discount_code_name(holiday_name: str, category: str, year: int) -> str:
 # Agent actions
 # ------------------------------------------------------------------------------
 def social_hook_architect_action(product_data: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    rid = str((context or {}).get("request_id") or "-")
     product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
     category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
     tags = product_data.get("tags") or []
@@ -151,6 +152,7 @@ def social_hook_architect_action(product_data: dict[str, Any], context: dict[str
     ]
 
     if use_ai and product_title:
+        logger.info("[AgentAction] rid=%s action=social_hook_architect mode=ai", rid)
         system = (
             "You are a senior social media strategist. "
             "Return ONLY valid JSON. No markdown fences."
@@ -186,6 +188,7 @@ def social_hook_architect_action(product_data: dict[str, Any], context: dict[str
         )
 
     if not hooks:
+        logger.info("[AgentAction] rid=%s action=social_hook_architect mode=fallback", rid)
         # Fallback: template-based hooks
         hooks = [
             {
@@ -289,6 +292,7 @@ def seasonal_campaign_caption_action(product_data: dict[str, Any], context: dict
     Intended for the /app/marketing UI to request an additional caption that matches
     the upcoming seasonal campaign vibe.
     """
+    rid = str((context or {}).get("request_id") or "-")
     product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
     category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
     tags = product_data.get("tags") or []
@@ -306,6 +310,7 @@ def seasonal_campaign_caption_action(product_data: dict[str, Any], context: dict
 
     holiday = _next_upcoming_holiday(today)
     if not holiday:
+        logger.info("[AgentAction] rid=%s action=seasonal_campaign_caption no_holiday", rid)
         return {"text": "", "metadata": {"should_show": False}}
 
     days_until = (holiday.date - today).days
@@ -319,6 +324,7 @@ def seasonal_campaign_caption_action(product_data: dict[str, Any], context: dict
     caption = ""
 
     if use_ai and product_title:
+        logger.info("[AgentAction] rid=%s action=seasonal_campaign_caption mode=ai holiday=%s", rid, holiday.name)
         system = (
             "You are a senior social media strategist. "
             "Return ONLY valid JSON. No markdown fences."
@@ -344,6 +350,7 @@ def seasonal_campaign_caption_action(product_data: dict[str, Any], context: dict
         caption = str(parsed.get("caption") or "").strip()
 
     if not caption:
+        logger.info("[AgentAction] rid=%s action=seasonal_campaign_caption mode=fallback holiday=%s", rid, holiday.name)
         # Deterministic fallback
         caption = (
             f"{holiday.name} is coming 💡 Treat yourself (or someone you love) to {product_title or 'a favorite'}.\n"
