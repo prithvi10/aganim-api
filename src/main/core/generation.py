@@ -12,6 +12,7 @@ from src.main.config.configs import (
     SYSTEM_PROMPT,
     LOCALE_PERSONA_MAP,
     TONE_PROMPTS,
+    VALUE_DISCOVERY_PROMPT,
 )
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
@@ -181,6 +182,10 @@ FACT ACCURACY (STRICT):
 - Regardless of tone, keep core product facts 100% accurate (dimensions, materials, capacities, provenance).
 - Do NOT invent measurements, materials, certifications, or historical claims not present in the source text.
 """.rstrip()
+    value_discovery_block = f"""
+
+{VALUE_DISCOVERY_PROMPT}
+""".rstrip()
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
@@ -206,6 +211,7 @@ SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
 {unit_conversion_block}
 {tone_block}
+{value_discovery_block}
 """
 
 async def _generate_and_save_for_locale(
