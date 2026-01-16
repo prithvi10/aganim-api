@@ -3,6 +3,7 @@ import httpx
 import asyncio
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+import json
 from src.main.db.db_models import User
 from src.main.api.models import RewriteRequest, BulkRewriteRequest
 from src.main.service.open_ai_api_service import OpenAIService
@@ -238,6 +239,59 @@ def _log_llm_contract_health(
         return
 
 
+def _should_log_llm_full(shop: str) -> bool:
+    """
+    Full LLM logging is sensitive. Only enable when explicitly requested via env flags.
+    - LOG_LLM_FULL=1 enables
+    - LOG_LLM_SHOP=<shop-domain> optionally restricts to a single shop
+    """
+    if os.getenv("LOG_LLM_FULL", "").strip() != "1":
+        return False
+    only = (os.getenv("LOG_LLM_SHOP", "") or "").strip().lower()
+    if only and only != str(shop or "").strip().lower():
+        return False
+    return True
+
+
+def _log_llm_full_response(
+    *,
+    shop: str,
+    target_locale: str,
+    raw_content: str,
+    parsed: dict,
+    discovered_values: list[dict],
+    meta: dict,
+) -> None:
+    """
+    Logs FULL raw + parsed LLM response.
+    WARNING: This may contain merchant content. Use LOG_LLM_FULL=1 and LOG_LLM_SHOP to scope.
+    """
+    try:
+        logger.warning(
+            "[LLMFull] BEFORE_PARSE shop=%s locale=%s parse=%s raw_len=%s\n-----BEGIN_LLM_RAW-----\n%s\n-----END_LLM_RAW-----",
+            shop,
+            target_locale,
+            meta.get("parse_mode"),
+            meta.get("raw_len"),
+            raw_content or "",
+        )
+        logger.warning(
+            "[LLMFull] AFTER_PARSE shop=%s locale=%s discovered_ok=%s\n-----BEGIN_LLM_PARSED-----\n%s\n-----END_LLM_PARSED-----",
+            shop,
+            target_locale,
+            len(discovered_values or []),
+            json.dumps(parsed or {}, ensure_ascii=False),
+        )
+        logger.warning(
+            "[LLMFull] AFTER_NORMALIZATION shop=%s locale=%s\n-----BEGIN_LLM_DISCOVERED_VALUES-----\n%s\n-----END_LLM_DISCOVERED_VALUES-----",
+            shop,
+            target_locale,
+            json.dumps(discovered_values or [], ensure_ascii=False),
+        )
+    except Exception:
+        return
+
+
 def _is_english_locale(locale: str | None) -> bool:
     if not locale:
         return False
@@ -362,6 +416,15 @@ async def _generate_and_save_for_locale(
         parsed=parsed,
         discovered_values=discovered_values,
     )
+    if _should_log_llm_full(shop):
+        _log_llm_full_response(
+            shop=shop,
+            target_locale=target_locale,
+            raw_content=raw_content or "",
+            parsed=parsed,
+            discovered_values=discovered_values,
+            meta=parse_meta,
+        )
     # Preserve existing contract: always return a title string to clients.
     if not str(parsed.get("title") or "").strip():
         parsed["title"] = product_name or "Generated Copy"
