@@ -94,9 +94,6 @@ TONE PROFILE: Professional/Standard (Default)
 TONE PROFILE: Luxury/Heritage
 - Sophisticated, high-end US English vocabulary (e.g., exquisite, legacy, meticulously crafted).
 - Emphasize heritage, rarity, artisanship, and premium positioning where supported by source evidence.
-- When Luxury tone is active, proactively search the Japanese source text for craftsmanship evidence:
-  - "Shokunin" (artisan) spirit, specific techniques, and regional provenance (e.g., Arita kilns).
-  - Use that evidence to justify a high-end price point for a US audience (without inventing facts).
 """.strip(),
     "minimalist": """
 TONE PROFILE: Modern/Minimalist
@@ -111,6 +108,18 @@ TONE PROFILE: Playful/Energetic
 - Great for gifts and lifestyle items; keep it upbeat but not cheesy.
 """.strip(),
 }
+
+# ------------------------------------------------------------------------------
+# Cultural Insights / Verified Japanese Value (always-on, independent of tone)
+# ------------------------------------------------------------------------------
+VALUE_DISCOVERY_PROMPT = """
+VALUE DISCOVERY (ALWAYS ON):
+- Always scan the Japanese source text for evidence of Japanese value and craftsmanship that would matter to Western customers.
+- Focus on concrete signals (no inventions): artisan technique, materials, process, region/provenance, maker discipline ("shokunin" spirit), limited production, kiln/atelier origin, traditional methods, sensory/tactile cues.
+- Populate "discovered_values" ONLY when there is clear evidence in the text. If there is no evidence, return an empty list.
+- Your "evidence" must quote a short Japanese snippet from the source that supports the claim.
+- Keep this value discovery consistent across ALL tones (Professional, Luxury, Minimalist, Playful).
+""".strip()
 
 # Strategy: Allow bursts, but cap long-term usage
 PRODUCTION_RATE_LIMIT_CONFIG = [

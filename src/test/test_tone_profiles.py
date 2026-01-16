@@ -84,5 +84,5 @@ async def test_standard_plan_injects_selected_tone(mock_db, mock_user):
     assert out["status"] == "success"
     assert len(seen) == 1
     assert "TONE PROFILE: Luxury/Heritage" in seen[0]
-    assert "Shokunin" in seen[0] or "shokunin" in seen[0].lower()
+    assert "VALUE DISCOVERY (ALWAYS ON):" in seen[0]
 
