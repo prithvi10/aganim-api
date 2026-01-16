@@ -100,6 +100,7 @@ async def request_logging_middleware(request: Request, call_next):
 
     method = request.method
     path = request.url.path
+    skip_logging = path == "/health"
 
     # Safe context only (never log tokens/signatures/bodies)
     shop = (
@@ -110,23 +111,28 @@ async def request_logging_middleware(request: Request, call_next):
 
     start = perf_counter()
     try:
-        request_logger.info("[REQ] rid=%s %s %s shop=%s", request_id, method, path, shop)
+        if not skip_logging:
+            request_logger.info("[REQ] rid=%s %s %s shop=%s", request_id, method, path, shop)
         response = await call_next(request)
     except Exception:
         dur_ms = (perf_counter() - start) * 1000.0
-        request_logger.exception("[ERR] rid=%s %s %s shop=%s dur_ms=%.1f", request_id, method, path, shop, dur_ms)
+        if not skip_logging:
+            request_logger.exception(
+                "[ERR] rid=%s %s %s shop=%s dur_ms=%.1f", request_id, method, path, shop, dur_ms
+            )
         raise
 
     dur_ms = (perf_counter() - start) * 1000.0
     response.headers["X-Request-Id"] = request_id
-    request_logger.info(
-        "[RES] rid=%s %s %s status=%s dur_ms=%.1f",
-        request_id,
-        method,
-        path,
-        getattr(response, "status_code", None),
-        dur_ms,
-    )
+    if not skip_logging:
+        request_logger.info(
+            "[RES] rid=%s %s %s status=%s dur_ms=%.1f",
+            request_id,
+            method,
+            path,
+            getattr(response, "status_code", None),
+            dur_ms,
+        )
     return response
 
 # ------------------------------------------------------------------

@@ -9,6 +9,10 @@ class RewriteRequest(BaseModel):
     stream: bool = False # New flag for streaming requests
     product_id: int | None = None # Optional: ID of the product to update in Shopify
     target_locale: str | None = None # Optional: The target locale for the translation (e.g. "en", "zh-TW")
+    # When true and the target locale is English, keep metric values and append US customary equivalents in parentheses.
+    auto_convert_units: bool = False
+    # Requested tone profile (Standard/Pro only; Basic is forced to professional).
+    tone_profile: Literal["professional", "luxury", "minimalist", "playful"] | None = None
 
 class BulkRewriteRequest(BaseModel):
     product_name: str
@@ -16,6 +20,10 @@ class BulkRewriteRequest(BaseModel):
     category: str = DEFAULT_PRODUCT_CATEGORY
     product_id: int | None = None
     target_locales: list[str]
+    # When true, apply unit conversion behavior for English locales in this bulk request.
+    auto_convert_units: bool = False
+    # Requested tone profile (Standard/Pro only; Basic is forced to professional).
+    tone_profile: Literal["professional", "luxury", "minimalist", "playful"] | None = None
 
 class OnboardingRequest(BaseModel):
     username: str # This will be the shop domain
