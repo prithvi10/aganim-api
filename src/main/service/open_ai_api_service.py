@@ -44,6 +44,9 @@ class OpenAIService:
         system_prompt: str | None = None,
         model: str | None = None,
     ) -> object:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+
         user_content = f"""
         Product Name: {product_name}
         Category: {category}
@@ -61,6 +64,7 @@ class OpenAIService:
         # Prefer structured JSON output to avoid parse failures (which would drop SEO + discovered_values).
         # If a model/environment doesn't support response_format, fall back gracefully.
         try:
+            logger.debug("[OpenAI] response_format=json_object enabled")
             response = self.client.chat.completions.create(
                 model=model or OPENAI_MODEL,
                 messages=[
@@ -73,6 +77,7 @@ class OpenAIService:
             )
         except TypeError:
             # Older SDKs may not accept response_format.
+            logger.debug("[OpenAI] response_format unsupported; falling back")
             response = self.client.chat.completions.create(
                 model=model or OPENAI_MODEL,
                 messages=[
