@@ -44,6 +44,9 @@ class OpenAIService:
         system_prompt: str | None = None,
         model: str | None = None,
     ) -> object:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+
         user_content = f"""
         Product Name: {product_name}
         Category: {category}
@@ -58,15 +61,32 @@ class OpenAIService:
         prompt_to_use = system_prompt or self.system_prompt
         
         # Non-streaming call
-        response = self.client.chat.completions.create(
-            model=model or OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": prompt_to_use},
-                {"role": "user", "content": user_content}
-            ],
-            temperature=OPENAI_TEMPERATURE,
-            max_tokens=OPENAI_MAX_TOKENS
-        )
+        # Prefer structured JSON output to avoid parse failures (which would drop SEO + discovered_values).
+        # If a model/environment doesn't support response_format, fall back gracefully.
+        try:
+            logger.debug("[OpenAI] response_format=json_object enabled")
+            response = self.client.chat.completions.create(
+                model=model or OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": prompt_to_use},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=OPENAI_TEMPERATURE,
+                max_tokens=OPENAI_MAX_TOKENS,
+                response_format={"type": "json_object"},
+            )
+        except TypeError:
+            # Older SDKs may not accept response_format.
+            logger.debug("[OpenAI] response_format unsupported; falling back")
+            response = self.client.chat.completions.create(
+                model=model or OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": prompt_to_use},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=OPENAI_TEMPERATURE,
+                max_tokens=OPENAI_MAX_TOKENS
+            )
         
         return response # Return full object to access usage stats
 
@@ -84,15 +104,27 @@ class OpenAIService:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
 
-        response = self.client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+        except TypeError:
+            response = self.client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
         return response.choices[0].message.content or ""
 
     def generate_copy_stream(
