@@ -11,6 +11,7 @@ from src.main.config.configs import (
     LOCAL_RATE_LIMIT_CONFIG,
     SYSTEM_PROMPT,
     LOCALE_PERSONA_MAP,
+    TONE_PROMPTS,
 )
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
@@ -141,8 +142,25 @@ def _is_english_locale(locale: str | None) -> bool:
         return False
     return str(locale).strip().lower().startswith("en")
 
+def _effective_tone(plan_name: str | None, requested: str | None) -> str:
+    """
+    Basic plan: force professional.
+    Standard/Pro: allow requested tone if known; otherwise default to professional.
+    """
+    # (keep it simple and robust for mocked plans)
+    name = str(plan_name or "").strip().lower()
+    if name == "basic":
+        return "professional"
+    tone = str(requested or "").strip().lower()
+    return tone if tone in TONE_PROMPTS else "professional"
 
-def _build_dynamic_prompt(target_locale: str, *, auto_convert_units: bool = False) -> str:
+
+def _build_dynamic_prompt(
+    target_locale: str,
+    *,
+    auto_convert_units: bool = False,
+    tone_profile: str = "professional",
+) -> str:
     market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
     unit_conversion_block = ""
     if auto_convert_units and _is_english_locale(target_locale):
@@ -154,6 +172,15 @@ UNIT CONVERSION (STRICT, ENGLISH ONLY):
 - Never remove or replace the metric value. Japanese brands often require original specs for accuracy.
 - Use "approx." and sensible rounding (typically 0–1 decimals). Choose the most natural US unit (in/ft/oz/lb/fl oz) per context.
 """
+    tone_block = f"""
+
+TONE INSTRUCTION (DYNAMIC):
+{TONE_PROMPTS.get(tone_profile, TONE_PROMPTS.get("professional", ""))}
+
+FACT ACCURACY (STRICT):
+- Regardless of tone, keep core product facts 100% accurate (dimensions, materials, capacities, provenance).
+- Do NOT invent measurements, materials, certifications, or historical claims not present in the source text.
+""".rstrip()
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
@@ -178,6 +205,7 @@ SEO METADATA (STRICT):
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
 {unit_conversion_block}
+{tone_block}
 """
 
 async def _generate_and_save_for_locale(
@@ -192,11 +220,14 @@ async def _generate_and_save_for_locale(
     access_token: str | None,
     *,
     auto_convert_units: bool = False,
+    tone_profile: str = "professional",
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
     """
-    dynamic_prompt = _build_dynamic_prompt(target_locale, auto_convert_units=auto_convert_units)
+    dynamic_prompt = _build_dynamic_prompt(
+        target_locale, auto_convert_units=auto_convert_units, tone_profile=tone_profile
+    )
 
     base_model = get_base_model_for_shop(db, shop)
     model_override = get_effective_model(db, shop, base_model)
@@ -258,8 +289,12 @@ async def process_generation_request(
         raise HTTPException(status_code=403, detail="Streaming not supported on your current plan.")
 
     target_locale = request.target_locale or "en"
+    plan_name = str(getattr(plan, "name", "") or "")
+    tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
     dynamic_prompt = _build_dynamic_prompt(
-        target_locale, auto_convert_units=bool(getattr(request, "auto_convert_units", False))
+        target_locale,
+        auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
+        tone_profile=tone_profile,
     )
 
     try:
@@ -306,6 +341,7 @@ async def process_generation_request(
             primary_locale,
             access_token,
             auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
+            tone_profile=tone_profile,
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -378,6 +414,9 @@ async def process_bulk_generation_request(
         non_primary_locales = [l for l in target_locales if l != primary_locale]
         primary_locales = [l for l in target_locales if l == primary_locale]
 
+        plan_name = str(getattr(plan, "name", "") or "")
+        tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
+
         def _task(locale: str):
             return _generate_and_save_for_locale(
                 db,
@@ -390,6 +429,7 @@ async def process_bulk_generation_request(
                 primary_locale,
                 access_token,
                 auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
+                tone_profile=tone_profile,
             )
 
         results: list = []

@@ -80,6 +80,38 @@ Transform a factual Japanese product description into localized, benefit-driven 
 4. Sensory scales: For taste/strength, include visual indicators (e.g., Strength: ●●●○○ Rich).
 """
 
+# ------------------------------------------------------------------------------
+# Tone Profiles (dynamic prompt injection)
+# ------------------------------------------------------------------------------
+# Keys are stable API values sent by the UI.
+TONE_PROMPTS: dict[str, str] = {
+    "professional": """
+TONE PROFILE: Professional/Standard (Default)
+- Balanced, informative, and neutral.
+- Clear value props without hype.
+""".strip(),
+    "luxury": """
+TONE PROFILE: Luxury/Heritage
+- Sophisticated, high-end US English vocabulary (e.g., exquisite, legacy, meticulously crafted).
+- Emphasize heritage, rarity, artisanship, and premium positioning where supported by source evidence.
+- When Luxury tone is active, proactively search the Japanese source text for craftsmanship evidence:
+  - "Shokunin" (artisan) spirit, specific techniques, and regional provenance (e.g., Arita kilns).
+  - Use that evidence to justify a high-end price point for a US audience (without inventing facts).
+""".strip(),
+    "minimalist": """
+TONE PROFILE: Modern/Minimalist
+- Direct, clear, and utility-focused. No fluff.
+- Use short sentences and structured bullet points.
+- Focus on how the product fits a modern lifestyle and what problem it solves.
+""".strip(),
+    "playful": """
+TONE PROFILE: Playful/Energetic
+- Warm, conversational, and relatable.
+- Use contractions (it’s, you’ll) and a friendly American personality.
+- Great for gifts and lifestyle items; keep it upbeat but not cheesy.
+""".strip(),
+}
+
 # Strategy: Allow bursts, but cap long-term usage
 PRODUCTION_RATE_LIMIT_CONFIG = [
     {"limit": 60,   "window": 60},    # Burst: 1 request/sec (average)
