@@ -292,6 +292,120 @@ def _log_llm_full_response(
         return
 
 
+def _missing_seo_fields(parsed: dict) -> bool:
+    return not bool(str(parsed.get("seo_title") or "").strip()) or not bool(
+        str(parsed.get("seo_description") or "").strip()
+    )
+
+
+def _augment_seo_and_discoveries_if_missing(
+    *,
+    db: Session,
+    shop: str,
+    target_locale: str,
+    product_name: str,
+    category: str,
+    processed_description: str,
+    parsed: dict,
+    discovered_values: list[dict],
+    model_used: str,
+    parse_meta: dict,
+) -> tuple[dict, list[dict]]:
+    """
+    If the primary generation response was truncated or missing SEO/insights, run a small,
+    contract-focused follow-up call to fetch ONLY: seo_title, seo_description, discovered_values.
+    """
+    try:
+        need = _missing_seo_fields(parsed) or parse_meta.get("parse_mode") in ("recover_title_desc", "raw_fallback")
+        if not need:
+            return parsed, discovered_values
+
+        logger.warning(
+            "[LLMContract] self_heal_missing shop=%s locale=%s parse=%s missing=%s discovered_ok=%s",
+            shop,
+            target_locale,
+            parse_meta.get("parse_mode"),
+            "seo_title,seo_description" if _missing_seo_fields(parsed) else "-",
+            len(discovered_values or []),
+        )
+
+        system = f"""You are a Senior E-commerce Growth Copywriter.
+
+Return ONLY valid JSON with this exact shape:
+{{
+  "seo_title": "...",
+  "seo_description": "...",
+  "discovered_values": [
+    {{
+      "category": "Regional Pedigree | Tactile & Sensory | Time-as-Luxury | Artisan Master",
+      "evidence": "Japanese snippet proving the value",
+      "explanation": "One sentence in professional English explaining why this matters to Western customers.",
+      "suggested_footer": "A professional English paragraph to add to the description."
+    }}
+  ]
+}}
+
+Rules:
+- Output language for seo_title/seo_description must match TARGET LANGUAGE: {target_locale}
+- Evidence must quote a short Japanese snippet from the source.
+- Categories MUST be one of: Regional Pedigree, Tactile & Sensory, Time-as-Luxury, Artisan Master.
+- If there is no clear evidence, return discovered_values: [].
+""".strip()
+
+        user = {
+            "product_name": product_name,
+            "category": category,
+            "target_locale": target_locale,
+            "japanese_description": processed_description,
+        }
+
+        heal_raw = openai_service.generate_json(
+            system_prompt=system, user_json=user, temperature=0.2, max_tokens=700
+        )
+        if _should_log_llm_full(shop):
+            logger.warning(
+                "[LLMFull] HEAL_BEFORE_PARSE shop=%s locale=%s raw_len=%s\n-----BEGIN_LLM_RAW-----\n%s\n-----END_LLM_RAW-----",
+                shop,
+                target_locale,
+                len(heal_raw or ""),
+                heal_raw or "",
+            )
+        healed = parse_llm_json(heal_raw or "")
+        if not isinstance(healed, dict):
+            healed = {}
+
+        seo_title = str(healed.get("seo_title") or "").strip()
+        seo_desc = str(healed.get("seo_description") or "").strip()
+        if seo_title:
+            parsed["seo_title"] = seo_title
+        if seo_desc:
+            parsed["seo_description"] = seo_desc
+
+        healed_values = _normalize_discovered_values(healed.get("discovered_values"))
+        if healed_values:
+            discovered_values = healed_values
+
+        if _should_log_llm_full(shop):
+            logger.warning(
+                "[LLMFull] HEAL_AFTER_PARSE shop=%s locale=%s\n-----BEGIN_LLM_PARSED-----\n%s\n-----END_LLM_PARSED-----",
+                shop,
+                target_locale,
+                json.dumps(
+                    {
+                        "seo_title": parsed.get("seo_title"),
+                        "seo_description": parsed.get("seo_description"),
+                        "discovered_values": discovered_values,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+        return parsed, discovered_values
+    except Exception as e:
+        logger.warning("[LLMContract] self_heal_failed shop=%s locale=%s err=%s", shop, target_locale, e)
+        return parsed, discovered_values
+
+
 def _is_english_locale(locale: str | None) -> bool:
     if not locale:
         return False
@@ -425,6 +539,18 @@ async def _generate_and_save_for_locale(
             discovered_values=discovered_values,
             meta=parse_meta,
         )
+    parsed, discovered_values = _augment_seo_and_discoveries_if_missing(
+        db=db,
+        shop=shop,
+        target_locale=target_locale,
+        product_name=product_name,
+        category=category,
+        processed_description=processed_description,
+        parsed=parsed,
+        discovered_values=discovered_values,
+        model_used=model_override,
+        parse_meta=parse_meta,
+    )
     # Preserve existing contract: always return a title string to clients.
     if not str(parsed.get("title") or "").strip():
         parsed["title"] = product_name or "Generated Copy"

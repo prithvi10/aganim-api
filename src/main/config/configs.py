@@ -7,7 +7,9 @@ OPENAI_MODEL_PRO = os.getenv("OPENAI_MODEL_PRO", "gpt-5-pro")
 # Model used when Fair Use throttle is active for a shop
 OPENAI_MODEL_DEGRADED = os.getenv("OPENAI_MODEL_DEGRADED", "gpt-4o-mini")
 OPENAI_TEMPERATURE = 0.5
-OPENAI_MAX_TOKENS = 700
+# IMPORTANT: 700 tokens was causing truncated JSON for long, detail-heavy descriptions
+# (especially when Shop/Shipping/Returns sections are present), which dropped SEO + discovered_values.
+OPENAI_MAX_TOKENS = int(os.getenv("OPENAI_MAX_TOKENS", "2200"))
 
 # ------------------------------------------------------------------------------
 # Internal Fair Use Monitoring (never shown to merchants)
@@ -47,6 +49,8 @@ Transform a factual Japanese product description into localized, benefit-driven 
   - Do NOT include <html>/<body> tags in HTML strings.
   - IMPORTANT: The "description" field must be a valid JSON string. Avoid unescaped double-quotes inside HTML.
     Prefer no HTML attributes, or use attributes without quotes (e.g., class=ai-generated-description).
+  - Always output ALL keys: title, description, seo_title, seo_description, discovered_values (use [] if none).
+  - If output risks truncation, prioritize returning COMPLETE, VALID JSON and keep description concise rather than omitting required fields.
   - Do NOT output placeholders like [...] or ... outside of JSON strings. Your output must be parseable JSON.
 
 ### JSON STRUCTURE:
