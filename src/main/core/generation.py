@@ -41,11 +41,37 @@ def _normalize_discovered_values(raw: object) -> list[dict]:
     """
     if not isinstance(raw, list):
         return []
+    def _normalize_category(cat: object) -> str:
+        s = str(cat or "").strip()
+        if not s:
+            return ""
+        # Some models output "A | B" even when asked for one. Take the first segment.
+        if "|" in s:
+            s = s.split("|", 1)[0].strip()
+        sl = s.lower()
+        # Accept a few common near-misses.
+        alias = {
+            "artisan mastery": "Artisan Master",
+            "artisan master": "Artisan Master",
+            "time as luxury": "Time-as-Luxury",
+            "time-as-luxury": "Time-as-Luxury",
+            "tactile and sensory": "Tactile & Sensory",
+            "tactile & sensory": "Tactile & Sensory",
+            "regional pedigree": "Regional Pedigree",
+        }
+        if sl in alias:
+            return alias[sl]
+        # Case-insensitive exact match to allowed set
+        for allowed in ALLOWED_DISCOVERY_CATEGORIES:
+            if sl == allowed.lower():
+                return allowed
+        return s
+
     out: list[dict] = []
     for item in raw:
         if not isinstance(item, dict):
             continue
-        category = str(item.get("category") or "").strip()
+        category = _normalize_category(item.get("category"))
         evidence = str(item.get("evidence") or "").strip()
         explanation = str(item.get("explanation") or "").strip()
         suggested_footer = str(item.get("suggested_footer") or "").strip()
@@ -85,7 +111,7 @@ def _to_frontend_discoveries(discovered_values: list[dict]) -> list[dict]:
     return discoveries
 
 
-def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
+def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
     """
     Parses LLM output. Preferred schema (contract-safe):
       { "title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "discovered_values": [...] }
@@ -93,11 +119,23 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
       { "rewritten_description": "...", "discovered_values": [...] }
     """
     parsed = parse_llm_json(raw_content)
+    meta: dict = {
+        "parse_mode": "none",
+        "raw_len": len(raw_content or ""),
+        "raw_discovered_count": None,
+    }
+    if isinstance(parsed, dict):
+        meta["raw_discovered_count"] = (
+            len(parsed.get("discovered_values") or [])
+            if isinstance(parsed.get("discovered_values"), list)
+            else None
+        )
 
     # Contract-safe schema: title + description + optional discovered_values
     if isinstance(parsed, dict) and (
         isinstance(parsed.get("title"), str) or isinstance(parsed.get("description"), str)
     ):
+        meta["parse_mode"] = "json_contract"
         discovered_values = _normalize_discovered_values(parsed.get("discovered_values"))
         data = {
             "title": str(parsed.get("title") or "").strip(),
@@ -107,10 +145,11 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
         }
         if not data["description"]:
             data["description"] = raw_content
-        return data, discovered_values
+        return data, discovered_values, meta
 
     # Back-compat schema: rewritten_description + optional discovered_values
     if isinstance(parsed, dict) and isinstance(parsed.get("rewritten_description"), str):
+        meta["parse_mode"] = "json_legacy"
         discovered_values = _normalize_discovered_values(parsed.get("discovered_values"))
         data = {
             "title": "",
@@ -120,11 +159,12 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
         }
         if not data["description"]:
             data["description"] = raw_content
-        return data, discovered_values
+        return data, discovered_values, meta
 
     legacy = parsed if isinstance(parsed, dict) else None
     legacy = legacy or recover_title_desc(raw_content)
     if isinstance(legacy, dict):
+        meta["parse_mode"] = "recover_title_desc"
         return (
             {
                 "title": str(legacy.get("title") or ""),
@@ -133,9 +173,69 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict]]:
                 "seo_description": str(legacy.get("seo_description") or ""),
             },
             [],
+            meta,
         )
 
-    return ({"title": "", "description": raw_content, "seo_title": "", "seo_description": ""}, [])
+    meta["parse_mode"] = "raw_fallback"
+    return ({"title": "", "description": raw_content, "seo_title": "", "seo_description": ""}, [], meta)
+
+
+def _log_llm_contract_health(
+    *,
+    shop: str,
+    target_locale: str,
+    meta: dict,
+    parsed: dict,
+    discovered_values: list[dict],
+) -> None:
+    """
+    Logs contract/shape health without logging any model content.
+    Intended for diagnosing why SEO or discovered_values might be missing.
+    """
+    try:
+        title_present = bool(str(parsed.get("title") or "").strip())
+        seo_title_present = bool(str(parsed.get("seo_title") or "").strip())
+        seo_desc_present = bool(str(parsed.get("seo_description") or "").strip())
+        desc_len = len(str(parsed.get("description") or ""))
+
+        missing = []
+        if not title_present:
+            missing.append("title")
+        if desc_len <= 0:
+            missing.append("description")
+        if not seo_title_present:
+            missing.append("seo_title")
+        if not seo_desc_present:
+            missing.append("seo_description")
+
+        logger.debug(
+            "[LLMContract] shop=%s locale=%s parse=%s raw_len=%s title=%s desc_len=%s seo_title=%s seo_desc=%s discovered_raw=%s discovered_ok=%s missing=%s",
+            shop,
+            target_locale,
+            meta.get("parse_mode"),
+            meta.get("raw_len"),
+            title_present,
+            desc_len,
+            seo_title_present,
+            seo_desc_present,
+            meta.get("raw_discovered_count"),
+            len(discovered_values or []),
+            ",".join(missing) if missing else "-",
+        )
+
+        # Escalate when we likely won't be able to render SEO/insights in UI.
+        if missing or meta.get("parse_mode") in ("recover_title_desc", "raw_fallback"):
+            logger.warning(
+                "[LLMContract] missing_fields shop=%s locale=%s parse=%s missing=%s discovered_ok=%s",
+                shop,
+                target_locale,
+                meta.get("parse_mode"),
+                ",".join(missing) if missing else "-",
+                len(discovered_values or []),
+            )
+    except Exception:
+        # Never let logging break generation.
+        return
 
 
 def _is_english_locale(locale: str | None) -> bool:
@@ -254,7 +354,14 @@ async def _generate_and_save_for_locale(
         logger.warning(f"[FairUse] Cost accounting skipped for shop={shop}: {e}")
     
     raw_content = openai_response.choices[0].message.content
-    parsed, discovered_values = _parse_model_json(raw_content or "")
+    parsed, discovered_values, parse_meta = _parse_model_json(raw_content or "")
+    _log_llm_contract_health(
+        shop=shop,
+        target_locale=target_locale,
+        meta=parse_meta,
+        parsed=parsed,
+        discovered_values=discovered_values,
+    )
     # Preserve existing contract: always return a title string to clients.
     if not str(parsed.get("title") or "").strip():
         parsed["title"] = product_name or "Generated Copy"
