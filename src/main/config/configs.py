@@ -47,15 +47,29 @@ Transform a factual Japanese product description into localized, benefit-driven 
   - Do NOT include <html>/<body> tags in HTML strings.
   - IMPORTANT: The "description" field must be a valid JSON string. Avoid unescaped double-quotes inside HTML.
     Prefer no HTML attributes, or use attributes without quotes (e.g., class=ai-generated-description).
+  - Do NOT output placeholders like [...] or ... outside of JSON strings. Your output must be parseable JSON.
 
 ### JSON STRUCTURE:
 {
   "title": "Headline",
-  "description": "<div class=ai-generated-description>...</div>",
+  "description": "<div class=ai-generated-description><h2>Product Overview</h2><p>Generated, localized HTML description goes here.</p></div>",
   "seo_title": "SEO Title (<= 70 characters)",
   "seo_description": "SEO Meta Description (<= 160 characters, CTA focused)",
-  "discovered_values": [...]
+  "discovered_values": [
+    {
+      "category": "Artisan Master",
+      "evidence": "Japanese snippet proving the value",
+      "explanation": "One sentence on why this is valuable for Western customers.",
+      "suggested_footer": "A professional English paragraph to add to the description."
+    }
+  ]
 }
+
+### LOCALIZATION GUIDANCE (DYNAMIC, WILL BE INJECTED):
+- TARGET LANGUAGE: <injected at runtime>
+- MARKET PERSONA: <injected at runtime>
+- Use local idioms, tone, and market-specific triggers (e.g., CP値/CP ratio for Taiwan).
+- Do not output English or Japanese unless they are the target language.
 
 ### METADATA EXTRACTION (STRICT):
 - Only extract values for which there is clear evidence in the text.
