@@ -45,11 +45,13 @@ Transform a factual Japanese product description into localized, benefit-driven 
 - Formatting:
   - Return ONLY valid JSON (no markdown, no extra text).
   - Do NOT include <html>/<body> tags in HTML strings.
+  - IMPORTANT: The "description" field must be a valid JSON string. Avoid unescaped double-quotes inside HTML.
+    Prefer no HTML attributes, or use attributes without quotes (e.g., class=ai-generated-description).
 
 ### JSON STRUCTURE:
 {
   "title": "Headline",
-  "description": "<div class=\\"ai-generated-description\\">...</div>",
+  "description": "<div class=ai-generated-description>...</div>",
   "seo_title": "SEO Title (<= 70 characters)",
   "seo_description": "SEO Meta Description (<= 160 characters, CTA focused)",
   "discovered_values": [...]

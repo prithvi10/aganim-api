@@ -58,15 +58,30 @@ class OpenAIService:
         prompt_to_use = system_prompt or self.system_prompt
         
         # Non-streaming call
-        response = self.client.chat.completions.create(
-            model=model or OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": prompt_to_use},
-                {"role": "user", "content": user_content}
-            ],
-            temperature=OPENAI_TEMPERATURE,
-            max_tokens=OPENAI_MAX_TOKENS
-        )
+        # Prefer structured JSON output to avoid parse failures (which would drop SEO + discovered_values).
+        # If a model/environment doesn't support response_format, fall back gracefully.
+        try:
+            response = self.client.chat.completions.create(
+                model=model or OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": prompt_to_use},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=OPENAI_TEMPERATURE,
+                max_tokens=OPENAI_MAX_TOKENS,
+                response_format={"type": "json_object"},
+            )
+        except TypeError:
+            # Older SDKs may not accept response_format.
+            response = self.client.chat.completions.create(
+                model=model or OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": prompt_to_use},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=OPENAI_TEMPERATURE,
+                max_tokens=OPENAI_MAX_TOKENS
+            )
         
         return response # Return full object to access usage stats
 
