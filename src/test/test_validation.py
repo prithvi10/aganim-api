@@ -156,3 +156,54 @@ def test_validate_shop_quota_exceeded(mock_get_context):
         validate_shop_and_quota(mock_db, "heavy_shop")
     assert exc.value.status_code == 403
     assert "Monthly limit reached" in exc.value.detail
+
+
+@patch("src.main.api.validation.get_shop_quota_context")
+def test_validate_shop_free_lifetime_allows_when_remaining(mock_get_context):
+    """Free/lifetime plan should allow when lifetime credits remain."""
+    mock_db = MagicMock(spec=Session)
+    mock_plan = MagicMock(spec=Plan)
+    mock_plan.name = "Free"
+    mock_plan.billing_cycle_type = "lifetime"
+    mock_shop = MagicMock(spec=Shop)
+
+    mock_get_context.return_value = {
+        "user": MagicMock(username="free_shop"),
+        "plan": mock_plan,
+        "shop": mock_shop,
+        "rewrites_used": 3,
+        "rewrite_limit": 10,
+        "billing_cycle_type": "lifetime",
+        "lifetime_rewrites_remaining": 7,
+        "is_active": True,
+    }
+
+    ctx = validate_shop_and_quota(mock_db, "free_shop", enforce_limit=True)
+    assert ctx["billing_cycle_type"] == "lifetime"
+    assert ctx["lifetime_rewrites_remaining"] == 7
+
+
+@patch("src.main.api.validation.get_shop_quota_context")
+def test_validate_shop_free_lifetime_blocks_when_zero_remaining(mock_get_context):
+    """Free/lifetime plan should 403 when lifetime credits are exhausted."""
+    mock_db = MagicMock(spec=Session)
+    mock_plan = MagicMock(spec=Plan)
+    mock_plan.name = "Free"
+    mock_plan.billing_cycle_type = "lifetime"
+    mock_shop = MagicMock(spec=Shop)
+
+    mock_get_context.return_value = {
+        "user": MagicMock(username="free_shop"),
+        "plan": mock_plan,
+        "shop": mock_shop,
+        "rewrites_used": 10,
+        "rewrite_limit": 10,
+        "billing_cycle_type": "lifetime",
+        "lifetime_rewrites_remaining": 0,
+        "is_active": True,
+    }
+
+    with pytest.raises(HTTPException) as exc:
+        validate_shop_and_quota(mock_db, "free_shop", enforce_limit=True)
+    assert exc.value.status_code == 403
+    assert "free lifetime credits" in str(exc.value.detail).lower()

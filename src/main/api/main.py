@@ -35,6 +35,9 @@ def _ensure_shop_columns_exist():
                 conn.execute(text(f"ALTER TABLE shops ADD COLUMN {col_sql}"))
 
             add("monthly_rewrites_used INTEGER DEFAULT 0", "monthly_rewrites_used")
+            add("lifetime_rewrites_remaining INTEGER DEFAULT 10", "lifetime_rewrites_remaining")
+            add("is_active INTEGER DEFAULT 1", "is_active")
+            add("welcome_back_pending INTEGER DEFAULT 0", "welcome_back_pending")
             add("reset_anchor_date TEXT", "reset_anchor_date")
             add("next_reset_date TEXT", "next_reset_date")
             add("fair_use_last_notified_at TEXT", "fair_use_last_notified_at")
@@ -44,6 +47,9 @@ def _ensure_shop_columns_exist():
 
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_rewrites_used INTEGER DEFAULT 0"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_rewrites_remaining INTEGER DEFAULT 10"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS welcome_back_pending BOOLEAN DEFAULT FALSE"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS reset_anchor_date TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS next_reset_date TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS fair_use_last_notified_at TIMESTAMPTZ"))
@@ -67,6 +73,7 @@ def _ensure_plan_columns_exist():
             add("product_limit INTEGER", "product_limit")
             add("max_locales INTEGER", "max_locales")
             add("features_json TEXT", "features_json")
+            add("billing_cycle_type TEXT", "billing_cycle_type")
             conn.commit()
         return
 
@@ -74,6 +81,7 @@ def _ensure_plan_columns_exist():
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS product_limit INTEGER"))
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_locales INTEGER"))
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS features_json TEXT"))
+        conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS billing_cycle_type TEXT"))
         conn.commit()
 
 

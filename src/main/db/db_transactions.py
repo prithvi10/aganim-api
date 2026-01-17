@@ -8,7 +8,7 @@ from .db_models import User, Plan, Shop
 # If direct API access is still needed, we'd need to authenticate the User directly (e.g. via a token on the User model).
 # For this refactor, I will focus on the Proxy flow which uses Shop Domain.
 
-def sync_usage_limits(db: Session, shop: Shop) -> Shop:
+def sync_usage_limits(db: Session, shop: Shop, *, billing_cycle_type: str | None = None) -> Shop:
     """
     Self-healing monthly reset:
     - If next_reset_date is missing, initialize it as reset_anchor_date + 30 days
@@ -19,6 +19,21 @@ def sync_usage_limits(db: Session, shop: Shop) -> Shop:
     In that case, we avoid datetime comparisons and just no-op / initialize.
     """
     now = datetime.now(timezone.utc)
+
+    # Lifetime plans (e.g., Free) should never be mutated by monthly reset logic.
+    if str(billing_cycle_type or "").strip().lower() == "lifetime":
+        # Ensure lifetime bucket exists (best-effort for legacy rows)
+        lr = getattr(shop, "lifetime_rewrites_remaining", None)
+        try:
+            shop.lifetime_rewrites_remaining = int(lr) if lr is not None else 10
+        except Exception:
+            shop.lifetime_rewrites_remaining = 10
+        # Do not set/advance monthly reset dates for lifetime plans.
+        # (We still persist the row to ensure defaults exist.)
+        db.add(shop)
+        db.commit()
+        db.refresh(shop)
+        return shop
 
     def _coerce_utc(dt: datetime) -> datetime:
         return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
@@ -76,10 +91,28 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         db.commit()
         db.refresh(shop)
 
-    shop = sync_usage_limits(db, shop)
+    billing_cycle_type = str(getattr(plan, "billing_cycle_type", "") or "").strip().lower()
+    if not billing_cycle_type:
+        billing_cycle_type = "lifetime" if str(plan.name or "") == "Free" else "recurring"
 
-    rewrites_used = int(shop.monthly_rewrites_used or 0)
-    rewrite_limit = plan.product_limit if plan.product_limit is not None else plan.monthly_rewrite_limit
+    shop = sync_usage_limits(db, shop, billing_cycle_type=billing_cycle_type)
+
+    # Lifetime plan: one-time bucket (never resets)
+    if billing_cycle_type == "lifetime":
+        quota = 10
+        try:
+            quota = int(getattr(plan, "product_limit", None) or 10)
+        except Exception:
+            quota = 10
+        remaining = int(getattr(shop, "lifetime_rewrites_remaining", 0) or 0)
+        used = max(0, int(quota) - int(remaining))
+        rewrites_used = used
+        rewrite_limit = int(quota)
+        next_reset = None
+    else:
+        rewrites_used = int(shop.monthly_rewrites_used or 0)
+        rewrite_limit = plan.product_limit if plan.product_limit is not None else plan.monthly_rewrite_limit
+        next_reset = shop.next_reset_date
 
     return {
         "user": user,
@@ -87,23 +120,49 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         "shop": shop,
         "rewrites_used": rewrites_used,
         "rewrite_limit": rewrite_limit,
+        "billing_cycle_type": billing_cycle_type,
+        "lifetime_rewrites_remaining": int(getattr(shop, "lifetime_rewrites_remaining", 0) or 0),
+        "next_reset_date": next_reset,
         "is_active": True # Users are active if they exist and have a plan
     }
 
-def increment_monthly_rewrites_used(db: Session, shop_domain: str, amount: int = 1) -> Shop | None:
+def record_successful_rewrite(db: Session, shop_domain: str, amount: int = 1) -> Shop | None:
     """
-    Increment monthly_rewrites_used for a shop after a successful rewrite.
+    Record a successful rewrite:
+    - Free/lifetime: decrement lifetime_rewrites_remaining
+    - Paid/recurring: increment monthly_rewrites_used
     """
-    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
-    if not shop:
+    if not shop_domain:
         return None
+    ctx = get_shop_quota_context(db, shop_domain)
+    if not ctx:
+        return None
+    shop: Shop = ctx["shop"]
+    plan = ctx["plan"]
+    billing_cycle_type = str(ctx.get("billing_cycle_type") or getattr(plan, "billing_cycle_type", "") or "").strip().lower()
+    if not billing_cycle_type:
+        billing_cycle_type = "lifetime" if str(getattr(plan, "name", "") or "") == "Free" else "recurring"
 
-    shop = sync_usage_limits(db, shop)
-    shop.monthly_rewrites_used = int(shop.monthly_rewrites_used or 0) + int(amount or 0)
+    amt = int(amount or 0)
+    if amt <= 0:
+        return shop
+
+    if billing_cycle_type == "lifetime":
+        cur = int(getattr(shop, "lifetime_rewrites_remaining", 0) or 0)
+        shop.lifetime_rewrites_remaining = max(0, cur - amt)
+    else:
+        shop = sync_usage_limits(db, shop, billing_cycle_type=billing_cycle_type)
+        shop.monthly_rewrites_used = int(shop.monthly_rewrites_used or 0) + amt
+
     db.add(shop)
     db.commit()
     db.refresh(shop)
     return shop
+
+
+# Backwards-compatible alias (older call sites)
+def increment_monthly_rewrites_used(db: Session, shop_domain: str, amount: int = 1) -> Shop | None:
+    return record_successful_rewrite(db, shop_domain, amount=amount)
 
 def get_plan_by_id(db: Session, plan_id: int) -> Plan | None:
     return db.query(Plan).filter(Plan.id == plan_id).first()
@@ -166,6 +225,7 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
                 domain=shop_domain,
                 access_token=access_token,
                 monthly_rewrites_used=0,
+                lifetime_rewrites_remaining=10,
                 reset_anchor_date=now,
                 next_reset_date=now + timedelta(days=30),
             )
@@ -177,9 +237,9 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
     
     if not user:
         # Assign default plan
-        default_plan = db.query(Plan).filter(Plan.name == "Basic").first()
+        default_plan = db.query(Plan).filter(Plan.name == "Free").first()
         if not default_plan:
-             logger.warning("Plan 'Basic' not found. Falling back to first available plan.")
+             logger.warning("Plan 'Free' not found. Falling back to first available plan.")
              default_plan = db.query(Plan).first()
         
         if default_plan:

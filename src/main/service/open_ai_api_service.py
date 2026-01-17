@@ -14,7 +14,8 @@ from src.main.config.configs import (
     OPENAI_MAX_TOKENS
 )
 from src.main.logging.logger import get_logger
-from src.main.db.db_transactions import increment_monthly_rewrites_used
+from src.main.db.db_transactions import record_successful_rewrite
+from src.main.db.db_transactions import increment_monthly_rewrites_used  # backwards-compat for tests/patches
 from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
 
 logger = get_logger(__name__)
@@ -217,6 +218,7 @@ class OpenAIService:
 
             # Product-based gating: count 1 rewrite per successful request
             try:
+                # Backwards-compatible name (and used by tests); internally maps to record_successful_rewrite.
                 increment_monthly_rewrites_used(db, shop_domain, amount=1)
             except Exception as e:
                 logger.warning(f"Unable to increment monthly rewrites for shop={shop_domain}: {e}")

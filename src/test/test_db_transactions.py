@@ -10,6 +10,7 @@ from src.main.db.db_transactions import (
     get_shop_access_token,
     store_shop_access_token,
     increment_monthly_rewrites_used,
+    record_successful_rewrite,
     sync_usage_limits,
 )
 
@@ -81,8 +82,8 @@ def test_store_shop_access_token_create(db_session):
     from src.main.db.db_models import User, Plan
     
     # Ensure default plan exists for the auto-creation logic
-    if not db_session.query(Plan).filter_by(name="Basic").first():
-        db_session.add(Plan(name="Basic", monthly_rewrite_limit=1000, max_request_rate=10))
+    if not db_session.query(Plan).filter_by(name="Free").first():
+        db_session.add(Plan(name="Free", monthly_rewrite_limit=10, product_limit=10, billing_cycle_type="lifetime", max_request_rate=10))
         db_session.commit()
 
     shop_domain = "new-shop.myshopify.com"
@@ -100,7 +101,46 @@ def test_store_shop_access_token_create(db_session):
     user = db_session.query(User).filter_by(username=shop_domain).first()
     assert user is not None
     assert user.plan is not None
+    assert user.plan.name == "Free"
     # No API Key check anymore
+
+
+def test_record_successful_rewrite_free_decrements_lifetime(db_session):
+    """Free/lifetime: successful rewrite decrements lifetime_rewrites_remaining and does not increment monthly usage."""
+    from src.main.db.db_models import Plan, User, Shop
+    from datetime import datetime, timedelta, timezone
+
+    free = db_session.query(Plan).filter_by(name="Free").first()
+    if not free:
+        free = Plan(name="Free", monthly_rewrite_limit=10, product_limit=10, billing_cycle_type="lifetime", max_request_rate=10)
+        db_session.add(free)
+        db_session.commit()
+
+    shop_domain = "free-shop.myshopify.com"
+    user = db_session.query(User).filter_by(username=shop_domain).first()
+    if not user:
+        user = User(username=shop_domain, plan_id=free.id)
+        db_session.add(user)
+        db_session.commit()
+
+    now = datetime.now(timezone.utc)
+    shop = db_session.query(Shop).filter_by(domain=shop_domain).first()
+    if not shop:
+        shop = Shop(
+            domain=shop_domain,
+            access_token="token",
+            monthly_rewrites_used=0,
+            lifetime_rewrites_remaining=2,
+            reset_anchor_date=now,
+            next_reset_date=now + timedelta(days=30),
+        )
+        db_session.add(shop)
+        db_session.commit()
+
+    updated = record_successful_rewrite(db_session, shop_domain, amount=1)
+    assert updated is not None
+    assert updated.lifetime_rewrites_remaining == 1
+    assert int(updated.monthly_rewrites_used or 0) == 0
 
 def test_store_shop_access_token_update(db_session):
     """Should update the access token if the Shop record exists."""
