@@ -32,6 +32,7 @@ def _ensure_plan_columns_exist():
             add("product_limit INTEGER", "product_limit")
             add("max_locales INTEGER", "max_locales")
             add("features_json TEXT", "features_json")
+            add("billing_cycle_type TEXT", "billing_cycle_type")
             conn.commit()
         return
 
@@ -40,6 +41,7 @@ def _ensure_plan_columns_exist():
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS product_limit INTEGER"))
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_locales INTEGER"))
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS features_json TEXT"))
+        conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS billing_cycle_type TEXT"))
         conn.commit()
 
 def _ensure_shop_columns_exist():
@@ -62,6 +64,9 @@ def _ensure_shop_columns_exist():
                 conn.execute(text(f"ALTER TABLE shops ADD COLUMN {col_sql}"))
 
             add("monthly_rewrites_used INTEGER DEFAULT 0", "monthly_rewrites_used")
+            add("lifetime_rewrites_remaining INTEGER DEFAULT 10", "lifetime_rewrites_remaining")
+            add("is_active INTEGER DEFAULT 1", "is_active")
+            add("welcome_back_pending INTEGER DEFAULT 0", "welcome_back_pending")
             add("reset_anchor_date TEXT", "reset_anchor_date")
             add("next_reset_date TEXT", "next_reset_date")
             add("fair_use_last_notified_at TEXT", "fair_use_last_notified_at")
@@ -72,6 +77,9 @@ def _ensure_shop_columns_exist():
     # Postgres / others
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_rewrites_used INTEGER DEFAULT 0"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_rewrites_remaining INTEGER DEFAULT 10"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS welcome_back_pending BOOLEAN DEFAULT FALSE"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS reset_anchor_date TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS next_reset_date TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS fair_use_last_notified_at TIMESTAMPTZ"))
@@ -89,10 +97,23 @@ def seed_data():
         # 1. Create/Update Plans (UPSERT by name)
         plans = [
             {
+                "name": "Free",
+                "price": 0.0,
+                # For lifetime plans, the monthly product_limit is not used for enforcement.
+                # We keep it populated for UI/back-compat.
+                "product_limit": 10,
+                "max_locales": 1,
+                "billing_cycle_type": "lifetime",
+                "features": ["10 lifetime rewrites", "SEO optimization", "Professional tone"],
+                "rate": 30,
+                "stream": False,
+            },
+            {
                 "name": "Basic",
                 "price": 49.0,
                 "product_limit": 50,
                 "max_locales": 1,
+                "billing_cycle_type": "recurring",
                 "features": ["1 Locale", "SEO optimization", "GPT-4o-mini"],
                 "rate": 60,
                 "stream": False,
@@ -102,6 +123,7 @@ def seed_data():
                 "price": 99.0,
                 "product_limit": 100,
                 "max_locales": -1,
+                "billing_cycle_type": "recurring",
                 "features": ["Multi-locale", "Social Hook Architect", "AI Marketing"],
                 "rate": 120,
                 "stream": False,
@@ -111,6 +133,7 @@ def seed_data():
                 "price": 199.0,
                 "product_limit": -1,  # unlimited
                 "max_locales": -1,
+                "billing_cycle_type": "recurring",
                 "features": ["Unlimited Bulk Sync", "Priority GPT-5", "Supreme Features"],
                 "rate": 300,
                 "stream": True,
@@ -134,6 +157,7 @@ def seed_data():
             existing.product_limit = p_data["product_limit"]
             existing.max_locales = p_data["max_locales"]
             existing.features_json = features_json
+            existing.billing_cycle_type = p_data.get("billing_cycle_type") or "recurring"
             existing.monthly_rewrite_limit = p_data["product_limit"]
             existing.max_request_rate = p_data["rate"]
             existing.can_stream_responses = p_data["stream"]
@@ -141,15 +165,15 @@ def seed_data():
 
         db.commit()
 
-        # 2. Create Test User (linked to Basic)
-        basic_plan = db.query(Plan).filter(Plan.name == "Basic").first()
+        # 2. Create Test User (linked to Free)
+        free_plan = db.query(Plan).filter(Plan.name == "Free").first()
         shop_domain = "dev-shop.myshopify.com"
         test_user = db.query(User).filter(User.username == shop_domain).first()
         if not test_user:
             test_user = User(
                 username=shop_domain,
                 email="dev@example.com",
-                plan_id=basic_plan.id
+                plan_id=free_plan.id if free_plan else None
             )
             db.add(test_user)
             db.commit()
@@ -165,6 +189,7 @@ def seed_data():
                 domain=shop_domain,
                 access_token="dev-token-123",
                 monthly_rewrites_used=0,
+                lifetime_rewrites_remaining=10,
                 reset_anchor_date=now,
                 next_reset_date=now + timedelta(days=30),
             )

@@ -36,6 +36,12 @@ class Shop(Base):
     # Product-based usage gating (replaces token-based UsageRecord metering)
     # -----------------------------------------------------------------------------
     monthly_rewrites_used = Column(Integer, nullable=False, default=0, server_default="0")
+    # Lifetime free-tier credits (NEVER resets). Only used when plan is Free (billing_cycle_type="lifetime").
+    lifetime_rewrites_remaining = Column(Integer, nullable=False, default=10, server_default="10")
+    # App install state (used for reinstall flows). We do NOT delete shop rows on uninstall.
+    is_active = Column(Boolean, nullable=False, default=True, server_default="1")
+    # One-shot UI hint: set True when a previously-known shop reinstalls; UI can show "Welcome back" once.
+    welcome_back_pending = Column(Boolean, nullable=False, default=False, server_default="0")
     # The date the merchant installed or last changed plans.
     reset_anchor_date = Column(DateTime(timezone=True), nullable=True)
     # Computed as reset_anchor_date + 30 days (self-healed forward as needed).
@@ -80,6 +86,11 @@ class Plan(Base):
     product_limit = Column(Integer, nullable=True)
     max_locales = Column(Integer, nullable=True)
     features_json = Column(Text, nullable=True)
+
+    # Billing cycle type for usage semantics:
+    # - "recurring": monthly reset / recurring bucket
+    # - "lifetime": one-time bucket that never resets (e.g., Free plan lifetime credits)
+    billing_cycle_type = Column(String, nullable=True)
     
     # FEATURE GATES
     can_access_live_currency = Column(Boolean, default=False)

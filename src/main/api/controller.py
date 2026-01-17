@@ -11,10 +11,10 @@ from src.main.db.database import get_db
 from src.main.db.db_transactions import (
     get_plan_by_name,
     store_shop_access_token,
-    increment_monthly_rewrites_used,
+    record_successful_rewrite,
 )
 from src.main.db.db_transactions import get_user_by_username
-from src.main.db.db_models import Shop, User
+from src.main.db.db_models import Shop, User, Plan
 from src.main.security.security import (
     verify_shopify_session, 
     verify_webhook_signature, 
@@ -38,6 +38,9 @@ logger = get_logger(__name__)
 security_logger = get_security_logger("security.webhooks")
 
 router = APIRouter()
+
+# Backwards-compat for older tests/patches that expect this symbol on the controller module.
+increment_monthly_rewrites_used = record_successful_rewrite
 
 SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
 SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
@@ -156,7 +159,7 @@ async def proxy_generate_copy(
     # Increment rewrite usage after successful generation
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
-            increment_monthly_rewrites_used(db, shop_domain, amount=1)
+            record_successful_rewrite(db, shop_domain, amount=1)
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
     try:
@@ -243,7 +246,7 @@ async def proxy_generate_bulk(
 
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
-            increment_monthly_rewrites_used(db, shop_domain, amount=1)
+            record_successful_rewrite(db, shop_domain, amount=1)
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
     return resp
@@ -296,7 +299,7 @@ async def admin_ext_generate_bulk(
     )
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
-            increment_monthly_rewrites_used(db, shop, amount=1)
+            record_successful_rewrite(db, shop, amount=1)
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop}: {e}")
     try:
@@ -416,13 +419,35 @@ async def get_usage(
     shop = auth_context["shop"]
     rewrites_used = auth_context["rewrites_used"]
     rewrite_limit = auth_context["rewrite_limit"]
+    billing_cycle_type = str(auth_context.get("billing_cycle_type") or getattr(plan, "billing_cycle_type", "") or "").strip().lower()
+    if not billing_cycle_type:
+        billing_cycle_type = "lifetime" if str(getattr(plan, "name", "") or "") == "Free" else "recurring"
+    lifetime_remaining = int(auth_context.get("lifetime_rewrites_remaining") or 0)
+    next_reset = auth_context.get("next_reset_date")
     
+    welcome_back = False
+    try:
+        welcome_back = bool(getattr(shop, "welcome_back_pending", False))
+        if welcome_back:
+            shop.welcome_back_pending = False
+            db.add(shop)
+            db.commit()
+            db.refresh(shop)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     return {
         "plan_name": plan.name,
         # Product rewrite usage (new system)
         "monthly_rewrites_used": rewrites_used,
         "rewrite_limit": rewrite_limit,
-        "next_reset_date": shop.next_reset_date.isoformat() if shop.next_reset_date else None,
+        "next_reset_date": next_reset.isoformat() if next_reset else None,
+        # Lifetime plan fields (Free)
+        "billing_cycle_type": billing_cycle_type,
+        "lifetime_rewrites_remaining": lifetime_remaining if billing_cycle_type == "lifetime" else None,
         # Backward compatibility (old keys mapped to new system)
         "current_usage": rewrites_used,
         "monthly_token_quota": rewrite_limit,
@@ -431,6 +456,7 @@ async def get_usage(
         "max_locales": plan.max_locales,
         "features_json": plan.features_json,
         "is_pro": plan.name in ("Standard", "Pro"),
+        "welcome_back": welcome_back,
     }
 
 
@@ -670,29 +696,93 @@ async def handle_app_uninstalled(
         logger.info("[Webhook] app_uninstalled rid=%s shop=%s", _rid(request), shop_domain or "-")
 
         if shop_domain:
-            # Delete Shop and User records if they exist (best-effort).
+            # IMPORTANT: do not delete Shop rows on uninstall.
+            # We need to preserve lifetime credits for Free plan reinstalls.
             try:
                 shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
                 if shop_rec:
-                    db.delete(shop_rec)
+                    shop_rec.is_active = False
+                    # Token is invalid after uninstall; keep row but clear token.
+                    shop_rec.access_token = ""
+                    db.add(shop_rec)
                     db.commit()
             except Exception as e:
-                logger.warning(f"Unable to delete shop record for {shop_domain}: {e}")
-                db.rollback()
-
-            try:
-                user = get_user_by_username(db, shop_domain)
-                if user:
-                    db.delete(user)
-                    db.commit()
-            except Exception as e:
-                logger.warning(f"Unable to delete user record for {shop_domain}: {e}")
+                logger.warning(f"Unable to deactivate shop record for {shop_domain}: {e}")
                 db.rollback()
 
     except Exception as e:
         logger.error(f"Error handling app/uninstalled webhook: {e}")
 
     # Always return 200 quickly to avoid retries/timeouts
+    return Response(status_code=200)
+
+
+@router.post("/webhooks/app/install")
+async def handle_app_install(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    App install (or reinstall) webhook.
+
+    Requirements:
+    - If Shop exists: set is_active=True and keep lifetime_rewrites_remaining (do NOT reset).
+    - Else: create Shop with lifetime_rewrites_remaining=10.
+    """
+    await verify_webhook_signature(request)
+    shop_domain = (request.headers.get("X-Shopify-Shop-Domain") or "").strip()
+    try:
+        payload = await request.json()
+        shop_domain = (payload.get("myshopify_domain") or shop_domain or "").strip()
+    except Exception:
+        payload = {}
+
+    if not shop_domain:
+        return Response(status_code=200)
+
+    logger.info("[Webhook] app_install rid=%s shop=%s", _rid(request), shop_domain)
+
+    try:
+        shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        if shop_rec:
+            previously_inactive = not bool(getattr(shop_rec, "is_active", True))
+            shop_rec.is_active = True
+            # Preserve existing lifetime credits (critical).
+            # Also preserve monthly counters; monthly reset is handled elsewhere.
+            if previously_inactive:
+                shop_rec.welcome_back_pending = True
+            db.add(shop_rec)
+            db.commit()
+            db.refresh(shop_rec)
+        else:
+            # New shop: create a row with 10 lifetime credits.
+            shop_rec = Shop(
+                domain=shop_domain,
+                access_token="",
+                monthly_rewrites_used=0,
+                lifetime_rewrites_remaining=10,
+                is_active=True,
+                welcome_back_pending=False,
+            )
+            db.add(shop_rec)
+            db.commit()
+            db.refresh(shop_rec)
+
+        # Ensure a User row exists (billing/quota identity). Default to Free plan.
+        user = get_user_by_username(db, shop_domain)
+        if not user:
+            free_plan = db.query(Plan).filter(Plan.name == "Free").first()
+            if free_plan:
+                user = User(username=shop_domain, email=None, plan_id=free_plan.id)
+                db.add(user)
+                db.commit()
+    except Exception as e:
+        logger.warning(f"[Webhook] app_install failed shop={shop_domain}: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     return Response(status_code=200)
 
 @router.get("/api/auth/callback")
