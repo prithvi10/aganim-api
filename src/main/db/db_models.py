@@ -42,6 +42,16 @@ class Shop(Base):
     is_active = Column(Boolean, nullable=False, default=True, server_default="1")
     # One-shot UI hint: set True when a previously-known shop reinstalls; UI can show "Welcome back" once.
     welcome_back_pending = Column(Boolean, nullable=False, default=False, server_default="0")
+    # -----------------------------------------------------------------------------
+    # High-integrity reinstall & paid grace period support
+    # -----------------------------------------------------------------------------
+    # For paid plans: the hard expiry of the last paid billing cycle (even if Shopify cancels on uninstall).
+    access_expires_at = Column(DateTime(timezone=True), nullable=True)
+    # The plan the merchant is currently considered on (internal source of truth for gating UX).
+    # NOTE: This is intentionally separate from Shopify activeSubscriptions which may be empty after uninstall.
+    current_plan_name = Column(String, nullable=True)
+    # Remembers the last known plan tier across uninstall/reinstall (used for grace period + routing).
+    last_plan_name = Column(String, nullable=True)
     # The date the merchant installed or last changed plans.
     reset_anchor_date = Column(DateTime(timezone=True), nullable=True)
     # Computed as reset_anchor_date + 30 days (self-healed forward as needed).

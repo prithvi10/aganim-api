@@ -178,3 +178,123 @@ def test_get_shop_access_token_not_found(db_session):
     """Should return None if shop does not exist."""
     retrieved_token = get_shop_access_token(db_session, "missing.myshopify.com")
     assert retrieved_token is None
+
+
+def test_get_shop_quota_context_paid_grace_overrides_plan(db_session):
+    """Paid grace: last_plan_name paid + access_expires_at future => grace_active True and plan overridden."""
+    from src.main.db.db_models import Plan, User, Shop
+    from src.main.db.db_transactions import get_shop_quota_context
+    from datetime import datetime, timedelta, timezone
+
+    # Seed plans
+    if not db_session.query(Plan).filter_by(name="Basic").first():
+        db_session.add(
+            Plan(
+                name="Basic",
+                monthly_rewrite_limit=50,
+                product_limit=50,
+                billing_cycle_type="recurring",
+                max_request_rate=10,
+            )
+        )
+    if not db_session.query(Plan).filter_by(name="Free").first():
+        db_session.add(
+            Plan(
+                name="Free",
+                monthly_rewrite_limit=10,
+                product_limit=10,
+                billing_cycle_type="lifetime",
+                max_request_rate=10,
+            )
+        )
+    db_session.commit()
+
+    free = db_session.query(Plan).filter_by(name="Free").first()
+    shop_domain = "paid-grace-shop.myshopify.com"
+
+    db_session.query(User).filter_by(username=shop_domain).delete()
+    db_session.query(Shop).filter_by(domain=shop_domain).delete()
+    db_session.commit()
+
+    user = User(username=shop_domain, plan_id=free.id)
+    db_session.add(user)
+
+    now = datetime.now(timezone.utc)
+    shop = Shop(
+        domain=shop_domain,
+        access_token="",
+        last_plan_name="Basic",
+        current_plan_name="Basic",
+        access_expires_at=now + timedelta(days=2),
+        monthly_rewrites_used=0,
+        reset_anchor_date=now,
+        next_reset_date=now + timedelta(days=30),
+    )
+    db_session.add(shop)
+    db_session.commit()
+
+    ctx = get_shop_quota_context(db_session, shop_domain)
+    assert ctx is not None
+    assert ctx["grace_active"] is True
+    assert ctx["expired_paid"] is False
+    assert ctx["plan"].name == "Basic"
+    assert int(ctx["rewrite_limit"]) == 50
+
+
+def test_get_shop_quota_context_paid_expired_forces_zero_limit(db_session):
+    """Paid expired: last_plan_name paid + access_expires_at past => expired_paid True and rewrite_limit forced to 0."""
+    from src.main.db.db_models import Plan, User, Shop
+    from src.main.db.db_transactions import get_shop_quota_context
+    from datetime import datetime, timedelta, timezone
+
+    if not db_session.query(Plan).filter_by(name="Basic").first():
+        db_session.add(
+            Plan(
+                name="Basic",
+                monthly_rewrite_limit=50,
+                product_limit=50,
+                billing_cycle_type="recurring",
+                max_request_rate=10,
+            )
+        )
+    if not db_session.query(Plan).filter_by(name="Free").first():
+        db_session.add(
+            Plan(
+                name="Free",
+                monthly_rewrite_limit=10,
+                product_limit=10,
+                billing_cycle_type="lifetime",
+                max_request_rate=10,
+            )
+        )
+    db_session.commit()
+
+    free = db_session.query(Plan).filter_by(name="Free").first()
+    shop_domain = "paid-expired-shop.myshopify.com"
+
+    db_session.query(User).filter_by(username=shop_domain).delete()
+    db_session.query(Shop).filter_by(domain=shop_domain).delete()
+    db_session.commit()
+
+    user = User(username=shop_domain, plan_id=free.id)
+    db_session.add(user)
+
+    now = datetime.now(timezone.utc)
+    shop = Shop(
+        domain=shop_domain,
+        access_token="",
+        last_plan_name="Basic",
+        current_plan_name="Basic",
+        access_expires_at=now - timedelta(days=1),
+        monthly_rewrites_used=0,
+        reset_anchor_date=now,
+        next_reset_date=now + timedelta(days=30),
+    )
+    db_session.add(shop)
+    db_session.commit()
+
+    ctx = get_shop_quota_context(db_session, shop_domain)
+    assert ctx is not None
+    assert ctx["grace_active"] is False
+    assert ctx["expired_paid"] is True
+    assert int(ctx["rewrite_limit"]) == 0

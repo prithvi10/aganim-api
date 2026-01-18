@@ -59,7 +59,19 @@ def seed_shop():
     db.commit()
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
-    db.add(Shop(domain="dev-shop.myshopify.com", access_token="dev-token-123", monthly_rewrites_used=0, reset_anchor_date=now, next_reset_date=now + timedelta(days=30)))
+    # Seed paid grace-period fields so the shop is not considered "expired_paid".
+    db.add(
+        Shop(
+            domain="dev-shop.myshopify.com",
+            access_token="dev-token-123",
+            monthly_rewrites_used=0,
+            reset_anchor_date=now,
+            next_reset_date=now + timedelta(days=30),
+            current_plan_name="Pro",
+            last_plan_name="Pro",
+            access_expires_at=now + timedelta(days=30),
+        )
+    )
     db.commit()
     db.close()
 
