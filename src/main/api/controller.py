@@ -474,7 +474,7 @@ async def reinstall_pathfinder(
     Internal helper for the UI to decide where a (re)install should land.
 
     Paths:
-    - Paid + grace active (access_expires_at in future): /app/dashboard
+    - Paid + grace active (access_expires_at in future): /app (Home) and keep prior plan active
     - Paid + expired: /app/pricing?returning_paid=1
     - Free: /app/dashboard if credits>0 else /app/pricing
     """
@@ -521,7 +521,7 @@ async def reinstall_pathfinder(
                 except Exception:
                     pass
             return {
-                "redirect_to": "/app/dashboard",
+                "redirect_to": "/app",
                 "reason": "paid_grace_active",
                 "access_expires_at": access_expires_at.isoformat() if access_expires_at else None,
             }

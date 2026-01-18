@@ -12,7 +12,7 @@ from src.main.db.db_models import Plan, Shop, User
 
 
 @pytest.mark.asyncio
-async def test_reinstall_path_paid_grace_redirects_dashboard(monkeypatch):
+async def test_reinstall_path_paid_grace_redirects_home(monkeypatch):
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -57,7 +57,7 @@ async def test_reinstall_path_paid_grace_redirects_dashboard(monkeypatch):
         r = client.get(f"/api/admin/reinstall-path?shop={shop_domain}")
         assert r.status_code == 200
         body = r.json()
-        assert body["redirect_to"] == "/app/dashboard"
+        assert body["redirect_to"] == "/app"
         assert body["reason"] == "paid_grace_active"
 
     app.dependency_overrides.pop(get_db, None)
