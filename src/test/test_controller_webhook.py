@@ -75,6 +75,32 @@ def test_webhook_subscription_success(webhook_payload, mock_plan):
         assert request_obj.username == "test-store.myshopify.com"
         assert request_obj.plan_id == 1
 
+
+@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+def test_webhook_subscription_success_promo_plan_name_maps_to_canonical_plan(webhook_payload, mock_plan):
+    """Promo plan names should map to canonical DB plans (Basic/Standard/Pro)."""
+    promo_payload = dict(webhook_payload)
+    promo_payload["billing_plan"] = "Basic Promo Annual"
+
+    json_body = json.dumps(promo_payload).encode("utf-8")
+    hmac_sig = generate_hmac(MOCK_SHOPIFY_SECRET, json_body)
+    headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
+
+    with patch("src.main.api.controller.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
+         patch("src.main.api.controller.onboard_user") as mock_onboard:
+        response = client.post(
+            "/webhooks/subscription-activated",
+            content=json_body,
+            headers=headers,
+        )
+
+        assert response.status_code == 200
+        # Critical: canonicalized before DB lookup
+        mock_get_plan.assert_called_once()
+        args, _ = mock_get_plan.call_args
+        assert args[1] == "Basic"
+        mock_onboard.assert_called_once()
+
 def test_webhook_missing_header(webhook_payload):
     """Test webhook fails without HMAC header."""
     response = client.post(
