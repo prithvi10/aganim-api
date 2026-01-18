@@ -637,9 +637,34 @@ async def handle_subscription_activated(
             logger.warning("Webhook payload missing shop domain or plan name")
             return Response(status_code=200)
 
+        # Shopify subscription names can differ from our internal plan names (e.g. promo/annual SKUs).
+        # Canonicalize to our DB plan names so quota + gating stays stable.
+        raw_plan_name = str(plan_name or "").strip()
+        pn = raw_plan_name.lower()
+        try:
+            import re
+
+            def has_word(w: str) -> bool:
+                return re.search(rf"\b{re.escape(w)}\b", pn) is not None
+        except Exception:
+            # Extremely defensive fallback; prefer not to match "promo" as "pro"
+            def has_word(w: str) -> bool:  # type: ignore[no-redef]
+                return f" {w} " in f" {pn} "
+
+        if has_word("basic"):
+            plan_name = "Basic"
+        elif has_word("standard"):
+            plan_name = "Standard"
+        elif has_word("pro"):
+            plan_name = "Pro"
+        elif has_word("free"):
+            plan_name = "Free"
+        else:
+            plan_name = raw_plan_name
+
         plan = get_plan_by_name(db, plan_name)
         if not plan:
-            logger.warning(f"Webhook received for unknown plan: {plan_name}")
+            logger.warning(f"Webhook received for unknown plan: raw={raw_plan_name} canonical={plan_name}")
             return Response(status_code=200)
 
         # Persist paid-cycle expiry + last/current plan on the Shop row.
