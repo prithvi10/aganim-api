@@ -65,6 +65,13 @@ class Shop(Base):
     fair_use_last_notified_at = Column(DateTime(timezone=True), nullable=True)
     monthly_cost_accumulated = Column(Numeric(12, 2), nullable=False, default=0, server_default="0")
 
+    # -----------------------------------------------------------------------------
+    # Onboarding (UI wizard progress; safe to expose to merchant)
+    # -----------------------------------------------------------------------------
+    # 0..4 (4 = completed)
+    onboarding_step = Column(Integer, nullable=False, default=0, server_default="0")
+    is_onboarding_finished = Column(Boolean, nullable=False, default=False, server_default="0")
+
 class UsageRecord(Base):
     __tablename__ = "usage_records"
 

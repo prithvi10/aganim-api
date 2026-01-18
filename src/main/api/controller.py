@@ -466,6 +466,62 @@ async def get_usage(
         "last_uninstalled_at": (auth_context.get("last_uninstalled_at").isoformat() if auth_context.get("last_uninstalled_at") else None),
         # UI feature flags
         "promo_pricing_enabled": bool(PROMO_PRICING_ENABLED),
+        # Onboarding wizard status
+        "is_onboarding_finished": bool(getattr(shop, "is_onboarding_finished", False)),
+        "onboarding_step": int(getattr(shop, "onboarding_step", 0) or 0),
+    }
+
+
+@router.post("/api/onboarding/update_step")
+async def onboarding_update_step(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Persist onboarding wizard progress so merchants can leave and come back.
+    Auth: internal (shop param / header); do NOT expose any billing limits to merchants.
+    """
+    shop_domain = (request.query_params.get("shop") or "").strip() or (request.headers.get("X-Shopify-Shop-Domain") or "").strip()
+    if not shop_domain:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    step = int(payload.get("step") or 0)
+    if step < 0:
+        step = 0
+    if step > 4:
+        step = 4
+    mark_finished = bool(payload.get("is_onboarding_finished") or payload.get("finished") or False) or step >= 4
+
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    try:
+        cur_step = int(getattr(shop, "onboarding_step", 0) or 0)
+        shop.onboarding_step = max(cur_step, step)
+        if mark_finished:
+            shop.is_onboarding_finished = True
+            shop.onboarding_step = 4
+        db.add(shop)
+        db.commit()
+        db.refresh(shop)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail="Failed to update onboarding progress")
+
+    return {
+        "ok": True,
+        "shop": shop_domain,
+        "onboarding_step": int(getattr(shop, "onboarding_step", 0) or 0),
+        "is_onboarding_finished": bool(getattr(shop, "is_onboarding_finished", False)),
     }
 
 

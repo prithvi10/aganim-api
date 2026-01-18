@@ -46,6 +46,8 @@ def _ensure_shop_columns_exist():
             add("next_reset_date TEXT", "next_reset_date")
             add("fair_use_last_notified_at TEXT", "fair_use_last_notified_at")
             add("monthly_cost_accumulated REAL DEFAULT 0", "monthly_cost_accumulated")
+            add("onboarding_step INTEGER DEFAULT 0", "onboarding_step")
+            add("is_onboarding_finished INTEGER DEFAULT 0", "is_onboarding_finished")
             conn.commit()
         return
 
@@ -62,6 +64,8 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS next_reset_date TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS fair_use_last_notified_at TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_cost_accumulated NUMERIC(12,2) DEFAULT 0"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarding_step INTEGER DEFAULT 0"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_onboarding_finished BOOLEAN DEFAULT FALSE"))
         conn.commit()
 
 
