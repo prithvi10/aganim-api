@@ -26,7 +26,7 @@ from src.main.security.security import (
 )
 from src.main.api.validation import validate_rewrite_request, validate_shop_and_quota 
 from src.main.service.onboarding import onboard_user
-from src.main.config.configs import SHOPIFY_UI_URL
+from src.main.config.configs import SHOPIFY_UI_URL, PROMO_PRICING_ENABLED
 from src.main.logging.logger import get_logger, get_security_logger
 from typing import Optional
 
@@ -464,6 +464,8 @@ async def get_usage(
         "grace_mode": bool(auth_context.get("grace_mode")),
         "last_plan_name": auth_context.get("last_plan_name"),
         "last_uninstalled_at": (auth_context.get("last_uninstalled_at").isoformat() if auth_context.get("last_uninstalled_at") else None),
+        # UI feature flags
+        "promo_pricing_enabled": bool(PROMO_PRICING_ENABLED),
     }
 
 
