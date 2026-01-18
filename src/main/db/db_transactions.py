@@ -91,6 +91,38 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         db.commit()
         db.refresh(shop)
 
+    def _is_paid_plan(name: str | None) -> bool:
+        n = str(name or "").strip().lower()
+        return n in ("basic", "standard", "pro")
+
+    def _parse_dt(val) -> datetime | None:
+        if isinstance(val, datetime):
+            return val if val.tzinfo is not None else val.replace(tzinfo=timezone.utc)
+        if isinstance(val, str) and val.strip():
+            try:
+                dt = datetime.fromisoformat(val.strip())
+                return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                return None
+        return None
+
+    now = datetime.now(timezone.utc)
+    last_plan_name = (
+        (getattr(shop, "last_plan_name", None) or "").strip()
+        or (getattr(shop, "current_plan_name", None) or "").strip()
+        or (getattr(plan, "name", None) or "").strip()
+    )
+    access_expires_at = _parse_dt(getattr(shop, "access_expires_at", None))
+    grace_active = _is_paid_plan(last_plan_name) and isinstance(access_expires_at, datetime) and access_expires_at > now
+    expired_paid = _is_paid_plan(last_plan_name) and (not access_expires_at or access_expires_at <= now) and not grace_active
+
+    # During grace period we temporarily treat the shop as their last paid plan (even if Shopify cancelled).
+    # This affects quota/feature gates downstream.
+    if grace_active:
+        plan_override = get_plan_by_name(db, last_plan_name)
+        if plan_override:
+            plan = plan_override
+
     billing_cycle_type = str(getattr(plan, "billing_cycle_type", "") or "").strip().lower()
     if not billing_cycle_type:
         billing_cycle_type = "lifetime" if str(plan.name or "") == "Free" else "recurring"
@@ -114,6 +146,13 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         rewrite_limit = plan.product_limit if plan.product_limit is not None else plan.monthly_rewrite_limit
         next_reset = shop.next_reset_date
 
+    # If the merchant is a returning paid user but their prepaid window has expired,
+    # force the effective limit to 0 (the app should redirect them to pricing).
+    if expired_paid:
+        rewrites_used = 0
+        rewrite_limit = 0
+        next_reset = None
+
     return {
         "user": user,
         "plan": plan,
@@ -123,7 +162,13 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         "billing_cycle_type": billing_cycle_type,
         "lifetime_rewrites_remaining": int(getattr(shop, "lifetime_rewrites_remaining", 0) or 0),
         "next_reset_date": next_reset,
-        "is_active": True # Users are active if they exist and have a plan
+        "is_active": True, # Users are active if they exist and have a plan
+        # Reinstall / grace period metadata
+        "last_plan_name": last_plan_name,
+        "current_plan_name": (getattr(shop, "current_plan_name", None) or None),
+        "access_expires_at": access_expires_at,
+        "grace_active": bool(grace_active),
+        "expired_paid": bool(expired_paid),
     }
 
 def record_successful_rewrite(db: Session, shop_domain: str, amount: int = 1) -> Shop | None:
@@ -226,6 +271,8 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
                 access_token=access_token,
                 monthly_rewrites_used=0,
                 lifetime_rewrites_remaining=10,
+                current_plan_name="Free",
+                last_plan_name="Free",
                 reset_anchor_date=now,
                 next_reset_date=now + timedelta(days=30),
             )

@@ -39,6 +39,14 @@ def validate_shop_and_quota(db: Session, shop_domain: str, *, enforce_limit: boo
     if not billing_cycle_type:
         billing_cycle_type = "lifetime" if str(getattr(plan, "name", "") or "") == "Free" else "recurring"
 
+    # Returning paid users whose prepaid window has ended must re-purchase.
+    # (This also prevents them from falling back to Free lifetime credits.)
+    if enforce_limit and bool(context.get("expired_paid")):
+        raise HTTPException(
+            status_code=403,
+            detail="Your pre-paid period has ended. Please select a plan to continue.",
+        )
+
     # 2. Check Quota Logic
     if enforce_limit and rewrite_limit is not None and int(rewrite_limit) != -1:
         if billing_cycle_type == "lifetime":
