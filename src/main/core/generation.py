@@ -505,7 +505,7 @@ async def _generate_and_save_for_locale(
 
     base_model = get_base_model_for_shop(db, shop)
     model_override = get_effective_model(db, shop, base_model)
-
+    
     openai_response = openai_service.generate_copy(
         product_name=product_name,
         category=category,
@@ -520,7 +520,7 @@ async def _generate_and_save_for_locale(
         record_cost_from_usage(db, shop, usage, model_used=model_override)
     except Exception as e:
         logger.warning(f"[FairUse] Cost accounting skipped for shop={shop}: {e}")
-    
+
     raw_content = openai_response.choices[0].message.content
     parsed, discovered_values, parse_meta = _parse_model_json(raw_content or "")
     _log_llm_contract_health(

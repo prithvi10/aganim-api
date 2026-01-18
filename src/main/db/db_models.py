@@ -36,6 +36,24 @@ class Shop(Base):
     # Product-based usage gating (replaces token-based UsageRecord metering)
     # -----------------------------------------------------------------------------
     monthly_rewrites_used = Column(Integer, nullable=False, default=0, server_default="0")
+    # Lifetime free-tier credits (NEVER resets). Only used when plan is Free (billing_cycle_type="lifetime").
+    lifetime_rewrites_remaining = Column(Integer, nullable=False, default=10, server_default="10")
+    # App install state (used for reinstall flows). We do NOT delete shop rows on uninstall.
+    is_active = Column(Boolean, nullable=False, default=True, server_default="1")
+    # One-shot UI hint: set True when a previously-known shop reinstalls; UI can show "Welcome back" once.
+    welcome_back_pending = Column(Boolean, nullable=False, default=False, server_default="0")
+    # -----------------------------------------------------------------------------
+    # High-integrity reinstall & paid grace period support
+    # -----------------------------------------------------------------------------
+    # For paid plans: the hard expiry of the last paid billing cycle (even if Shopify cancels on uninstall).
+    access_expires_at = Column(DateTime(timezone=True), nullable=True)
+    # The plan the merchant is currently considered on (internal source of truth for gating UX).
+    # NOTE: This is intentionally separate from Shopify activeSubscriptions which may be empty after uninstall.
+    current_plan_name = Column(String, nullable=True)
+    # Remembers the last known plan tier across uninstall/reinstall (used for grace period + routing).
+    last_plan_name = Column(String, nullable=True)
+    # Tracks whether the merchant actually uninstalled (used to display "Grace" only for reinstall scenarios).
+    last_uninstalled_at = Column(DateTime(timezone=True), nullable=True)
     # The date the merchant installed or last changed plans.
     reset_anchor_date = Column(DateTime(timezone=True), nullable=True)
     # Computed as reset_anchor_date + 30 days (self-healed forward as needed).
@@ -80,6 +98,11 @@ class Plan(Base):
     product_limit = Column(Integer, nullable=True)
     max_locales = Column(Integer, nullable=True)
     features_json = Column(Text, nullable=True)
+
+    # Billing cycle type for usage semantics:
+    # - "recurring": monthly reset / recurring bucket
+    # - "lifetime": one-time bucket that never resets (e.g., Free plan lifetime credits)
+    billing_cycle_type = Column(String, nullable=True)
     
     # FEATURE GATES
     can_access_live_currency = Column(Boolean, default=False)

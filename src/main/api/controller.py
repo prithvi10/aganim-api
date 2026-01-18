@@ -10,11 +10,12 @@ from src.main.db.db_models import User
 from src.main.db.database import get_db
 from src.main.db.db_transactions import (
     get_plan_by_name,
+    get_shop_quota_context,
     store_shop_access_token,
-    increment_monthly_rewrites_used,
+    record_successful_rewrite,
 )
 from src.main.db.db_transactions import get_user_by_username
-from src.main.db.db_models import Shop, User
+from src.main.db.db_models import Shop, User, Plan
 from src.main.security.security import (
     verify_shopify_session, 
     verify_webhook_signature, 
@@ -38,6 +39,9 @@ logger = get_logger(__name__)
 security_logger = get_security_logger("security.webhooks")
 
 router = APIRouter()
+
+# Backwards-compat for older tests/patches that expect this symbol on the controller module.
+increment_monthly_rewrites_used = record_successful_rewrite
 
 SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
 SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
@@ -156,7 +160,7 @@ async def proxy_generate_copy(
     # Increment rewrite usage after successful generation
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
-            increment_monthly_rewrites_used(db, shop_domain, amount=1)
+            record_successful_rewrite(db, shop_domain, amount=1)
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
     try:
@@ -243,7 +247,7 @@ async def proxy_generate_bulk(
 
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
-            increment_monthly_rewrites_used(db, shop_domain, amount=1)
+            record_successful_rewrite(db, shop_domain, amount=1)
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
     return resp
@@ -296,7 +300,7 @@ async def admin_ext_generate_bulk(
     )
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
-            increment_monthly_rewrites_used(db, shop, amount=1)
+            record_successful_rewrite(db, shop, amount=1)
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop}: {e}")
     try:
@@ -416,13 +420,35 @@ async def get_usage(
     shop = auth_context["shop"]
     rewrites_used = auth_context["rewrites_used"]
     rewrite_limit = auth_context["rewrite_limit"]
+    billing_cycle_type = str(auth_context.get("billing_cycle_type") or getattr(plan, "billing_cycle_type", "") or "").strip().lower()
+    if not billing_cycle_type:
+        billing_cycle_type = "lifetime" if str(getattr(plan, "name", "") or "") == "Free" else "recurring"
+    lifetime_remaining = int(auth_context.get("lifetime_rewrites_remaining") or 0)
+    next_reset = auth_context.get("next_reset_date")
     
+    welcome_back = False
+    try:
+        welcome_back = bool(getattr(shop, "welcome_back_pending", False))
+        if welcome_back:
+            shop.welcome_back_pending = False
+            db.add(shop)
+            db.commit()
+            db.refresh(shop)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     return {
         "plan_name": plan.name,
         # Product rewrite usage (new system)
         "monthly_rewrites_used": rewrites_used,
         "rewrite_limit": rewrite_limit,
-        "next_reset_date": shop.next_reset_date.isoformat() if shop.next_reset_date else None,
+        "next_reset_date": next_reset.isoformat() if next_reset else None,
+        # Lifetime plan fields (Free)
+        "billing_cycle_type": billing_cycle_type,
+        "lifetime_rewrites_remaining": lifetime_remaining if billing_cycle_type == "lifetime" else None,
         # Backward compatibility (old keys mapped to new system)
         "current_usage": rewrites_used,
         "monthly_token_quota": rewrite_limit,
@@ -431,7 +457,111 @@ async def get_usage(
         "max_locales": plan.max_locales,
         "features_json": plan.features_json,
         "is_pro": plan.name in ("Standard", "Pro"),
+        "welcome_back": welcome_back,
+        # Grace period / reinstall metadata
+        "access_expires_at": (auth_context.get("access_expires_at").isoformat() if auth_context.get("access_expires_at") else None),
+        "grace_active": bool(auth_context.get("grace_active")),
+        "grace_mode": bool(auth_context.get("grace_mode")),
+        "last_plan_name": auth_context.get("last_plan_name"),
+        "last_uninstalled_at": (auth_context.get("last_uninstalled_at").isoformat() if auth_context.get("last_uninstalled_at") else None),
     }
+
+
+@router.get("/api/admin/reinstall-path")
+async def reinstall_pathfinder(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Internal helper for the UI to decide where a (re)install should land.
+
+    Paths:
+    - Paid + grace active (access_expires_at in future): /app (Home) and keep prior plan active
+    - Paid + expired: /app/pricing?returning_paid=1
+    - Free: /app/dashboard if credits>0 else /app/pricing
+    """
+    shop_domain = (request.query_params.get("shop") or "").strip()
+    if not shop_domain:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    ctx = get_shop_quota_context(db, shop_domain)
+    if not ctx:
+        # Unknown shop: treat as Free new install
+        return {"redirect_to": "/app/dashboard", "reason": "new_shop"}
+
+    shop: Shop = ctx["shop"]
+    last_plan = str(ctx.get("last_plan_name") or "").strip() or "Free"
+    grace_active = bool(ctx.get("grace_active"))
+    expired_paid = bool(ctx.get("expired_paid"))
+    access_expires_at = ctx.get("access_expires_at")
+
+    def _is_paid(name: str) -> bool:
+        return str(name or "").strip().lower() in ("basic", "standard", "pro")
+
+    # Always mark the DB row active on reinstall/login. Token is handled by the UI token sync.
+    try:
+        shop.is_active = True
+        db.add(shop)
+        db.commit()
+        db.refresh(shop)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+    if _is_paid(last_plan):
+        if bool(ctx.get("grace_mode")):
+            # Grace: keep their paid tier for gating
+            try:
+                shop.current_plan_name = last_plan
+                db.add(shop)
+                db.commit()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+            return {
+                "redirect_to": "/app",
+                "reason": "paid_grace_active",
+                "access_expires_at": access_expires_at.isoformat() if access_expires_at else None,
+            }
+
+        # Expired paid: force them back to pricing and prevent fallback to Free.
+        try:
+            shop.current_plan_name = None
+            db.add(shop)
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        return {
+            "redirect_to": "/app/pricing?returning_paid=1",
+            "reason": "paid_expired",
+            "access_expires_at": access_expires_at.isoformat() if access_expires_at else None,
+        }
+
+    # Free path: preserve lifetime credits
+    remaining = int(getattr(shop, "lifetime_rewrites_remaining", 0) or 0)
+    if remaining > 0:
+        # Ensure plan names are initialized for legacy rows
+        try:
+            if not (getattr(shop, "last_plan_name", None) or "").strip():
+                shop.last_plan_name = "Free"
+            if not (getattr(shop, "current_plan_name", None) or "").strip():
+                shop.current_plan_name = "Free"
+            db.add(shop)
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        return {"redirect_to": "/app/dashboard", "reason": "free_with_credits"}
+    return {"redirect_to": "/app/pricing", "reason": "free_no_credits"}
 
 
 @router.post("/api/admin/sync-token")
@@ -509,6 +639,33 @@ async def handle_subscription_activated(
         if not plan:
             logger.warning(f"Webhook received for unknown plan: {plan_name}")
             return Response(status_code=200)
+
+        # Persist paid-cycle expiry + last/current plan on the Shop row.
+        # This enables a "grace period" after uninstall, even if Shopify cancels the subscription immediately.
+        try:
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(timezone.utc)
+            shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+            if shop_rec:
+                shop_rec.is_active = True
+                shop_rec.current_plan_name = plan.name
+                shop_rec.last_plan_name = plan.name
+                # Manual plan change/activation means it's NOT a reinstall grace display state.
+                shop_rec.last_uninstalled_at = None
+                # For paid plans, set a hard expiry window (30 days from activation).
+                # For Free, clear any paid expiry.
+                if str(plan.name or "").strip().lower() in ("basic", "standard", "pro"):
+                    shop_rec.access_expires_at = now + timedelta(days=30)
+                else:
+                    shop_rec.access_expires_at = None
+                db.add(shop_rec)
+                db.commit()
+        except Exception as e:
+            logger.warning(f"[Webhook] unable to persist shop plan/expiry for {shop_domain}: {e}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
         # ACTION: Explicitly update the User's plan in DB to ensure immediate effect
         # Wrap in try/except to avoid failing when test DB tables are absent.
@@ -670,29 +827,111 @@ async def handle_app_uninstalled(
         logger.info("[Webhook] app_uninstalled rid=%s shop=%s", _rid(request), shop_domain or "-")
 
         if shop_domain:
-            # Delete Shop and User records if they exist (best-effort).
+            # IMPORTANT: do not delete Shop rows on uninstall.
+            # We need to preserve lifetime credits for Free plan reinstalls.
             try:
                 shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
                 if shop_rec:
-                    db.delete(shop_rec)
-                    db.commit()
-            except Exception as e:
-                logger.warning(f"Unable to delete shop record for {shop_domain}: {e}")
-                db.rollback()
+                    # Persist last_plan_name so we can route reinstalls correctly.
+                    # Prefer the Shop row's current_plan_name; fall back to the User's plan if available.
+                    try:
+                        current = (getattr(shop_rec, "current_plan_name", None) or "").strip()
+                        if not current:
+                            user = get_user_by_username(db, shop_domain)
+                            if user and getattr(user, "plan", None):
+                                current = (getattr(user.plan, "name", None) or "").strip()
+                        if current:
+                            shop_rec.last_plan_name = current
+                    except Exception:
+                        pass
 
-            try:
-                user = get_user_by_username(db, shop_domain)
-                if user:
-                    db.delete(user)
+                    shop_rec.is_active = False
+                    try:
+                        from datetime import datetime, timezone
+                        shop_rec.last_uninstalled_at = datetime.now(timezone.utc)
+                    except Exception:
+                        pass
+                    # Token is invalid after uninstall; keep row but clear token.
+                    shop_rec.access_token = ""
+                    db.add(shop_rec)
                     db.commit()
             except Exception as e:
-                logger.warning(f"Unable to delete user record for {shop_domain}: {e}")
+                logger.warning(f"Unable to deactivate shop record for {shop_domain}: {e}")
                 db.rollback()
 
     except Exception as e:
         logger.error(f"Error handling app/uninstalled webhook: {e}")
 
     # Always return 200 quickly to avoid retries/timeouts
+    return Response(status_code=200)
+
+
+@router.post("/webhooks/app/install")
+async def handle_app_install(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    App install (or reinstall) webhook.
+
+    Requirements:
+    - If Shop exists: set is_active=True and keep lifetime_rewrites_remaining (do NOT reset).
+    - Else: create Shop with lifetime_rewrites_remaining=10.
+    """
+    await verify_webhook_signature(request)
+    shop_domain = (request.headers.get("X-Shopify-Shop-Domain") or "").strip()
+    try:
+        payload = await request.json()
+        shop_domain = (payload.get("myshopify_domain") or shop_domain or "").strip()
+    except Exception:
+        payload = {}
+
+    if not shop_domain:
+        return Response(status_code=200)
+
+    logger.info("[Webhook] app_install rid=%s shop=%s", _rid(request), shop_domain)
+
+    try:
+        shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        if shop_rec:
+            previously_inactive = not bool(getattr(shop_rec, "is_active", True))
+            shop_rec.is_active = True
+            # Preserve existing lifetime credits (critical).
+            # Also preserve monthly counters; monthly reset is handled elsewhere.
+            if previously_inactive:
+                shop_rec.welcome_back_pending = True
+            db.add(shop_rec)
+            db.commit()
+            db.refresh(shop_rec)
+        else:
+            # New shop: create a row with 10 lifetime credits.
+            shop_rec = Shop(
+                domain=shop_domain,
+                access_token="",
+                monthly_rewrites_used=0,
+                lifetime_rewrites_remaining=10,
+                is_active=True,
+                welcome_back_pending=False,
+            )
+            db.add(shop_rec)
+            db.commit()
+            db.refresh(shop_rec)
+
+        # Ensure a User row exists (billing/quota identity). Default to Free plan.
+        user = get_user_by_username(db, shop_domain)
+        if not user:
+            free_plan = db.query(Plan).filter(Plan.name == "Free").first()
+            if free_plan:
+                user = User(username=shop_domain, email=None, plan_id=free_plan.id)
+                db.add(user)
+                db.commit()
+    except Exception as e:
+        logger.warning(f"[Webhook] app_install failed shop={shop_domain}: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     return Response(status_code=200)
 
 @router.get("/api/auth/callback")
