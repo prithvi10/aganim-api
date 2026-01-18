@@ -115,6 +115,8 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
     access_expires_at = _parse_dt(getattr(shop, "access_expires_at", None))
     grace_active = _is_paid_plan(last_plan_name) and isinstance(access_expires_at, datetime) and access_expires_at > now
     expired_paid = _is_paid_plan(last_plan_name) and (not access_expires_at or access_expires_at <= now) and not grace_active
+    last_uninstalled_at = _parse_dt(getattr(shop, "last_uninstalled_at", None))
+    grace_mode = bool(grace_active and isinstance(last_uninstalled_at, datetime))
 
     # During grace period we temporarily treat the shop as their last paid plan (even if Shopify cancelled).
     # This affects quota/feature gates downstream.
@@ -168,6 +170,9 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         "current_plan_name": (getattr(shop, "current_plan_name", None) or None),
         "access_expires_at": access_expires_at,
         "grace_active": bool(grace_active),
+        # Reinstall-only UI flag: show "Grace" only when the shop previously uninstalled.
+        "grace_mode": bool(grace_mode),
+        "last_uninstalled_at": last_uninstalled_at,
         "expired_paid": bool(expired_paid),
     }
 

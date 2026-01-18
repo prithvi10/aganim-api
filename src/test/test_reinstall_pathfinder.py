@@ -37,6 +37,7 @@ async def test_reinstall_path_paid_grace_redirects_home(monkeypatch):
             is_active=False,
             last_plan_name="Basic",
             current_plan_name="Basic",
+            last_uninstalled_at=now - timedelta(hours=1),
             access_expires_at=now + timedelta(days=3),
             lifetime_rewrites_remaining=10,
             monthly_rewrites_used=0,
