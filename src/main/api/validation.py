@@ -35,18 +35,43 @@ def validate_shop_and_quota(db: Session, shop_domain: str, *, enforce_limit: boo
     shop = context["shop"]
     rewrites_used = context["rewrites_used"]
     rewrite_limit = context["rewrite_limit"]
+    billing_cycle_type = str(context.get("billing_cycle_type") or getattr(plan, "billing_cycle_type", "") or "").strip().lower()
+    if not billing_cycle_type:
+        billing_cycle_type = "lifetime" if str(getattr(plan, "name", "") or "") == "Free" else "recurring"
+
+    # Returning paid users whose prepaid window has ended must re-purchase.
+    # (This also prevents them from falling back to Free lifetime credits.)
+    if enforce_limit and bool(context.get("expired_paid")):
+        raise HTTPException(
+            status_code=403,
+            detail="Your pre-paid period has ended. Please select a plan to continue.",
+        )
 
     # 2. Check Quota Logic
     if enforce_limit and rewrite_limit is not None and int(rewrite_limit) != -1:
-        if int(rewrites_used) >= int(rewrite_limit):
-            reset_on = shop.next_reset_date.isoformat() if getattr(shop, "next_reset_date", None) else "unknown"
-            logger.warning(
-                f"⛔ Monthly Limit Reached: shop={user.username} (used={rewrites_used} / limit={rewrite_limit}) reset_on={reset_on}"
-            )
-            raise HTTPException(
-                status_code=403,
-                detail=f"Monthly limit reached. Your limit resets on {reset_on}.",
-            )
+        if billing_cycle_type == "lifetime":
+            remaining = int(context.get("lifetime_rewrites_remaining") or 0)
+            if remaining <= 0:
+                logger.warning(
+                    "[FreePlan] limit_reached shop=%s used=%s limit=%s",
+                    user.username,
+                    rewrites_used,
+                    rewrite_limit,
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail="You've used your 10 free lifetime credits. Upgrade to Basic for 50 rewrites every month!",
+                )
+        else:
+            if int(rewrites_used) >= int(rewrite_limit):
+                reset_on = shop.next_reset_date.isoformat() if getattr(shop, "next_reset_date", None) else "unknown"
+                logger.warning(
+                    f"⛔ Monthly Limit Reached: shop={user.username} (used={rewrites_used} / limit={rewrite_limit}) reset_on={reset_on}"
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Monthly limit reached. Your limit resets on {reset_on}.",
+                )
 
     return context
 
