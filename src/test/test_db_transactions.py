@@ -225,6 +225,7 @@ def test_get_shop_quota_context_paid_grace_overrides_plan(db_session):
         access_token="",
         last_plan_name="Basic",
         current_plan_name="Basic",
+        last_uninstalled_at=now - timedelta(hours=1),
         access_expires_at=now + timedelta(days=2),
         monthly_rewrites_used=0,
         reset_anchor_date=now,
@@ -236,6 +237,7 @@ def test_get_shop_quota_context_paid_grace_overrides_plan(db_session):
     ctx = get_shop_quota_context(db_session, shop_domain)
     assert ctx is not None
     assert ctx["grace_active"] is True
+    assert ctx["grace_mode"] is True
     assert ctx["expired_paid"] is False
     assert ctx["plan"].name == "Basic"
     assert int(ctx["rewrite_limit"]) == 50

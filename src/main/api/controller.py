@@ -461,7 +461,9 @@ async def get_usage(
         # Grace period / reinstall metadata
         "access_expires_at": (auth_context.get("access_expires_at").isoformat() if auth_context.get("access_expires_at") else None),
         "grace_active": bool(auth_context.get("grace_active")),
+        "grace_mode": bool(auth_context.get("grace_mode")),
         "last_plan_name": auth_context.get("last_plan_name"),
+        "last_uninstalled_at": (auth_context.get("last_uninstalled_at").isoformat() if auth_context.get("last_uninstalled_at") else None),
     }
 
 
@@ -509,7 +511,7 @@ async def reinstall_pathfinder(
             pass
 
     if _is_paid(last_plan):
-        if grace_active:
+        if bool(ctx.get("grace_mode")):
             # Grace: keep their paid tier for gating
             try:
                 shop.current_plan_name = last_plan
@@ -648,6 +650,8 @@ async def handle_subscription_activated(
                 shop_rec.is_active = True
                 shop_rec.current_plan_name = plan.name
                 shop_rec.last_plan_name = plan.name
+                # Manual plan change/activation means it's NOT a reinstall grace display state.
+                shop_rec.last_uninstalled_at = None
                 # For paid plans, set a hard expiry window (30 days from activation).
                 # For Free, clear any paid expiry.
                 if str(plan.name or "").strip().lower() in ("basic", "standard", "pro"):
@@ -842,6 +846,11 @@ async def handle_app_uninstalled(
                         pass
 
                     shop_rec.is_active = False
+                    try:
+                        from datetime import datetime, timezone
+                        shop_rec.last_uninstalled_at = datetime.now(timezone.utc)
+                    except Exception:
+                        pass
                     # Token is invalid after uninstall; keep row but clear token.
                     shop_rec.access_token = ""
                     db.add(shop_rec)

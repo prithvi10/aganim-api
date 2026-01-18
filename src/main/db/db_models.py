@@ -52,6 +52,8 @@ class Shop(Base):
     current_plan_name = Column(String, nullable=True)
     # Remembers the last known plan tier across uninstall/reinstall (used for grace period + routing).
     last_plan_name = Column(String, nullable=True)
+    # Tracks whether the merchant actually uninstalled (used to display "Grace" only for reinstall scenarios).
+    last_uninstalled_at = Column(DateTime(timezone=True), nullable=True)
     # The date the merchant installed or last changed plans.
     reset_anchor_date = Column(DateTime(timezone=True), nullable=True)
     # Computed as reset_anchor_date + 30 days (self-healed forward as needed).
