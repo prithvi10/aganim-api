@@ -21,6 +21,17 @@ FAIR_USE_USD_PER_1M_INPUT = float(os.getenv("FAIR_USE_USD_PER_1M_INPUT", "0"))
 FAIR_USE_USD_PER_1M_OUTPUT = float(os.getenv("FAIR_USE_USD_PER_1M_OUTPUT", "10"))
 FAIR_USE_USD_PER_1M_REASONING = float(os.getenv("FAIR_USE_USD_PER_1M_REASONING", "0"))
 
+# ------------------------------------------------------------------------------
+# Pricing / Launch campaign flags (used by UI; never shown as "limits" to merchants)
+# ------------------------------------------------------------------------------
+PROMO_PRICING_ENABLED = str(os.getenv("PROMO_PRICING_ENABLED", "false")).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+)
+
 # Defaults
 DEFAULT_PRODUCT_CATEGORY = "General Goods"
 
