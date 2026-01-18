@@ -204,6 +204,16 @@ def record_successful_rewrite(db: Session, shop_domain: str, amount: int = 1) ->
         shop = sync_usage_limits(db, shop, billing_cycle_type=billing_cycle_type)
         shop.monthly_rewrites_used = int(shop.monthly_rewrites_used or 0) + amt
 
+    # Onboarding Step 1 auto-complete: first successful rewrite (best-effort).
+    try:
+        if hasattr(shop, "is_onboarding_finished") and hasattr(shop, "onboarding_step"):
+            if not bool(getattr(shop, "is_onboarding_finished", False)):
+                cur_step = int(getattr(shop, "onboarding_step", 0) or 0)
+                if cur_step < 1:
+                    shop.onboarding_step = 1
+    except Exception:
+        pass
+
     db.add(shop)
     db.commit()
     db.refresh(shop)
