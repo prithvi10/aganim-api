@@ -441,7 +441,8 @@ async def get_usage(
             pass
     
     return {
-        "plan_name": plan.name,
+        # DB is source-of-truth: use effective_plan_name for UI display/gating.
+        "plan_name": (auth_context.get("effective_plan_name") or plan.name),
         # Product rewrite usage (new system)
         "monthly_rewrites_used": rewrites_used,
         "rewrite_limit": rewrite_limit,
@@ -469,6 +470,13 @@ async def get_usage(
         # Onboarding wizard status
         "is_onboarding_finished": bool(getattr(shop, "is_onboarding_finished", False)),
         "onboarding_step": int(getattr(shop, "onboarding_step", 0) or 0),
+        # DB plan source-of-truth + downgrade metadata
+        "effective_plan_name": auth_context.get("effective_plan_name") or (getattr(shop, "current_plan_name", None) or plan.name),
+        "current_plan_name": getattr(shop, "current_plan_name", None),
+        "pending_plan_name": getattr(shop, "pending_plan_name", None),
+        "pending_plan_effective_at": (getattr(shop, "pending_plan_effective_at", None).isoformat() if getattr(shop, "pending_plan_effective_at", None) else None),
+        "last_plan_change_type": getattr(shop, "last_plan_change_type", None),
+        "last_plan_change_at": (getattr(shop, "last_plan_change_at", None).isoformat() if getattr(shop, "last_plan_change_at", None) else None),
     }
 
 
@@ -674,20 +682,18 @@ async def handle_subscription_activated(
         # Shopify standard webhook for APP_SUBSCRIPTIONS_UPDATE
         # Check for both custom payload and standard Shopify payload
         app_subscription = payload.get('app_subscription', {})
+        status = "ACTIVE"
         
         if app_subscription:
             # Standard Shopify webhook
             shop_domain = request.headers.get("X-Shopify-Shop-Domain")
             plan_name = app_subscription.get('name')
-            status = app_subscription.get('status')
-            
-            if status != "ACTIVE":
-                logger.info(f"Subscription update for {shop_domain} with status {status}. Skipping onboarding.")
-                return Response(status_code=200)
+            status = str(app_subscription.get('status') or "").strip() or "ACTIVE"
         else:
             # Fallback for manual/custom triggers
             shop_domain = payload.get('myshopify_domain')
             plan_name = payload.get('billing_plan') 
+            status = "ACTIVE"
         
         if not shop_domain or not plan_name:
             logger.warning("Webhook payload missing shop domain or plan name")
@@ -723,24 +729,66 @@ async def handle_subscription_activated(
             logger.warning(f"Webhook received for unknown plan: raw={raw_plan_name} canonical={plan_name}")
             return Response(status_code=200)
 
+        def _tier_rank(name: str | None) -> int:
+            n = str(name or "").strip().lower()
+            if n == "pro":
+                return 3
+            if n == "standard":
+                return 2
+            if n == "basic":
+                return 1
+            return 0
+
         # Persist paid-cycle expiry + last/current plan on the Shop row.
         # This enables a "grace period" after uninstall, even if Shopify cancels the subscription immediately.
         try:
             from datetime import datetime, timedelta, timezone
             now = datetime.now(timezone.utc)
             shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+            downgrade_scheduled = False
             if shop_rec:
                 shop_rec.is_active = True
-                shop_rec.current_plan_name = plan.name
-                shop_rec.last_plan_name = plan.name
-                # Manual plan change/activation means it's NOT a reinstall grace display state.
-                shop_rec.last_uninstalled_at = None
-                # For paid plans, set a hard expiry window (30 days from activation).
-                # For Free, clear any paid expiry.
-                if str(plan.name or "").strip().lower() in ("basic", "standard", "pro"):
-                    shop_rec.access_expires_at = now + timedelta(days=30)
+                shop_rec.last_shopify_subscription_status = str(status or "").strip() or None
+
+                current_name = (getattr(shop_rec, "current_plan_name", None) or "").strip() or str(getattr(plan, "name", "") or "").strip()
+                current_rank = _tier_rank(current_name)
+                new_rank = _tier_rank(plan.name)
+
+                # Non-active status means Shopify indicates cancellation/expiry. We schedule a downgrade to Free
+                # at the end of the already-paid window (access_expires_at).
+                if app_subscription and str(status or "").strip().upper() != "ACTIVE":
+                    shop_rec.last_plan_change_type = "cancel"
+                    shop_rec.last_plan_change_at = now
+                    shop_rec.pending_plan_name = "Free"
+                    # Honor existing prepaid window; if missing, be conservative and downgrade soon.
+                    eff = getattr(shop_rec, "access_expires_at", None) or (now + timedelta(days=1))
+                    shop_rec.pending_plan_effective_at = eff
                 else:
-                    shop_rec.access_expires_at = None
+                    # ACTIVE update: can be upgrade or downgrade.
+                    if new_rank < current_rank:
+                        # Downgrade: schedule at end of current paid cycle (do not change current_plan_name yet).
+                        shop_rec.last_plan_change_type = "downgrade"
+                        shop_rec.last_plan_change_at = now
+                        shop_rec.pending_plan_name = plan.name
+                        eff = getattr(shop_rec, "access_expires_at", None) or (now + timedelta(days=30))
+                        shop_rec.pending_plan_effective_at = eff
+                        downgrade_scheduled = True
+                    else:
+                        # Upgrade or same tier: apply immediately.
+                        shop_rec.last_plan_change_type = "upgrade" if new_rank > current_rank else "none"
+                        shop_rec.last_plan_change_at = now
+                        shop_rec.current_plan_name = plan.name
+                        shop_rec.last_plan_name = plan.name
+                        shop_rec.pending_plan_name = None
+                        shop_rec.pending_plan_effective_at = None
+                        # Manual plan change/activation means it's NOT a reinstall grace display state.
+                        shop_rec.last_uninstalled_at = None
+                        # For paid plans, set a hard expiry window (30 days from activation).
+                        # For Free, clear any paid expiry.
+                        if str(plan.name or "").strip().lower() in ("basic", "standard", "pro"):
+                            shop_rec.access_expires_at = now + timedelta(days=30)
+                        else:
+                            shop_rec.access_expires_at = None
                 db.add(shop_rec)
                 db.commit()
         except Exception as e:
@@ -755,10 +803,12 @@ async def handle_subscription_activated(
         try:
             user = get_user_by_username(db, shop_domain)
             if user:
-                logger.info(f"Updating plan for {shop_domain} to {plan.name} (ID: {plan.id})")
-                user.plan_id = plan.id
-                db.commit()
-                db.refresh(user)
+                # On downgrade/cancel we do NOT change user.plan_id until the downgrade is effective.
+                if str(status or "").strip().upper() == "ACTIVE" and not downgrade_scheduled:
+                    logger.info(f"Updating plan for {shop_domain} to {plan.name} (ID: {plan.id})")
+                    user.plan_id = plan.id
+                    db.commit()
+                    db.refresh(user)
 
             # Also reset product rewrite usage when a plan changes (new billing cycle anchor)
             try:

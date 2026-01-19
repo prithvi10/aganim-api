@@ -91,6 +91,16 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         db.commit()
         db.refresh(shop)
 
+    def _tier_rank(name: str | None) -> int:
+        n = str(name or "").strip().lower()
+        if n == "pro":
+            return 3
+        if n == "standard":
+            return 2
+        if n == "basic":
+            return 1
+        return 0
+
     def _is_paid_plan(name: str | None) -> bool:
         n = str(name or "").strip().lower()
         return n in ("basic", "standard", "pro")
@@ -107,11 +117,60 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         return None
 
     now = datetime.now(timezone.utc)
+
+    # -------------------------------------------------------------------------
+    # Apply scheduled plan changes (downgrade/cancel) when effective.
+    # DB is the source of truth: the UI uses effective_plan_name, and gating uses `plan`.
+    # -------------------------------------------------------------------------
+    try:
+        pending_name = (getattr(shop, "pending_plan_name", None) or "").strip() or None
+        pending_at = _parse_dt(getattr(shop, "pending_plan_effective_at", None))
+        if pending_name and isinstance(pending_at, datetime) and pending_at <= now:
+            # Apply pending plan now
+            shop.current_plan_name = pending_name
+            shop.last_plan_name = pending_name
+            shop.pending_plan_name = None
+            shop.pending_plan_effective_at = None
+            shop.last_plan_change_type = "downgrade" if _tier_rank(pending_name) < _tier_rank(getattr(plan, "name", None)) else "none"
+            shop.last_plan_change_at = now
+            db.add(shop)
+            db.commit()
+            db.refresh(shop)
+
+            # Keep User.plan_id consistent with DB plan source-of-truth
+            try:
+                p = get_plan_by_name(db, pending_name)
+                if p:
+                    user.plan_id = p.id
+                    db.add(user)
+                    db.commit()
+                    db.refresh(user)
+                    plan = p
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     last_plan_name = (
         (getattr(shop, "last_plan_name", None) or "").strip()
         or (getattr(shop, "current_plan_name", None) or "").strip()
         or (getattr(plan, "name", None) or "").strip()
     )
+
+    # Effective plan is the DB current plan (unless grace override applies below).
+    effective_plan_name = (getattr(shop, "current_plan_name", None) or "").strip() or str(getattr(plan, "name", "") or "").strip() or "Free"
+    try:
+        override = get_plan_by_name(db, effective_plan_name)
+        if override:
+            plan = override
+    except Exception:
+        pass
     access_expires_at = _parse_dt(getattr(shop, "access_expires_at", None))
     grace_active = _is_paid_plan(last_plan_name) and isinstance(access_expires_at, datetime) and access_expires_at > now
     expired_paid = _is_paid_plan(last_plan_name) and (not access_expires_at or access_expires_at <= now) and not grace_active
@@ -168,6 +227,7 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         # Reinstall / grace period metadata
         "last_plan_name": last_plan_name,
         "current_plan_name": (getattr(shop, "current_plan_name", None) or None),
+        "effective_plan_name": (getattr(shop, "current_plan_name", None) or None),
         "access_expires_at": access_expires_at,
         "grace_active": bool(grace_active),
         # Reinstall-only UI flag: show "Grace" only when the shop previously uninstalled.
