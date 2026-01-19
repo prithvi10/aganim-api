@@ -72,6 +72,17 @@ class Shop(Base):
     onboarding_step = Column(Integer, nullable=False, default=0, server_default="0")
     is_onboarding_finished = Column(Boolean, nullable=False, default=False, server_default="0")
 
+    # -----------------------------------------------------------------------------
+    # Plan change scheduling (DB is the source of truth)
+    # -----------------------------------------------------------------------------
+    # Used for scheduled downgrades/cancellations that become effective at a future time
+    # (e.g., end of current paid cycle). The UI can show banners using these fields.
+    pending_plan_name = Column(String, nullable=True)
+    pending_plan_effective_at = Column(DateTime(timezone=True), nullable=True)
+    last_plan_change_type = Column(String, nullable=True)  # upgrade|downgrade|cancel|none
+    last_plan_change_at = Column(DateTime(timezone=True), nullable=True)
+    last_shopify_subscription_status = Column(String, nullable=True)
+
 class UsageRecord(Base):
     __tablename__ = "usage_records"
 
