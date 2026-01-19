@@ -60,7 +60,7 @@ Transform a factual Japanese product description into localized, benefit-driven 
   - Do NOT include <html>/<body> tags in HTML strings.
   - IMPORTANT: The "description" field must be a valid JSON string. Avoid unescaped double-quotes inside HTML.
     Prefer no HTML attributes, or use attributes without quotes (e.g., class=ai-generated-description).
-  - Always output ALL keys: title, description, seo_title, seo_description, discovered_values (use [] if none).
+  - Always output ALL keys: title, description, seo_title, seo_description, seo_alt_text, discovered_values (use [] if none).
   - If output risks truncation, prioritize returning COMPLETE, VALID JSON and keep description concise rather than omitting required fields.
   - Do NOT output placeholders like [...] or ... outside of JSON strings. Your output must be parseable JSON.
 
@@ -70,6 +70,7 @@ Transform a factual Japanese product description into localized, benefit-driven 
   "description": "<div class=ai-generated-description><h2>Product Overview</h2><p>Generated, localized HTML description goes here.</p></div>",
   "seo_title": "SEO Title (<= 70 characters)",
   "seo_description": "SEO Meta Description (<= 160 characters, CTA focused)",
+  "seo_alt_text": "Descriptive Alt-tag for the main product image",
   "discovered_values": [
     {
       "category": "Artisan Master",

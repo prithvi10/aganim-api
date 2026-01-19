@@ -221,10 +221,10 @@ async def proxy_generate_bulk(
     
     try:
         resp = await process_bulk_generation_request(
-            db=db,
-            request=bulk_request,
-            user=auth_context["user"],
-            plan=auth_context["plan"],
+        db=db,
+        request=bulk_request,
+        user=auth_context["user"],
+        plan=auth_context["plan"],
         )
     except HTTPException:
         logger.exception("[Bulk] http_error rid=%s shop=%s", rid, shop_domain)
@@ -311,7 +311,7 @@ async def admin_ext_generate_bulk(
             resp.get("status") if isinstance(resp, dict) else type(resp).__name__,
             len(resp.get("processed", [])) if isinstance(resp, dict) else None,
             len(resp.get("failed", [])) if isinstance(resp, dict) else None,
-        )
+    )
     except Exception:
         pass
     return resp
@@ -439,7 +439,7 @@ async def get_usage(
             db.rollback()
         except Exception:
             pass
-
+    
     return {
         "plan_name": plan.name,
         # Product rewrite usage (new system)
