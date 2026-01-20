@@ -65,11 +65,18 @@ def recover_title_desc(raw_content: str) -> dict | None:
     seo_title_match = re.search(r'["\']?seo_title["\']?\s*(?:[:=]|is)\s*["\']([^"\']+)["\']', raw_content, re.IGNORECASE)
     seo_desc_match = re.search(r'["\']?seo_description["\']?\s*(?:[:=]|is)\s*["\']([^"\']+)["\']', raw_content, re.IGNORECASE)
     seo_alt_match = re.search(r'["\']?seo_alt_text["\']?\s*(?:[:=]|is)\s*["\']([^"\']+)["\']', raw_content, re.IGNORECASE)
+    seo_insights_match = re.search(r'["\']?seo_insights["\']?\s*(?:[:=]|is)\s*(\{.*?\})', raw_content, re.IGNORECASE | re.DOTALL)
 
     title = title_match.group(1).strip() if title_match else None
     seo_title = seo_title_match.group(1).strip() if seo_title_match else ""
     seo_description = seo_desc_match.group(1).strip() if seo_desc_match else ""
     seo_alt_text = seo_alt_match.group(1).strip() if seo_alt_match else ""
+    seo_insights = {}
+    if seo_insights_match:
+        try:
+            seo_insights = json.loads(seo_insights_match.group(1))
+        except Exception:
+            seo_insights = {}
     description = None
     if desc_match:
         description = desc_match.group(1).strip()
@@ -87,6 +94,7 @@ def recover_title_desc(raw_content: str) -> dict | None:
             "seo_title": seo_title,
             "seo_description": seo_description,
             "seo_alt_text": seo_alt_text,
+            "seo_insights": seo_insights,
         }
     return None
 

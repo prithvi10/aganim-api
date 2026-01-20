@@ -35,6 +35,12 @@ PROMO_PRICING_ENABLED = str(os.getenv("PROMO_PRICING_ENABLED", "false")).strip()
 # Defaults
 DEFAULT_PRODUCT_CATEGORY = "General Goods"
 
+# ------------------------------------------------------------------------------
+# SERP API (Standard/Pro optimization enrichment)
+# ------------------------------------------------------------------------------
+SERP_API_KEY = os.getenv("SERP_API_KEY", "").strip()
+SERP_API_URL = os.getenv("SERP_API_URL", "https://serpapi.com/search").strip()
+
 # Prompts
 SYSTEM_PROMPT = """You are a Senior E-commerce Growth Copywriter.
 
@@ -71,6 +77,11 @@ Transform a factual Japanese product description into localized, benefit-driven 
   "seo_title": "SEO Title (<= 70 characters)",
   "seo_description": "SEO Meta Description (<= 160 characters, CTA focused)",
   "seo_alt_text": "Descriptive Alt-tag for the main product image",
+  "seo_insights": {
+    "lsi_keywords_used": ["keyword1", "keyword2"],
+    "search_intent": "Transactional",
+    "competitive_edge": "One unique Japanese detail competitors missed"
+  },
   "discovered_values": [
     {
       "category": "Artisan Master",

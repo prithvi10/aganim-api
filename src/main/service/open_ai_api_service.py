@@ -44,6 +44,7 @@ class OpenAIService:
         japanese_description: str,
         system_prompt: str | None = None,
         model: str | None = None,
+        competitor_context: list[dict] | None = None,
     ) -> object:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
@@ -54,6 +55,17 @@ class OpenAIService:
         The following Japanese text is pre-labeled with [Section] tags. Translate and beautify EACH section individually, preserving order and structure. Use the Architectural Rules from the system prompt.
         Pre-labeled Japanese Text:
         {japanese_description}
+        """
+
+        if competitor_context:
+            try:
+                serp_block = json.dumps(competitor_context, ensure_ascii=False)
+            except Exception:
+                serp_block = str(competitor_context)
+            user_content += f"""
+
+        Competitor context (top SERP results):
+        {serp_block}
         """
         
         logger.info(f"Rewriting description using AI for product: {product_name}")
