@@ -20,6 +20,7 @@ def mock_user():
 def mock_plan():
     plan = MagicMock(spec=Plan)
     plan.can_stream_responses = False
+    plan.name = "Basic"
     return plan
 
 @pytest.fixture
@@ -117,4 +118,85 @@ async def test_process_generation_updates_secondary_locale_via_graphql(mock_db, 
         kwargs = mock_save_content.call_args[1]
         assert kwargs["target_locale"] == "fr"
 
+
+@pytest.mark.asyncio
+async def test_process_generation_standard_includes_serp_context(mock_db, mock_user, mock_plan, mock_openai_response):
+    request = RewriteRequest(
+        product_name="Matcha",
+        japanese_description="Desc",
+        category="Tea",
+        product_id=123,
+        target_locale="en",
+    )
+
+    mock_plan.name = "Standard"
+
+    mock_shop_info_resp = MagicMock()
+    mock_shop_info_resp.status_code = 200
+    mock_shop_info_resp.json.return_value = {"shop": {"primary_locale": "en"}}
+
+    serp_results = [{"title": "A", "snippet": "S1", "url": "https://a.example"}]
+
+    with patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate, \
+         patch("src.main.core.generation.get_shop_access_token", return_value="token"), \
+         patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
+         patch("src.main.core.generation.serp_service.fetch_top_results", new_callable=AsyncMock, return_value=serp_results), \
+         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.main.core.generation.limiter.is_allowed", return_value=True):
+
+        mock_client = MockClient.return_value
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client.get = AsyncMock(return_value=mock_shop_info_resp)
+
+        result = await process_generation_request(
+            db=mock_db,
+            request=request,
+            user=mock_user,
+            plan=mock_plan,
+        )
+
+        assert result["status"] == "success"
+        _, kwargs = mock_generate.call_args
+        assert kwargs.get("competitor_context") == serp_results
+
+
+@pytest.mark.asyncio
+async def test_process_generation_serp_failure_graceful(mock_db, mock_user, mock_plan, mock_openai_response):
+    request = RewriteRequest(
+        product_name="Matcha",
+        japanese_description="Desc",
+        category="Tea",
+        product_id=123,
+        target_locale="en",
+    )
+
+    mock_plan.name = "Standard"
+
+    mock_shop_info_resp = MagicMock()
+    mock_shop_info_resp.status_code = 200
+    mock_shop_info_resp.json.return_value = {"shop": {"primary_locale": "en"}}
+
+    with patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate, \
+         patch("src.main.core.generation.get_shop_access_token", return_value="token"), \
+         patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
+         patch("src.main.core.generation.serp_service.fetch_top_results", new_callable=AsyncMock, side_effect=Exception("timeout")), \
+         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.main.core.generation.limiter.is_allowed", return_value=True):
+
+        mock_client = MockClient.return_value
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client.get = AsyncMock(return_value=mock_shop_info_resp)
+
+        result = await process_generation_request(
+            db=mock_db,
+            request=request,
+            user=mock_user,
+            plan=mock_plan,
+        )
+
+        assert result["status"] == "success"
+        _, kwargs = mock_generate.call_args
+        assert kwargs.get("competitor_context") is None
 

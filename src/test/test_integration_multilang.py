@@ -160,3 +160,46 @@ async def test_integration_multilang_missing_locale(mock_auth_context, mock_open
         # The detailed error from the service should be propagated
         assert "Locale 'de' is not enabled" in response.json()["detail"]
 
+
+@pytest.mark.asyncio
+async def test_integration_optimize_bulk_with_serp_context(mock_auth_context, mock_openai_response):
+    shop = "test-shop.myshopify.com"
+    mock_auth_context["plan"].name = "Standard"
+
+    mock_shop_info_resp = MagicMock()
+    mock_shop_info_resp.status_code = 200
+    mock_shop_info_resp.json.return_value = {"shop": {"primary_locale": "en"}}
+
+    serp_results = [{"title": "A", "snippet": "S1", "url": "https://a.example"}]
+
+    with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context), \
+         patch("src.main.api.controller.record_successful_rewrite"), \
+         patch("src.main.api.controller.verify_shopify_proxy_request", new_callable=AsyncMock, return_value=shop), \
+         patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate, \
+         patch("src.main.core.generation.get_shop_access_token", return_value="valid_token"), \
+         patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
+         patch("src.main.core.generation.serp_service.fetch_top_results", new_callable=AsyncMock, return_value=serp_results), \
+         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.main.core.generation.limiter.is_allowed", return_value=True):
+
+        mock_client = MockClient.return_value
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client.get = AsyncMock(return_value=mock_shop_info_resp)
+
+        response = client.post(
+            "/api/proxy/generate-bulk",
+            json={
+                "product_name": "Test Product",
+                "japanese_description": "Test Desc",
+                "product_id": 12345,
+                "target_locales": ["en"],
+                "category": "Tea",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+        _, kwargs = mock_generate.call_args
+        assert kwargs.get("competitor_context") == serp_results
+
