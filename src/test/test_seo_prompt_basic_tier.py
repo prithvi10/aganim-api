@@ -92,5 +92,5 @@ async def test_misc_toggle_in_prompt_moves_misc_section_when_off(mock_db, mock_u
     assert len(seen_prompts) == 1
     prompt = seen_prompts[0]
     assert "misc_information" in prompt
-    assert "Move it into a dedicated field `misc_information`" in prompt
+    assert "Move ALL misc/non-product content into a dedicated field `misc_information`" in prompt
 
