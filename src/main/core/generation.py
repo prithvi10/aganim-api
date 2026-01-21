@@ -554,10 +554,14 @@ SEO METADATA (STRICT):
 MISC / NON-PRODUCT CONTENT HANDLING:
 - Identify any non-product or administrative content (e.g., SEO/meta drafts, multilingual notes, hashtags, logistics/returns blocks, shipping disclaimers, metadata blobs).
 - {misc_action}
-- Do NOT include misc content inside the main description/title/SEO fields.
+- Keep ALL misc content out of title, description, seo_title, seo_description, and seo_alt_text.
 - NEVER include hashtags anywhere in the output.
 """.format(
-        misc_action="Remove it entirely from the output." if remove_irrelevant_content else "Move it into a dedicated field `misc_information` as concise bullets, and keep it OUT of the main description/title/SEO fields."
+        misc_action=(
+            "Remove ALL misc/non-product content entirely from the output. Do NOT emit it in any field."
+            if remove_irrelevant_content
+            else "Move ALL misc/non-product content into a dedicated field `misc_information` as concise bullets, and keep it OUT of title/description/SEO fields."
+        )
     ).rstrip()
 
     pst_block = """
@@ -566,13 +570,15 @@ CTR / PST GUARDRAIL (ALL TIERS):
 - The description MUST contain: (P) one sentence with a question/pain point or desire, (S) a concrete benefit with a key spec, (T) a CTA or trust cue. If missing in source, add them.
 - Keep it concise and high-conversion; avoid vague or generic phrasing.
 - Do NOT repeat SEO title/description inside the product description.
+- If misc content (SEO/meta/multilingual notes/hashtags/logistics) appears in source, handle it according to the MISC block above.
 """.rstrip()
 
     dimensions_block = """
 
 DIMENSIONS & SPECS (REQUIRED):
 - Extract all measurements (cm, mm, m, g, kg, ml, L, in, oz, lb, etc.) from the source.
-- Present them as a concise mini-table or bullet list labeled "Dimensions" immediately after the main description.
+- Present them as a compact Markdown table labeled "Dimensions" immediately after the main description, with columns: Item | Measurement (Metric) | Measurement (US/Imperial, if applicable).
+- If only one item, still use a one-row table.
 - Do NOT invent measurements; include only those found in the source. Include US equivalents only when available or convertible (when auto_convert_units applies).
 """.rstrip()
 
