@@ -35,6 +35,12 @@ PROMO_PRICING_ENABLED = str(os.getenv("PROMO_PRICING_ENABLED", "false")).strip()
 # Defaults
 DEFAULT_PRODUCT_CATEGORY = "General Goods"
 
+# ------------------------------------------------------------------------------
+# SERP API (Standard/Pro optimization enrichment)
+# ------------------------------------------------------------------------------
+SERP_API_KEY = os.getenv("SERP_API_KEY", "").strip()
+SERP_API_URL = os.getenv("SERP_API_URL", "https://serpapi.com/search").strip()
+
 # Prompts
 SYSTEM_PROMPT = """You are a Senior E-commerce Growth Copywriter.
 
@@ -60,7 +66,7 @@ Transform a factual Japanese product description into localized, benefit-driven 
   - Do NOT include <html>/<body> tags in HTML strings.
   - IMPORTANT: The "description" field must be a valid JSON string. Avoid unescaped double-quotes inside HTML.
     Prefer no HTML attributes, or use attributes without quotes (e.g., class=ai-generated-description).
-  - Always output ALL keys: title, description, seo_title, seo_description, discovered_values (use [] if none).
+  - Always output ALL keys: title, description, seo_title, seo_description, seo_alt_text, discovered_values (use [] if none).
   - If output risks truncation, prioritize returning COMPLETE, VALID JSON and keep description concise rather than omitting required fields.
   - Do NOT output placeholders like [...] or ... outside of JSON strings. Your output must be parseable JSON.
 
@@ -70,6 +76,12 @@ Transform a factual Japanese product description into localized, benefit-driven 
   "description": "<div class=ai-generated-description><h2>Product Overview</h2><p>Generated, localized HTML description goes here.</p></div>",
   "seo_title": "SEO Title (<= 70 characters)",
   "seo_description": "SEO Meta Description (<= 160 characters, CTA focused)",
+  "seo_alt_text": "Descriptive Alt-tag for the main product image",
+  "seo_insights": {
+    "lsi_keywords_used": ["keyword1", "keyword2"],
+    "search_intent": "Transactional",
+    "competitive_edge": "One unique Japanese detail competitors missed"
+  },
   "discovered_values": [
     {
       "category": "Artisan Master",

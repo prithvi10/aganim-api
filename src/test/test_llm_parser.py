@@ -14,10 +14,11 @@ def test_parse_llm_json_surrounding_text():
     assert parse_llm_json(raw) == {"title": "Test", "description": "Desc"}
 
 def test_recover_title_desc_success():
-    raw = 'The title is "My Title" and description: "My Desc"'
+    raw = 'The title is "My Title" and description: "My Desc" seo_alt_text: "Black leather wallet - slim design"'
     recovered = recover_title_desc(raw)
     assert recovered["title"] == "My Title"
     assert recovered["description"] == "My Desc"
+    assert recovered["seo_alt_text"] == "Black leather wallet - slim design"
 
 def test_recover_title_desc_partial():
     raw = 'Just the title is "Only Title"'
