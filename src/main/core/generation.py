@@ -7,6 +7,7 @@ import json
 from src.main.db.db_models import User
 from src.main.api.models import RewriteRequest, BulkRewriteRequest
 from src.main.service.open_ai_api_service import OpenAIService
+from src.main.service import serp_service
 from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import (
     LOCAL_RATE_LIMIT_CONFIG,
@@ -143,6 +144,8 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
             "description": str(parsed.get("description") or "").strip(),
             "seo_title": str(parsed.get("seo_title") or "").strip(),
             "seo_description": str(parsed.get("seo_description") or "").strip(),
+            "seo_alt_text": str(parsed.get("seo_alt_text") or "").strip(),
+            "seo_insights": parsed.get("seo_insights") if isinstance(parsed.get("seo_insights"), dict) else {},
         }
         if not data["description"]:
             data["description"] = raw_content
@@ -157,6 +160,8 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
             "description": parsed.get("rewritten_description") or "",
             "seo_title": str(parsed.get("seo_title") or "").strip(),
             "seo_description": str(parsed.get("seo_description") or "").strip(),
+            "seo_alt_text": str(parsed.get("seo_alt_text") or "").strip(),
+            "seo_insights": parsed.get("seo_insights") if isinstance(parsed.get("seo_insights"), dict) else {},
         }
         if not data["description"]:
             data["description"] = raw_content
@@ -172,13 +177,19 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
                 "description": str(legacy.get("description") or raw_content),
                 "seo_title": str(legacy.get("seo_title") or ""),
                 "seo_description": str(legacy.get("seo_description") or ""),
+                "seo_alt_text": str(legacy.get("seo_alt_text") or ""),
+                "seo_insights": legacy.get("seo_insights") if isinstance(legacy.get("seo_insights"), dict) else {},
             },
             [],
             meta,
         )
 
     meta["parse_mode"] = "raw_fallback"
-    return ({"title": "", "description": raw_content, "seo_title": "", "seo_description": ""}, [], meta)
+    return (
+        {"title": "", "description": raw_content, "seo_title": "", "seo_description": "", "seo_alt_text": "", "seo_insights": {}},
+        [],
+        meta,
+    )
 
 
 def _log_llm_contract_health(
@@ -197,6 +208,7 @@ def _log_llm_contract_health(
         title_present = bool(str(parsed.get("title") or "").strip())
         seo_title_present = bool(str(parsed.get("seo_title") or "").strip())
         seo_desc_present = bool(str(parsed.get("seo_description") or "").strip())
+        seo_alt_present = bool(str(parsed.get("seo_alt_text") or "").strip())
         desc_len = len(str(parsed.get("description") or ""))
 
         missing = []
@@ -208,6 +220,8 @@ def _log_llm_contract_health(
             missing.append("seo_title")
         if not seo_desc_present:
             missing.append("seo_description")
+        if not seo_alt_present:
+            missing.append("seo_alt_text")
 
         logger.debug(
             "[LLMContract] shop=%s locale=%s parse=%s raw_len=%s title=%s desc_len=%s seo_title=%s seo_desc=%s discovered_raw=%s discovered_ok=%s missing=%s",
@@ -247,6 +261,23 @@ def _should_log_llm_full(shop: str) -> bool:
     """
     if os.getenv("LOG_LLM_FULL", "").strip() != "1":
         return False
+
+
+async def _fetch_primary_locale(shop: str, access_token: str | None) -> str:
+    primary_locale = "en"
+    if not access_token:
+        return primary_locale
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://{shop}/admin/api/2024-07/shop.json",
+                headers={"X-Shopify-Access-Token": access_token},
+            )
+            if resp.status_code == 200:
+                primary_locale = resp.json().get("shop", {}).get("primary_locale", "en")
+    except Exception:
+        pass
+    return primary_locale
     only = (os.getenv("LOG_LLM_SHOP", "") or "").strip().lower()
     if only and only != str(shop or "").strip().lower():
         return False
@@ -293,8 +324,10 @@ def _log_llm_full_response(
 
 
 def _missing_seo_fields(parsed: dict) -> bool:
-    return not bool(str(parsed.get("seo_title") or "").strip()) or not bool(
-        str(parsed.get("seo_description") or "").strip()
+    return (
+        not bool(str(parsed.get("seo_title") or "").strip())
+        or not bool(str(parsed.get("seo_description") or "").strip())
+        or not bool(str(parsed.get("seo_alt_text") or "").strip())
     )
 
 
@@ -313,7 +346,7 @@ def _augment_seo_and_discoveries_if_missing(
 ) -> tuple[dict, list[dict]]:
     """
     If the primary generation response was truncated or missing SEO/insights, run a small,
-    contract-focused follow-up call to fetch ONLY: seo_title, seo_description, discovered_values.
+    contract-focused follow-up call to fetch ONLY: seo_title, seo_description, seo_alt_text, discovered_values.
     """
     try:
         need = _missing_seo_fields(parsed) or parse_meta.get("parse_mode") in ("recover_title_desc", "raw_fallback")
@@ -325,7 +358,7 @@ def _augment_seo_and_discoveries_if_missing(
             shop,
             target_locale,
             parse_meta.get("parse_mode"),
-            "seo_title,seo_description" if _missing_seo_fields(parsed) else "-",
+            "seo_title,seo_description,seo_alt_text" if _missing_seo_fields(parsed) else "-",
             len(discovered_values or []),
         )
 
@@ -335,6 +368,7 @@ Return ONLY valid JSON with this exact shape:
 {{
   "seo_title": "...",
   "seo_description": "...",
+  "seo_alt_text": "...",
   "discovered_values": [
     {{
       "category": "Regional Pedigree | Tactile & Sensory | Time-as-Luxury | Artisan Master",
@@ -347,6 +381,7 @@ Return ONLY valid JSON with this exact shape:
 
 Rules:
 - Output language for seo_title/seo_description must match TARGET LANGUAGE: {target_locale}
+- Output language for seo_alt_text must match TARGET LANGUAGE: {target_locale}
 - Evidence must quote a short Japanese snippet from the source.
 - Categories MUST be one of: Regional Pedigree, Tactile & Sensory, Time-as-Luxury, Artisan Master.
 - If there is no clear evidence, return discovered_values: [].
@@ -376,10 +411,13 @@ Rules:
 
         seo_title = str(healed.get("seo_title") or "").strip()
         seo_desc = str(healed.get("seo_description") or "").strip()
+        seo_alt = str(healed.get("seo_alt_text") or "").strip()
         if seo_title:
             parsed["seo_title"] = seo_title
         if seo_desc:
             parsed["seo_description"] = seo_desc
+        if seo_alt:
+            parsed["seo_alt_text"] = seo_alt
 
         healed_values = _normalize_discovered_values(healed.get("discovered_values"))
         if healed_values:
@@ -394,6 +432,7 @@ Rules:
                     {
                         "seo_title": parsed.get("seo_title"),
                         "seo_description": parsed.get("seo_description"),
+                        "seo_alt_text": parsed.get("seo_alt_text"),
                         "discovered_values": discovered_values,
                     },
                     ensure_ascii=False,
@@ -429,8 +468,12 @@ def _build_dynamic_prompt(
     *,
     auto_convert_units: bool = False,
     tone_profile: str = "professional",
+    plan_name: str | None = None,
+    brand_name: str | None = None,
 ) -> str:
     market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
+    pname = str(plan_name or "").strip().lower()
+    brand = str(brand_name or "").strip()
     unit_conversion_block = ""
     if auto_convert_units and _is_english_locale(target_locale):
         unit_conversion_block = """
@@ -454,19 +497,7 @@ FACT ACCURACY (STRICT):
 
 {VALUE_DISCOVERY_PROMPT}
 """.rstrip()
-    return f"""{SYSTEM_PROMPT}
-
-TARGET LANGUAGE: {target_locale}
-MARKET PERSONA: {market_persona}
-
-ADDITIONAL LOCALIZATION RULES:
-- Write both "title" and "description" in the TARGET LANGUAGE ({target_locale}) only.
-- Use local idioms and market-specific triggers for {market_persona}. Avoid literal English/Japanese if not the target.
-- For zh-TW: prefer Taiwanese Mandarin expressions and highlight CP値/CP ratio.
-- For ko: keep tone natural for Korean shoppers.
-- Keep JSON shape exactly:
-  {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "discovered_values": [...]}}.
-- Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned.
+    seo_block = f"""
 
 SEO METADATA (STRICT):
 - Generate locale-specific SEO metadata for TARGET LANGUAGE ({target_locale}) and MARKET PERSONA ({market_persona}).
@@ -474,6 +505,54 @@ SEO METADATA (STRICT):
 - Tone must be Call-to-Action focused (e.g., "Shop the authentic ...", "Discover ...").
 - seo_title must be <= 70 characters.
 - seo_description must be <= 160 characters.
+- seo_alt_text: generate a descriptive, keyword-relevant alt tag for the MAIN product image (no quotes needed).
+""".rstrip()
+
+    serp_insights_block = ""
+    if pname in ("standard", "pro"):
+        serp_insights_block = f"""
+
+### SEO INSIGHTS (STANDARD TIER):
+- Benchmarking: Analyze the provided competitor_context.
+- You must identify and naturally inject 5-8 high-density keywords (LSI) used by the Top 3 Google winners.
+- Return a JSON object containing the description and an seo_insights object with:
+  - lsi_keywords_used (list)
+  - search_intent (Transactional or Informational)
+  - competitive_edge (one unique Japanese detail competitors missed)
+""".rstrip()
+
+    if pname == "basic":
+        seo_block = f"""
+
+### SEO & CTR ENGINEERING (BASIC TIER):
+- **SEO Title (<= 70 chars):**
+  - Format: [Primary Keyword] | [Key Benefit/Unique Value] | [Brand Name]
+  - Strategy: Lead with the most important keyword.
+  - Brand Name: Use "{brand}" when appropriate; if it would harm clarity or exceed length, omit it.
+- **SEO Description (<= 160 chars):**
+  - Use the **PST Formula**: (1) State a specific **Problem** or desire, (2) Present the product as the **Solution**, (3) End with a high-authority **Trust** signal or CTA.
+  - Example style: "Tired of mass-produced tea? (P) Discover handcrafted Uji Matcha (S). Direct from Japan—shop now. (T)"
+- **Image Alt-Text (seo_alt_text) (NEW):**
+  - Generate a descriptive, keyword-rich Alt-tag for the main product image.
+  - Format: "[Color/Style] [Material] [Product Type] - [Key Feature]"
+""".rstrip()
+
+    return f"""{SYSTEM_PROMPT}
+
+TARGET LANGUAGE: {target_locale}
+MARKET PERSONA: {market_persona}
+BRAND NAME: {brand or "N/A"}
+
+ADDITIONAL LOCALIZATION RULES:
+- Write both "title" and "description" in the TARGET LANGUAGE ({target_locale}) only.
+- Use local idioms and market-specific triggers for {market_persona}. Avoid literal English/Japanese if not the target.
+- For zh-TW: prefer Taiwanese Mandarin expressions and highlight CP値/CP ratio.
+- For ko: keep tone natural for Korean shoppers.
+- Keep JSON shape exactly:
+  {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "seo_alt_text": "...", "seo_insights": {{"lsi_keywords_used": [...], "search_intent": "...", "competitive_edge": "..."}}, "discovered_values": [...]}}.
+- Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned.
+{seo_block}
+{serp_insights_block}
 
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
@@ -495,12 +574,19 @@ async def _generate_and_save_for_locale(
     *,
     auto_convert_units: bool = False,
     tone_profile: str = "professional",
+    plan_name: str | None = None,
+    competitor_context: list[dict] | None = None,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
     """
     dynamic_prompt = _build_dynamic_prompt(
-        target_locale, auto_convert_units=auto_convert_units, tone_profile=tone_profile
+        target_locale,
+        auto_convert_units=auto_convert_units,
+        tone_profile=tone_profile,
+        # Use canonical plan name for SEO tiering (Basic gets PST + specific formats).
+        plan_name=plan_name,
+        brand_name=str(shop or "").replace(".myshopify.com", ""),
     )
 
     base_model = get_base_model_for_shop(db, shop)
@@ -512,6 +598,7 @@ async def _generate_and_save_for_locale(
         japanese_description=processed_description,
         system_prompt=dynamic_prompt,
         model=model_override,
+        competitor_context=competitor_context,
     )
 
     # Internal-only cost accounting + fair-use monitoring (never blocks)
@@ -523,6 +610,21 @@ async def _generate_and_save_for_locale(
 
     raw_content = openai_response.choices[0].message.content
     parsed, discovered_values, parse_meta = _parse_model_json(raw_content or "")
+    competitor_titles: list[str] = []
+    competitor_results: list[dict] = []
+    if isinstance(competitor_context, list):
+        for item in competitor_context:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            snippet = str(item.get("snippet") or "").strip()
+            link = str(item.get("link") or "").strip()
+            if title or snippet or link:
+                competitor_results.append(
+                    {"title": title or None, "snippet": snippet or None, "link": link or None}
+                )
+        competitor_results = competitor_results[:3]
+        competitor_titles = [str(r.get("title") or "").strip() for r in competitor_results if r.get("title")]
     _log_llm_contract_health(
         shop=shop,
         target_locale=target_locale,
@@ -573,7 +675,11 @@ async def _generate_and_save_for_locale(
     
     return {
         "locale": target_locale,
-        "data": parsed,
+        "data": {
+            **parsed,
+            "competitor_titles": competitor_titles,
+            "competitor_results": competitor_results,
+        },
         "discovered_values": discovered_values,
     }
 
@@ -597,6 +703,8 @@ async def process_generation_request(
         target_locale,
         auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
         tone_profile=tone_profile,
+        plan_name=plan_name,
+        brand_name=str(shop or "").replace(".myshopify.com", ""),
     )
 
     try:
@@ -619,18 +727,24 @@ async def process_generation_request(
             logger.error(f"❌ Access Token missing for shop {shop} during product update.")
             raise HTTPException(status_code=500, detail="Shopify Access Token not found. Re-install app.")
 
-        # Need primary locale for routing REST/GraphQL
         primary_locale = "en"
-        if access_token:
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        f"https://{shop}/admin/api/2024-07/shop.json", 
-                        headers={"X-Shopify-Access-Token": access_token}
-                    )
-                    if resp.status_code == 200:
-                        primary_locale = resp.json().get("shop", {}).get("primary_locale", "en")
-            except Exception: pass
+        competitor_context: list[dict] | None = None
+        plan_name = str(getattr(plan, "name", "") or "")
+
+        if plan_name in ("Standard", "Pro"):
+            keyword = f"{request.product_name or ''} {request.category or ''}".strip()
+            tasks = [
+                serp_service.fetch_top_results(keyword),
+                _fetch_primary_locale(shop, access_token),
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            serp_res, primary_res = results[0], results[1]
+            if not isinstance(serp_res, Exception) and serp_res:
+                competitor_context = serp_res
+            if not isinstance(primary_res, Exception) and primary_res:
+                primary_locale = primary_res
+        else:
+            primary_locale = await _fetch_primary_locale(shop, access_token)
 
         result = await _generate_and_save_for_locale(
             db,
@@ -644,6 +758,8 @@ async def process_generation_request(
             access_token,
             auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
             tone_profile=tone_profile,
+            plan_name=plan_name,
+            competitor_context=competitor_context,
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -693,18 +809,25 @@ async def process_bulk_generation_request(
         if request.product_id and not access_token:
             raise HTTPException(status_code=500, detail="Shopify Access Token not found.")
 
-        # 2. Fetch Primary Locale once
+        # 2. Fetch Primary Locale + SERP context in parallel for Standard/Pro
         primary_locale = "en"
-        if access_token:
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        f"https://{shop}/admin/api/2024-07/shop.json", 
-                        headers={"X-Shopify-Access-Token": access_token}
-                    )
-                    if resp.status_code == 200:
-                        primary_locale = resp.json().get("shop", {}).get("primary_locale", "en")
-            except Exception: pass
+        competitor_context: list[dict] | None = None
+        plan_name = str(getattr(plan, "name", "") or "")
+
+        if plan_name in ("Standard", "Pro"):
+            keyword = f"{request.product_name or ''} {request.category or ''}".strip()
+            tasks = [
+                serp_service.fetch_top_results(keyword),
+                _fetch_primary_locale(shop, access_token),
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            serp_res, primary_res = results[0], results[1]
+            if not isinstance(serp_res, Exception) and serp_res:
+                competitor_context = serp_res
+            if not isinstance(primary_res, Exception) and primary_res:
+                primary_locale = primary_res
+        else:
+            primary_locale = await _fetch_primary_locale(shop, access_token)
 
         processed_desc = detect_and_label_sections(request.japanese_description)
 
@@ -716,7 +839,6 @@ async def process_bulk_generation_request(
         non_primary_locales = [l for l in target_locales if l != primary_locale]
         primary_locales = [l for l in target_locales if l == primary_locale]
 
-        plan_name = str(getattr(plan, "name", "") or "")
         tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
 
         def _task(locale: str):
@@ -732,6 +854,8 @@ async def process_bulk_generation_request(
                 access_token,
                 auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
                 tone_profile=tone_profile,
+                plan_name=plan_name,
+                competitor_context=competitor_context,
             )
 
         results: list = []

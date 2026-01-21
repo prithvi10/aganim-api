@@ -48,6 +48,11 @@ def _ensure_shop_columns_exist():
             add("monthly_cost_accumulated REAL DEFAULT 0", "monthly_cost_accumulated")
             add("onboarding_step INTEGER DEFAULT 0", "onboarding_step")
             add("is_onboarding_finished INTEGER DEFAULT 0", "is_onboarding_finished")
+            add("pending_plan_name TEXT", "pending_plan_name")
+            add("pending_plan_effective_at TEXT", "pending_plan_effective_at")
+            add("last_plan_change_type TEXT", "last_plan_change_type")
+            add("last_plan_change_at TEXT", "last_plan_change_at")
+            add("last_shopify_subscription_status TEXT", "last_shopify_subscription_status")
             conn.commit()
         return
 
@@ -66,6 +71,11 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_cost_accumulated NUMERIC(12,2) DEFAULT 0"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS onboarding_step INTEGER DEFAULT 0"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_onboarding_finished BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS pending_plan_name VARCHAR"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS pending_plan_effective_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_plan_change_type VARCHAR"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_plan_change_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_shopify_subscription_status VARCHAR"))
         conn.commit()
 
 
