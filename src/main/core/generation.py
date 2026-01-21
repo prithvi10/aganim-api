@@ -552,26 +552,28 @@ SEO METADATA (STRICT):
     misc_block = """
 
 MISC / NON-PRODUCT CONTENT HANDLING:
-- Identify any non-product or administrative content (e.g., SEO title drafts, multilingual notes, hashtags, shipping disclaimers, metadata blobs).
+- Identify any non-product or administrative content (e.g., SEO/meta drafts, multilingual notes, hashtags, logistics/returns blocks, shipping disclaimers, metadata blobs).
 - {misc_action}
 - Do NOT include misc content inside the main description/title/SEO fields.
+- NEVER include hashtags anywhere in the output.
 """.format(
-        misc_action="Remove it entirely from the output." if remove_irrelevant_content else "Move it into a dedicated field `misc_information` as a concise bullet list, and keep it OUT of the main description/title/SEO fields."
+        misc_action="Remove it entirely from the output." if remove_irrelevant_content else "Move it into a dedicated field `misc_information` as concise bullets, and keep it OUT of the main description/title/SEO fields."
     ).rstrip()
 
     pst_block = """
 
 CTR / PST GUARDRAIL (ALL TIERS):
-- Ensure the description contains a clear Problem/Question or desire signal (P), a concrete Solution (S), and a Trust/CTA (T). Add a short question or pain point if missing in the source.
+- The description MUST contain: (P) one sentence with a question/pain point or desire, (S) a concrete benefit with a key spec, (T) a CTA or trust cue. If missing in source, add them.
 - Keep it concise and high-conversion; avoid vague or generic phrasing.
+- Do NOT repeat SEO title/description inside the product description.
 """.rstrip()
 
     dimensions_block = """
 
 DIMENSIONS & SPECS (REQUIRED):
 - Extract all measurements (cm, mm, m, g, kg, ml, L, in, oz, lb, etc.) from the source.
-- Present them as a concise table or bullet list labeled \"Dimensions\" after the main description.
-- Do NOT invent measurements; include only those found in the source.
+- Present them as a concise mini-table or bullet list labeled "Dimensions" immediately after the main description.
+- Do NOT invent measurements; include only those found in the source. Include US equivalents only when available or convertible (when auto_convert_units applies).
 """.rstrip()
 
     return f"""{SYSTEM_PROMPT}
