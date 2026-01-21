@@ -575,14 +575,13 @@ CTR / PST GUARDRAIL (ALL TIERS):
 
     dimensions_block = """
 
-### DIMENSIONS & SPECS (HTML TABLE, STRICT):
-- **Trigger:** If the source contains any measurements (cm, mm, m, g, kg, ml, L, in, oz, lb, etc.), you MUST generate an HTML table.
-- **Placement:** Insert this table at the end of the "description" HTML string, preceded by <h3>Dimensions & Specifications</h3>.
-- **Conversion:** ALWAYS include a column for US/Imperial equivalents. Use (cm to in), (kg to lb), (ml to fl oz). Round to 1 decimal place.
-- **Table Structure:**
-    <table><thead><tr><th>Item</th><th>Metric</th><th>US/Imperial</th></tr></thead><tbody></tbody></table>
-- **Constraints:** Do NOT output Markdown pipes (|). Do NOT use bullets. If the item is unnamed, use a placeholder like "Product" or "Unit".
-- **Zero-Data Rule:** If no measurements exist in the source, do NOT emit any part of this section.
+### MANDATORY OUTPUT REQUIREMENT: DIMENSIONS TABLE
+- You MUST generate an HTML <table> containing all product dimensions and specifications found in the text.
+- **LOCATION:** This table MUST be the LAST element in the "description" field.
+- **HEADER:** <h3>Dimensions & Specifications</h3>
+- **COLUMNS:** Item | Metric | US/Imperial
+- **CONTENT:** Extract all measurements (width, depth, height, weight, capacity, etc.).
+- **FAILURE TO INCLUDE THIS TABLE IS A CRITICAL ERROR.**
 """.rstrip()
 
     return f"""{SYSTEM_PROMPT}
@@ -602,12 +601,12 @@ ADDITIONAL LOCALIZATION RULES:
 {seo_block}
 {serp_insights_block}
 {pst_block}
-{dimensions_block}
 {misc_block}
 
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
 {unit_conversion_block}
+{dimensions_block}
 {tone_block}
 {value_discovery_block}
 """
