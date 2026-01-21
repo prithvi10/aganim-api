@@ -145,6 +145,7 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
             "seo_title": str(parsed.get("seo_title") or "").strip(),
             "seo_description": str(parsed.get("seo_description") or "").strip(),
             "seo_alt_text": str(parsed.get("seo_alt_text") or "").strip(),
+            "misc_information": str(parsed.get("misc_information") or "").strip(),
             "seo_insights": parsed.get("seo_insights") if isinstance(parsed.get("seo_insights"), dict) else {},
         }
         if not data["description"]:
@@ -161,6 +162,7 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
             "seo_title": str(parsed.get("seo_title") or "").strip(),
             "seo_description": str(parsed.get("seo_description") or "").strip(),
             "seo_alt_text": str(parsed.get("seo_alt_text") or "").strip(),
+            "misc_information": str(parsed.get("misc_information") or "").strip(),
             "seo_insights": parsed.get("seo_insights") if isinstance(parsed.get("seo_insights"), dict) else {},
         }
         if not data["description"]:
@@ -178,6 +180,7 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
                 "seo_title": str(legacy.get("seo_title") or ""),
                 "seo_description": str(legacy.get("seo_description") or ""),
                 "seo_alt_text": str(legacy.get("seo_alt_text") or ""),
+                "misc_information": str(legacy.get("misc_information") or "").strip(),
                 "seo_insights": legacy.get("seo_insights") if isinstance(legacy.get("seo_insights"), dict) else {},
             },
             [],
@@ -186,7 +189,15 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
 
     meta["parse_mode"] = "raw_fallback"
     return (
-        {"title": "", "description": raw_content, "seo_title": "", "seo_description": "", "seo_alt_text": "", "seo_insights": {}},
+        {
+            "title": "",
+            "description": raw_content,
+            "seo_title": "",
+            "seo_description": "",
+            "seo_alt_text": "",
+            "misc_information": "",
+            "seo_insights": {},
+        },
         [],
         meta,
     )
@@ -470,6 +481,7 @@ def _build_dynamic_prompt(
     tone_profile: str = "professional",
     plan_name: str | None = None,
     brand_name: str | None = None,
+    remove_irrelevant_content: bool = True,
 ) -> str:
     market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
     pname = str(plan_name or "").strip().lower()
@@ -537,6 +549,31 @@ SEO METADATA (STRICT):
   - Format: "[Color/Style] [Material] [Product Type] - [Key Feature]"
 """.rstrip()
 
+    misc_block = """
+
+MISC / NON-PRODUCT CONTENT HANDLING:
+- Identify any non-product or administrative content (e.g., SEO title drafts, multilingual notes, hashtags, shipping disclaimers, metadata blobs).
+- {misc_action}
+- Do NOT include misc content inside the main description/title/SEO fields.
+""".format(
+        misc_action="Remove it entirely from the output." if remove_irrelevant_content else "Move it into a dedicated field `misc_information` as a concise bullet list, and keep it OUT of the main description/title/SEO fields."
+    ).rstrip()
+
+    pst_block = """
+
+CTR / PST GUARDRAIL (ALL TIERS):
+- Ensure the description contains a clear Problem/Question or desire signal (P), a concrete Solution (S), and a Trust/CTA (T). Add a short question or pain point if missing in the source.
+- Keep it concise and high-conversion; avoid vague or generic phrasing.
+""".rstrip()
+
+    dimensions_block = """
+
+DIMENSIONS & SPECS (REQUIRED):
+- Extract all measurements (cm, mm, m, g, kg, ml, L, in, oz, lb, etc.) from the source.
+- Present them as a concise table or bullet list labeled \"Dimensions\" after the main description.
+- Do NOT invent measurements; include only those found in the source.
+""".rstrip()
+
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
@@ -549,10 +586,13 @@ ADDITIONAL LOCALIZATION RULES:
 - For zh-TW: prefer Taiwanese Mandarin expressions and highlight CP値/CP ratio.
 - For ko: keep tone natural for Korean shoppers.
 - Keep JSON shape exactly:
-  {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "seo_alt_text": "...", "seo_insights": {{"lsi_keywords_used": [...], "search_intent": "...", "competitive_edge": "..."}}, "discovered_values": [...]}}.
+  {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "seo_alt_text": "...", "misc_information": "...", "seo_insights": {{"lsi_keywords_used": [...], "search_intent": "...", "competitive_edge": "..."}}, "discovered_values": [...]}}.
 - Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned.
 {seo_block}
 {serp_insights_block}
+{pst_block}
+{dimensions_block}
+{misc_block}
 
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
@@ -576,6 +616,7 @@ async def _generate_and_save_for_locale(
     tone_profile: str = "professional",
     plan_name: str | None = None,
     competitor_context: list[dict] | None = None,
+    remove_irrelevant_content: bool = True,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
@@ -587,6 +628,7 @@ async def _generate_and_save_for_locale(
         # Use canonical plan name for SEO tiering (Basic gets PST + specific formats).
         plan_name=plan_name,
         brand_name=str(shop or "").replace(".myshopify.com", ""),
+        remove_irrelevant_content=remove_irrelevant_content,
     )
 
     base_model = get_base_model_for_shop(db, shop)
@@ -760,6 +802,7 @@ async def process_generation_request(
             tone_profile=tone_profile,
             plan_name=plan_name,
             competitor_context=competitor_context,
+            remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -856,6 +899,7 @@ async def process_bulk_generation_request(
                 tone_profile=tone_profile,
                 plan_name=plan_name,
                 competitor_context=competitor_context,
+                remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
             )
 
         results: list = []

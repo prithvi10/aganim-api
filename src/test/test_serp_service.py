@@ -54,3 +54,20 @@ async def test_fetch_top_results_timeout_or_error_returns_none():
 
         results = await serp_service.fetch_top_results("matcha tea")
         assert results is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_top_results_non_200_returns_none():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 500
+    mock_resp.text = "error"
+    with patch("src.main.service.serp_service.SERP_API_KEY", "key"), \
+         patch("src.main.service.serp_service.SERP_API_URL", "https://serpapi.com/search"), \
+         patch("src.main.service.serp_service.httpx.AsyncClient") as MockClient:
+        mock_client = MockClient.return_value
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        results = await serp_service.fetch_top_results("matcha tea")
+        assert results is None
