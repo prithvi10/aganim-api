@@ -575,11 +575,14 @@ CTR / PST GUARDRAIL (ALL TIERS):
 
     dimensions_block = """
 
-DIMENSIONS & SPECS (REQUIRED):
-- Extract all measurements (cm, mm, m, g, kg, ml, L, in, oz, lb, etc.) from the source.
-- Present them as a compact Markdown table labeled "Dimensions" immediately after the main description, with columns: Item | Measurement (Metric) | Measurement (US/Imperial, if applicable).
-- If only one item, still use a one-row table.
-- Do NOT invent measurements; include only those found in the source. Include US equivalents only when available or convertible (when auto_convert_units applies).
+### DIMENSIONS & SPECS (HTML TABLE, STRICT):
+- **Trigger:** If the source contains any measurements (cm, mm, m, g, kg, ml, L, in, oz, lb, etc.), you MUST generate an HTML table.
+- **Placement:** Insert this table at the end of the "description" HTML string, preceded by <h3>Dimensions & Specifications</h3>.
+- **Conversion:** ALWAYS include a column for US/Imperial equivalents. Use (cm to in), (kg to lb), (ml to fl oz). Round to 1 decimal place.
+- **Table Structure:**
+    <table><thead><tr><th>Item</th><th>Metric</th><th>US/Imperial</th></tr></thead><tbody></tbody></table>
+- **Constraints:** Do NOT output Markdown pipes (|). Do NOT use bullets. If the item is unnamed, use a placeholder like "Product" or "Unit".
+- **Zero-Data Rule:** If no measurements exist in the source, do NOT emit any part of this section.
 """.rstrip()
 
     return f"""{SYSTEM_PROMPT}
@@ -608,6 +611,21 @@ SECTION TAGS:
 {tone_block}
 {value_discovery_block}
 """
+
+def _sanitize_html_for_json_fields(data: dict) -> dict:
+    """
+    Normalize double quotes inside HTML strings so JSON packing never breaks when the
+    model emits attributes like <div class="table">. Converts double quotes to single
+    quotes for known HTML-bearing fields.
+    """
+    if not isinstance(data, dict):
+        return data
+    html_fields = ("description", "seo_title", "seo_description", "seo_alt_text", "misc_information")
+    for key in html_fields:
+        val = data.get(key)
+        if isinstance(val, str) and '"' in val:
+            data[key] = val.replace('"', "'")
+    return data
 
 async def _generate_and_save_for_locale(
     db: Session,
@@ -660,6 +678,7 @@ async def _generate_and_save_for_locale(
 
     raw_content = openai_response.choices[0].message.content
     parsed, discovered_values, parse_meta = _parse_model_json(raw_content or "")
+    parsed = _sanitize_html_for_json_fields(parsed)
     competitor_titles: list[str] = []
     competitor_results: list[dict] = []
     if isinstance(competitor_context, list):
@@ -682,6 +701,16 @@ async def _generate_and_save_for_locale(
         parsed=parsed,
         discovered_values=discovered_values,
     )
+    try:
+        logger.debug(
+            "[LLMPrompt] shop=%s locale=%s plan=%s prompt_snippet=%s",
+            shop,
+            target_locale,
+            plan_name,
+            (dynamic_prompt[:1200] + "...") if len(dynamic_prompt) > 1200 else dynamic_prompt,
+        )
+    except Exception:
+        pass
     if _should_log_llm_full(shop):
         _log_llm_full_response(
             shop=shop,
