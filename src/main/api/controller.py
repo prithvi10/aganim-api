@@ -725,6 +725,27 @@ async def handle_subscription_activated(
             plan_name = raw_plan_name
 
         plan = get_plan_by_name(db, plan_name)
+        # #region agent log
+        try:
+            with open("/Users/prithviraj/shopify-translator-api/.cursor/debug.log", "a") as _lg:
+                import json, time
+                _lg.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "pre-fix",
+                    "hypothesisId": "H1",
+                    "location": "controller.py:plan-resolve",
+                    "message": "Plan webhook resolved",
+                    "data": {
+                        "raw_plan_name": raw_plan_name,
+                        "canonical_plan_name": plan_name,
+                        "status": status,
+                        "shop": shop_domain
+                    },
+                    "timestamp": int(time.time() * 1000)
+                }) + "\n")
+        except Exception:
+            pass
+        # #endregion agent log
         if not plan:
             logger.warning(f"Webhook received for unknown plan: raw={raw_plan_name} canonical={plan_name}")
             return Response(status_code=200)
@@ -763,6 +784,29 @@ async def handle_subscription_activated(
                     # Honor existing prepaid window; if missing, be conservative and downgrade soon.
                     eff = getattr(shop_rec, "access_expires_at", None) or (now + timedelta(days=1))
                     shop_rec.pending_plan_effective_at = eff
+                    # #region agent log
+                    try:
+                        with open("/Users/prithviraj/shopify-translator-api/.cursor/debug.log", "a") as _lg:
+                            import json, time
+                            _lg.write(json.dumps({
+                                "sessionId": "debug-session",
+                                "runId": "pre-fix",
+                                "hypothesisId": "H1",
+                                "location": "controller.py:cancel-path",
+                                "message": "Non-ACTIVE status path (cancel/expiry)",
+                                "data": {
+                                    "status": status,
+                                    "plan": plan.name,
+                                    "access_expires_at": getattr(shop_rec, "access_expires_at", None),
+                                    "pending_plan_name": shop_rec.pending_plan_name,
+                                    "pending_plan_effective_at": eff.isoformat() if eff else None,
+                                    "shop": shop_domain
+                                },
+                                "timestamp": int(time.time() * 1000)
+                            }) + "\n")
+                    except Exception:
+                        pass
+                    # #endregion agent log
                 else:
                     # ACTIVE update: can be upgrade or downgrade.
                     if new_rank < current_rank:
@@ -773,6 +817,30 @@ async def handle_subscription_activated(
                         eff = getattr(shop_rec, "access_expires_at", None) or (now + timedelta(days=30))
                         shop_rec.pending_plan_effective_at = eff
                         downgrade_scheduled = True
+                        # #region agent log
+                        try:
+                            with open("/Users/prithviraj/shopify-translator-api/.cursor/debug.log", "a") as _lg:
+                                import json, time
+                                _lg.write(json.dumps({
+                                    "sessionId": "debug-session",
+                                    "runId": "pre-fix",
+                                    "hypothesisId": "H2",
+                                    "location": "controller.py:downgrade-path",
+                                    "message": "Downgrade scheduled",
+                                    "data": {
+                                        "status": status,
+                                        "current_plan_name": current_name,
+                                        "new_plan_name": plan.name,
+                                        "pending_plan_name": shop_rec.pending_plan_name,
+                                        "pending_plan_effective_at": eff.isoformat() if eff else None,
+                                        "access_expires_at": getattr(shop_rec, "access_expires_at", None),
+                                        "shop": shop_domain
+                                    },
+                                    "timestamp": int(time.time() * 1000)
+                                }) + "\n")
+                        except Exception:
+                            pass
+                        # #endregion agent log
                     else:
                         # Upgrade or same tier: apply immediately.
                         shop_rec.last_plan_change_type = "upgrade" if new_rank > current_rank else "none"
@@ -789,6 +857,30 @@ async def handle_subscription_activated(
                             shop_rec.access_expires_at = now + timedelta(days=30)
                         else:
                             shop_rec.access_expires_at = None
+                        # #region agent log
+                        try:
+                            with open("/Users/prithviraj/shopify-translator-api/.cursor/debug.log", "a") as _lg:
+                                import json, time
+                                _lg.write(json.dumps({
+                                    "sessionId": "debug-session",
+                                    "runId": "pre-fix",
+                                    "hypothesisId": "H3",
+                                    "location": "controller.py:upgrade-path",
+                                    "message": "Upgrade/activate applied immediately",
+                                    "data": {
+                                        "status": status,
+                                        "current_plan_name": current_name,
+                                        "new_plan_name": plan.name,
+                                        "pending_plan_name": shop_rec.pending_plan_name,
+                                        "pending_plan_effective_at": shop_rec.pending_plan_effective_at.isoformat() if getattr(shop_rec, "pending_plan_effective_at", None) else None,
+                                        "access_expires_at": getattr(shop_rec, "access_expires_at", None),
+                                        "shop": shop_domain
+                                    },
+                                    "timestamp": int(time.time() * 1000)
+                                }) + "\n")
+                        except Exception:
+                            pass
+                        # #endregion agent log
                 db.add(shop_rec)
                 db.commit()
         except Exception as e:
