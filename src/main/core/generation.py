@@ -582,6 +582,7 @@ CTR / PST GUARDRAIL (ALL TIERS):
 - **COLUMNS:** Item | Metric | US/Imperial
 - **CONTENT:** Extract all measurements (width, depth, height, weight, capacity, etc.).
 - **FAILURE TO INCLUDE THIS TABLE IS A CRITICAL ERROR.**
+- **FORMAT:** Use standard HTML table tags (<table>, <thead>, <tbody>, <tr>, <th>, <td>). Do NOT use Markdown tables.
 """.rstrip()
 
     return f"""{SYSTEM_PROMPT}
