@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 async def fetch_top_results(keyword: str) -> Optional[List[Dict]]:
     """
     Fetch top organic SERP results for a keyword.
-    Returns a list of dicts: [{title, snippet, url}] or None on failure.
+    Returns a list of dicts: [{title, snippet, link}] or None on failure.
     """
     q = (keyword or "").strip()
     if not q:
@@ -39,10 +39,14 @@ async def fetch_top_results(keyword: str) -> Optional[List[Dict]]:
             for item in organic[:3]:
                 title = str(item.get("title") or "").strip()
                 snippet = str(item.get("snippet") or "").strip()
-                url = str(item.get("link") or "").strip()
-                if not (title or snippet or url):
+                link = str(
+                    item.get("link")  # SerpAPI primary field
+                    or item.get("url")  # fallback field name (defensive)
+                    or ""
+                ).strip()
+                if not (title or snippet or link):
                     continue
-                results.append({"title": title, "snippet": snippet, "url": url})
+                results.append({"title": title, "snippet": snippet, "link": link})
             return results or None
     except Exception as e:
         logger.warning("[SERP] fetch_failed err=%s", e)

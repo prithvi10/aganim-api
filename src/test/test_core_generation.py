@@ -199,4 +199,3 @@ async def test_process_generation_serp_failure_graceful(mock_db, mock_user, mock
         assert result["status"] == "success"
         _, kwargs = mock_generate.call_args
         assert kwargs.get("competitor_context") is None
-

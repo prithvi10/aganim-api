@@ -611,12 +611,20 @@ async def _generate_and_save_for_locale(
     raw_content = openai_response.choices[0].message.content
     parsed, discovered_values, parse_meta = _parse_model_json(raw_content or "")
     competitor_titles: list[str] = []
+    competitor_results: list[dict] = []
     if isinstance(competitor_context, list):
-        competitor_titles = [
-            str(item.get("title") or "").strip()
-            for item in competitor_context
-            if isinstance(item, dict) and str(item.get("title") or "").strip()
-        ][:3]
+        for item in competitor_context:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            snippet = str(item.get("snippet") or "").strip()
+            link = str(item.get("link") or "").strip()
+            if title or snippet or link:
+                competitor_results.append(
+                    {"title": title or None, "snippet": snippet or None, "link": link or None}
+                )
+        competitor_results = competitor_results[:3]
+        competitor_titles = [str(r.get("title") or "").strip() for r in competitor_results if r.get("title")]
     _log_llm_contract_health(
         shop=shop,
         target_locale=target_locale,
@@ -670,6 +678,7 @@ async def _generate_and_save_for_locale(
         "data": {
             **parsed,
             "competitor_titles": competitor_titles,
+            "competitor_results": competitor_results,
         },
         "discovered_values": discovered_values,
     }
