@@ -30,7 +30,7 @@ async def test_fetch_top_results_success():
         assert results is not None
         assert len(results) == 3
         assert results[0]["title"] == "A"
-        assert results[1]["url"] == "https://b.example"
+        assert results[1]["link"] == "https://b.example"
         assert results[2]["snippet"] == "S3"
 
 
