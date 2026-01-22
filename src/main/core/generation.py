@@ -145,6 +145,7 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
             "seo_title": str(parsed.get("seo_title") or "").strip(),
             "seo_description": str(parsed.get("seo_description") or "").strip(),
             "seo_alt_text": str(parsed.get("seo_alt_text") or "").strip(),
+            "misc_information": str(parsed.get("misc_information") or "").strip(),
             "seo_insights": parsed.get("seo_insights") if isinstance(parsed.get("seo_insights"), dict) else {},
         }
         if not data["description"]:
@@ -161,6 +162,7 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
             "seo_title": str(parsed.get("seo_title") or "").strip(),
             "seo_description": str(parsed.get("seo_description") or "").strip(),
             "seo_alt_text": str(parsed.get("seo_alt_text") or "").strip(),
+            "misc_information": str(parsed.get("misc_information") or "").strip(),
             "seo_insights": parsed.get("seo_insights") if isinstance(parsed.get("seo_insights"), dict) else {},
         }
         if not data["description"]:
@@ -178,6 +180,7 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
                 "seo_title": str(legacy.get("seo_title") or ""),
                 "seo_description": str(legacy.get("seo_description") or ""),
                 "seo_alt_text": str(legacy.get("seo_alt_text") or ""),
+                "misc_information": str(legacy.get("misc_information") or "").strip(),
                 "seo_insights": legacy.get("seo_insights") if isinstance(legacy.get("seo_insights"), dict) else {},
             },
             [],
@@ -186,7 +189,15 @@ def _parse_model_json(raw_content: str) -> tuple[dict, list[dict], dict]:
 
     meta["parse_mode"] = "raw_fallback"
     return (
-        {"title": "", "description": raw_content, "seo_title": "", "seo_description": "", "seo_alt_text": "", "seo_insights": {}},
+        {
+            "title": "",
+            "description": raw_content,
+            "seo_title": "",
+            "seo_description": "",
+            "seo_alt_text": "",
+            "misc_information": "",
+            "seo_insights": {},
+        },
         [],
         meta,
     )
@@ -470,6 +481,7 @@ def _build_dynamic_prompt(
     tone_profile: str = "professional",
     plan_name: str | None = None,
     brand_name: str | None = None,
+    remove_irrelevant_content: bool = True,
 ) -> str:
     market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
     pname = str(plan_name or "").strip().lower()
@@ -537,6 +549,42 @@ SEO METADATA (STRICT):
   - Format: "[Color/Style] [Material] [Product Type] - [Key Feature]"
 """.rstrip()
 
+    misc_block = """
+
+MISC / NON-PRODUCT CONTENT HANDLING:
+- Identify any non-product or administrative content (e.g., SEO/meta drafts, multilingual notes, hashtags, logistics/returns blocks, shipping disclaimers, metadata blobs).
+- {misc_action}
+- Keep ALL misc content out of title, description, seo_title, seo_description, and seo_alt_text.
+- NEVER include hashtags anywhere in the output.
+""".format(
+        misc_action=(
+            "Remove ALL misc/non-product content entirely from the output. Do NOT emit it in any field."
+            if remove_irrelevant_content
+            else "Move ALL misc/non-product content into a dedicated field `misc_information` as concise bullets, and keep it OUT of title/description/SEO fields."
+        )
+    ).rstrip()
+
+    pst_block = """
+
+CTR / PST GUARDRAIL (ALL TIERS):
+- The description MUST contain: (P) one sentence with a question/pain point or desire, (S) a concrete benefit with a key spec, (T) a CTA or trust cue. If missing in source, add them.
+- Keep it concise and high-conversion; avoid vague or generic phrasing.
+- Do NOT repeat SEO title/description inside the product description.
+- If misc content (SEO/meta/multilingual notes/hashtags/logistics) appears in source, handle it according to the MISC block above.
+""".rstrip()
+
+    dimensions_block = """
+
+### MANDATORY OUTPUT REQUIREMENT: DIMENSIONS TABLE
+- You MUST generate an HTML <table> containing all product dimensions and specifications found in the text.
+- **LOCATION:** This table MUST be the LAST element in the "description" field.
+- **HEADER:** <h3>Dimensions & Specifications</h3>
+- **COLUMNS:** Item | Metric | US/Imperial
+- **CONTENT:** Extract all measurements (width, depth, height, weight, capacity, etc.).
+- **FAILURE TO INCLUDE THIS TABLE IS A CRITICAL ERROR.**
+- **FORMAT:** Use standard HTML table tags (<table>, <thead>, <tbody>, <tr>, <th>, <td>). Do NOT use Markdown tables.
+""".rstrip()
+
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
@@ -549,17 +597,95 @@ ADDITIONAL LOCALIZATION RULES:
 - For zh-TW: prefer Taiwanese Mandarin expressions and highlight CP値/CP ratio.
 - For ko: keep tone natural for Korean shoppers.
 - Keep JSON shape exactly:
-  {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "seo_alt_text": "...", "seo_insights": {{"lsi_keywords_used": [...], "search_intent": "...", "competitive_edge": "..."}}, "discovered_values": [...]}}.
+  {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "seo_alt_text": "...", "misc_information": "...", "seo_insights": {{"lsi_keywords_used": [...], "search_intent": "...", "competitive_edge": "..."}}, "discovered_values": [...]}}.
 - Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned.
 {seo_block}
 {serp_insights_block}
+{pst_block}
+{misc_block}
 
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
 {unit_conversion_block}
+{dimensions_block}
 {tone_block}
 {value_discovery_block}
 """
+
+def _sanitize_html_for_json_fields(data: dict) -> dict:
+    """
+    Normalize double quotes inside HTML strings so JSON packing never breaks when the
+    model emits attributes like <div class="table">. Converts double quotes to single
+    quotes for known HTML-bearing fields.
+    """
+    if not isinstance(data, dict):
+        return data
+    html_fields = ("description", "seo_title", "seo_description", "seo_alt_text", "misc_information")
+    for key in html_fields:
+        val = data.get(key)
+        if isinstance(val, str) and '"' in val:
+            data[key] = val.replace('"', "'")
+    return data
+
+
+def _ensure_dimensions_table(*, description_html: str, source_text: str) -> str:
+    """
+    Enforce the Dimensions & Specifications contract.
+    Some model outputs omit the mandatory table even when measurements exist.
+    We append a minimal HTML table at the end when missing.
+    """
+    desc = str(description_html or "")
+    if "<h3>Dimensions & Specifications</h3>" in desc:
+        return desc
+
+    # Extract metric measurements from the source text (very defensive; keep it simple).
+    # Matches: 10 cm, 10cm, 10㎝, 300 ml, 1.5kg, etc.
+    import re
+
+    src = str(source_text or "")
+    pattern = re.compile(r"(\d+(?:\.\d+)?)\s*(cm|mm|m|g|kg|ml|l|L|㎝|㎜)", re.IGNORECASE)
+    seen: set[str] = set()
+    rows: list[str] = []
+    for m in pattern.finditer(src):
+        num = m.group(1)
+        unit = m.group(2)
+        metric = f"{num} {unit}".strip()
+        if metric.lower() in seen:
+            continue
+        seen.add(metric.lower())
+        rows.append(f"<tr><td>Measurement</td><td>{metric}</td><td></td></tr>")
+
+    # If there are no measurements in the source, do NOT mutate the description.
+    # This keeps legacy unit tests stable while still enforcing the contract when
+    # measurable specs exist.
+    if not rows:
+        return desc
+
+    table = (
+        "<h3>Dimensions & Specifications</h3>"
+        "<table><thead><tr><th>Item</th><th>Metric</th><th>US/Imperial</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table>"
+    )
+    # Append as the last element in the description field.
+    return (desc.rstrip() + "\n" + table).strip()
+
+
+def _clamp_len(s: str, max_len: int) -> str:
+    """
+    Clamp a string to max_len characters, preferring to cut at a word boundary when possible.
+    Deterministic post-processing to enforce SEO length constraints.
+    """
+    text = str(s or "").strip()
+    if max_len <= 0:
+        return ""
+    if len(text) <= max_len:
+        return text
+    cut = text[:max_len].rstrip()
+    # Prefer last whitespace boundary if it keeps at least 60% of the budget.
+    idx = cut.rfind(" ")
+    if idx >= int(max_len * 0.6):
+        cut = cut[:idx].rstrip()
+    return cut
 
 async def _generate_and_save_for_locale(
     db: Session,
@@ -576,6 +702,7 @@ async def _generate_and_save_for_locale(
     tone_profile: str = "professional",
     plan_name: str | None = None,
     competitor_context: list[dict] | None = None,
+    remove_irrelevant_content: bool = True,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
@@ -587,6 +714,7 @@ async def _generate_and_save_for_locale(
         # Use canonical plan name for SEO tiering (Basic gets PST + specific formats).
         plan_name=plan_name,
         brand_name=str(shop or "").replace(".myshopify.com", ""),
+        remove_irrelevant_content=remove_irrelevant_content,
     )
 
     base_model = get_base_model_for_shop(db, shop)
@@ -610,6 +738,7 @@ async def _generate_and_save_for_locale(
 
     raw_content = openai_response.choices[0].message.content
     parsed, discovered_values, parse_meta = _parse_model_json(raw_content or "")
+    parsed = _sanitize_html_for_json_fields(parsed)
     competitor_titles: list[str] = []
     competitor_results: list[dict] = []
     if isinstance(competitor_context, list):
@@ -632,6 +761,16 @@ async def _generate_and_save_for_locale(
         parsed=parsed,
         discovered_values=discovered_values,
     )
+    try:
+        logger.debug(
+            "[LLMPrompt] shop=%s locale=%s plan=%s prompt_snippet=%s",
+            shop,
+            target_locale,
+            plan_name,
+            (dynamic_prompt[:1200] + "...") if len(dynamic_prompt) > 1200 else dynamic_prompt,
+        )
+    except Exception:
+        pass
     if _should_log_llm_full(shop):
         _log_llm_full_response(
             shop=shop,
@@ -658,6 +797,14 @@ async def _generate_and_save_for_locale(
         parsed["title"] = product_name or "Generated Copy"
     if not str(parsed.get("description") or "").strip():
         parsed["description"] = raw_content or ""
+    # Enforce dimensions table contract deterministically (post-process).
+    parsed["description"] = _ensure_dimensions_table(
+        description_html=str(parsed.get("description") or ""),
+        source_text=processed_description,
+    )
+    # Enforce SEO length constraints deterministically (post-process).
+    parsed["seo_title"] = _clamp_len(str(parsed.get("seo_title") or ""), 70)
+    parsed["seo_description"] = _clamp_len(str(parsed.get("seo_description") or ""), 160)
 
     if product_id and access_token:
         title_to_save = parsed.get("title") or product_name or "Translated Product"
@@ -760,6 +907,7 @@ async def process_generation_request(
             tone_profile=tone_profile,
             plan_name=plan_name,
             competitor_context=competitor_context,
+            remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -856,6 +1004,7 @@ async def process_bulk_generation_request(
                 tone_profile=tone_profile,
                 plan_name=plan_name,
                 competitor_context=competitor_context,
+                remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
             )
 
         results: list = []

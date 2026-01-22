@@ -1,6 +1,7 @@
 import httpx
 import os
 from src.main.logging.logger import get_logger
+from src.main.utils.httpx_verify import ssl_verify_shopify
 
 logger = get_logger(__name__)
 
@@ -28,7 +29,7 @@ async def create_shopify_translation(
 
     product_gid = f"gid://shopify/Product/{product_id}"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
         # STEP 1: READ (Fetch Digests)
         digest_query = """
         query getTranslatableContent($resourceId: ID!) {
@@ -172,7 +173,7 @@ async def save_product_content_with_locale(
                 "descriptionHtml": description
             }
         }
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
             resp = await client.post(
                 f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
                 headers=headers,
