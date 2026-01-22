@@ -13,6 +13,8 @@ class RewriteRequest(BaseModel):
     auto_convert_units: bool = False
     # Requested tone profile (Standard/Pro only; Basic is forced to professional).
     tone_profile: Literal["professional", "luxury", "minimalist", "playful"] | None = None
+    # When true, strip non-product/misc metadata from the description entirely (default ON).
+    remove_irrelevant_content: bool = True
 
 class BulkRewriteRequest(BaseModel):
     product_name: str
@@ -24,6 +26,8 @@ class BulkRewriteRequest(BaseModel):
     auto_convert_units: bool = False
     # Requested tone profile (Standard/Pro only; Basic is forced to professional).
     tone_profile: Literal["professional", "luxury", "minimalist", "playful"] | None = None
+    # When true, strip non-product/misc metadata from the description entirely (default ON).
+    remove_irrelevant_content: bool = True
 
 class OnboardingRequest(BaseModel):
     username: str # This will be the shop domain
