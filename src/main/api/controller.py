@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 import secrets
 import os
 import jwt
+from pydantic import ValidationError
 
 from .models import RewriteRequest, OnboardingRequest, BulkRewriteRequest, AgentRequest
 from src.main.db.db_models import User
@@ -117,10 +118,14 @@ async def proxy_generate_copy(
     rid = _rid(request)
     try:
         body = await request.json()
-        rewrite_request = RewriteRequest(**body)
     except Exception:
         logger.info("[Copy] invalid_json rid=%s", rid)
         raise HTTPException(status_code=400, detail="Invalid JSON body")
+    try:
+        rewrite_request = RewriteRequest(**body)
+    except ValidationError as e:
+        logger.info("[Copy] invalid_payload rid=%s errors=%s", rid, e.errors())
+        raise HTTPException(status_code=422, detail=e.errors())
 
     validate_rewrite_request(rewrite_request.model_dump())
 
@@ -184,10 +189,14 @@ async def proxy_generate_bulk(
     rid = _rid(request)
     try:
         body = await request.json()
-        bulk_request = BulkRewriteRequest(**body)
     except Exception:
         logger.info("[Bulk] invalid_json rid=%s", rid)
         raise HTTPException(status_code=400, detail="Invalid JSON body")
+    try:
+        bulk_request = BulkRewriteRequest(**body)
+    except ValidationError as e:
+        logger.info("[Bulk] invalid_payload rid=%s errors=%s", rid, e.errors())
+        raise HTTPException(status_code=422, detail=e.errors())
 
     # DEBUG: safe request summary (never log tokens or full text)
     try:
@@ -278,10 +287,14 @@ async def admin_ext_generate_bulk(
     rid = _rid(request)
     try:
         body = await request.json()
-        bulk_request = BulkRewriteRequest(**body)
     except Exception:
         logger.info("[AdminBulk] invalid_json rid=%s", rid)
         raise HTTPException(status_code=400, detail="Invalid JSON body")
+    try:
+        bulk_request = BulkRewriteRequest(**body)
+    except ValidationError as e:
+        logger.info("[AdminBulk] invalid_payload rid=%s errors=%s", rid, e.errors())
+        raise HTTPException(status_code=422, detail=e.errors())
 
     logger.info(
         "[AdminBulk] start rid=%s shop=%s product_id=%s target_locales=%s",
@@ -342,10 +355,14 @@ async def admin_ext_agent(
     rid = _rid(request)
     try:
         body = await request.json()
-        agent_req = AgentRequest(**body)
     except Exception:
         logger.info("[Agent] invalid_json rid=%s", rid)
         raise HTTPException(status_code=400, detail="Invalid JSON body")
+    try:
+        agent_req = AgentRequest(**body)
+    except ValidationError as e:
+        logger.info("[Agent] invalid_payload rid=%s errors=%s", rid, e.errors())
+        raise HTTPException(status_code=422, detail=e.errors())
 
     # Agents are also gated by monthly rewrite limits.
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)

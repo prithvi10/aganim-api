@@ -3,7 +3,10 @@ import os
 # OpenAI Configuration
 OPENAI_MODEL = "gpt-4o-mini"
 # Pro-only model (may be throttled down by Fair Use Monitoring)
-OPENAI_MODEL_PRO = os.getenv("OPENAI_MODEL_PRO", "gpt-5-pro")
+# NOTE: This codebase uses `chat.completions` in `OpenAIService`. Some newer models
+# (e.g., certain GPT-5 variants) may only be supported via the Responses API, which
+# would cause 404s. Default to a chat-compatible model unless explicitly overridden.
+OPENAI_MODEL_PRO = os.getenv("OPENAI_MODEL_PRO", "gpt-4o-mini") #Todo: Update before Go-Live
 # Model used when Fair Use throttle is active for a shop
 OPENAI_MODEL_DEGRADED = os.getenv("OPENAI_MODEL_DEGRADED", "gpt-4o-mini")
 OPENAI_TEMPERATURE = 0.5

@@ -2,6 +2,7 @@ import httpx
 from typing import Optional, List, Dict
 from src.main.logging.logger import get_logger
 from src.main.config.configs import SERP_API_KEY, SERP_API_URL
+from src.main.utils.httpx_verify import ssl_verify_serp
 
 logger = get_logger(__name__)
 
@@ -29,7 +30,7 @@ async def fetch_top_results(keyword: str) -> Optional[List[Dict]]:
 
     for attempt in range(2):
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, verify=ssl_verify_serp()) as client:
                 resp = await client.get(SERP_API_URL, params=params)
                 if resp.status_code != 200:
                     logger.warning("[SERP] non_200 status=%s attempt=%s q=%s body=%s", resp.status_code, attempt + 1, q, resp.text[:200])
