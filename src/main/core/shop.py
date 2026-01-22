@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from src.main.db.db_transactions import get_shop_access_token
 from src.main.db.db_models import User
 from src.main.logging.logger import get_logger
+from src.main.utils.httpx_verify import ssl_verify_shopify
 
 logger = get_logger(__name__)
 
@@ -47,7 +48,7 @@ async def fetch_shop_locales(db: Session, shop_domain: str):
     }
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
             response = await client.post(graphql_url, headers=headers, json={"query": graphql_query})
             response.raise_for_status()
             

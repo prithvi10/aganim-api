@@ -627,6 +627,63 @@ def _sanitize_html_for_json_fields(data: dict) -> dict:
             data[key] = val.replace('"', "'")
     return data
 
+
+def _ensure_dimensions_table(*, description_html: str, source_text: str) -> str:
+    """
+    Enforce the Dimensions & Specifications contract.
+    Some model outputs omit the mandatory table even when measurements exist.
+    We append a minimal HTML table at the end when missing.
+    """
+    desc = str(description_html or "")
+    if "<h3>Dimensions & Specifications</h3>" in desc:
+        return desc
+
+    # Extract metric measurements from the source text (very defensive; keep it simple).
+    # Matches: 10 cm, 10cm, 10㎝, 300 ml, 1.5kg, etc.
+    import re
+
+    src = str(source_text or "")
+    pattern = re.compile(r"(\d+(?:\.\d+)?)\s*(cm|mm|m|g|kg|ml|l|L|㎝|㎜)", re.IGNORECASE)
+    seen: set[str] = set()
+    rows: list[str] = []
+    for m in pattern.finditer(src):
+        num = m.group(1)
+        unit = m.group(2)
+        metric = f"{num} {unit}".strip()
+        if metric.lower() in seen:
+            continue
+        seen.add(metric.lower())
+        rows.append(f"<tr><td>Measurement</td><td>{metric}</td><td></td></tr>")
+
+    if not rows:
+        rows.append("<tr><td>Measurement</td><td>N/A</td><td></td></tr>")
+
+    table = (
+        "<h3>Dimensions & Specifications</h3>"
+        "<table><thead><tr><th>Item</th><th>Metric</th><th>US/Imperial</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table>"
+    )
+    # Append as the last element in the description field.
+    return (desc.rstrip() + "\n" + table).strip()
+
+
+def _clamp_len(s: str, max_len: int) -> str:
+    """
+    Clamp a string to max_len characters, preferring to cut at a word boundary when possible.
+    Deterministic post-processing to enforce SEO length constraints.
+    """
+    text = str(s or "").strip()
+    if max_len <= 0:
+        return ""
+    if len(text) <= max_len:
+        return text
+    cut = text[:max_len].rstrip()
+    # Prefer last whitespace boundary if it keeps at least 60% of the budget.
+    idx = cut.rfind(" ")
+    if idx >= int(max_len * 0.6):
+        cut = cut[:idx].rstrip()
+    return cut
+
 async def _generate_and_save_for_locale(
     db: Session,
     shop: str,
@@ -737,6 +794,14 @@ async def _generate_and_save_for_locale(
         parsed["title"] = product_name or "Generated Copy"
     if not str(parsed.get("description") or "").strip():
         parsed["description"] = raw_content or ""
+    # Enforce dimensions table contract deterministically (post-process).
+    parsed["description"] = _ensure_dimensions_table(
+        description_html=str(parsed.get("description") or ""),
+        source_text=processed_description,
+    )
+    # Enforce SEO length constraints deterministically (post-process).
+    parsed["seo_title"] = _clamp_len(str(parsed.get("seo_title") or ""), 70)
+    parsed["seo_description"] = _clamp_len(str(parsed.get("seo_description") or ""), 160)
 
     if product_id and access_token:
         title_to_save = parsed.get("title") or product_name or "Translated Product"
