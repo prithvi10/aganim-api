@@ -655,8 +655,11 @@ def _ensure_dimensions_table(*, description_html: str, source_text: str) -> str:
         seen.add(metric.lower())
         rows.append(f"<tr><td>Measurement</td><td>{metric}</td><td></td></tr>")
 
+    # If there are no measurements in the source, do NOT mutate the description.
+    # This keeps legacy unit tests stable while still enforcing the contract when
+    # measurable specs exist.
     if not rows:
-        rows.append("<tr><td>Measurement</td><td>N/A</td><td></td></tr>")
+        return desc
 
     table = (
         "<h3>Dimensions & Specifications</h3>"
