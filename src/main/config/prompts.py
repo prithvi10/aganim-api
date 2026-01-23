@@ -179,44 +179,24 @@ SEO_RECOMMENDATIONS_TECH_PASS_SYSTEM_TEMPLATE = """You are a senior SEO strategi
 You will be given:
 - product_name, category, target_locale
 - description_html (current product description HTML)
-- seo_title and seo_description (current SEO metadata drafts)
+- competitor_context may be present indirectly from the app (top Google results)
 
-Your job is to generate actionable recommendations the merchant can apply with one click.
+Your job is to generate **recommendations only** (no one-click patching).
 Do NOT invent product facts (materials, dimensions, provenance) that are not present in description_html.
 
 Return ONLY valid JSON with this exact shape:
 {
-  "ctr_pst_patch": {
-    "problem": "A short Problem sentence/question (P) to improve CTR (in target language). Empty string if already present.",
-    "solution": "A short Solution sentence (S) tied to an existing product fact. Empty string if already present.",
-    "trust": "A short Trust/CTA sentence (T) (shipping, authenticity, limited, etc.) but only if supported by description_html. Empty string if already present.",
-    "cta": "Optional CTA fragment (in target language). Empty string if not needed.",
-    "patched_seo_description": "The patched seo_description with ONLY missing PST parts inserted; preserve as much of the original seo_description as possible."
-  },
   "competitive_edge": {
     "headline": "1 short differentiation headline (target language)",
     "copy": "1-2 sentences describing the competitive edge using only facts present in description_html (target language)"
   },
-  "strategy_keywords": {
-    "recommended_keywords": ["5-10 keyword phrases in target language"],
-    "suggested_insertions": [
-      {
-        "keyword": "keyword phrase",
-        "suggested_sentence": "One natural sentence to insert into the product description (target language). Must be consistent with existing facts.",
-        "target_section_hint": "Suggested section header where this fits (e.g. Product Overview, Materials, Craftsmanship)"
-      }
-    ]
-  },
-  "search_intent": {
-    "label": "Transactional|Informational",
-    "strategy": ["3-6 bullets describing how to align copy to this intent (target language)"]
+  "buyer_intent": {
+    "strategy": ["3-6 bullets describing how to align copy to buyer intent (target language)"]
   }
 }
 
 Constraints:
 - Output language must match TARGET LANGUAGE: {target_locale}
-- Keep patched_seo_description <= 160 characters if possible (do not hard fail).
-- suggested_insertions: 3-6 items max.
 - If you cannot confidently generate a field without making up facts, return an empty string/list for that part.
 """.strip()
 
