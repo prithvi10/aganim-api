@@ -11,10 +11,14 @@ from src.main.service import serp_service
 from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import (
     LOCAL_RATE_LIMIT_CONFIG,
-    SYSTEM_PROMPT,
     LOCALE_PERSONA_MAP,
+    OPENAI_MODEL,
+)
+from src.main.config.prompts import (
+    SYSTEM_PROMPT,
     TONE_PROMPTS,
     VALUE_DISCOVERY_PROMPT,
+    SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE,
 )
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
@@ -573,18 +577,6 @@ CTR / PST GUARDRAIL (ALL TIERS):
 - If misc content (SEO/meta/multilingual notes/hashtags/logistics) appears in source, handle it according to the MISC block above.
 """.rstrip()
 
-    dimensions_block = """
-
-### MANDATORY OUTPUT REQUIREMENT: DIMENSIONS TABLE
-- You MUST generate an HTML <table> containing all product dimensions and specifications found in the text.
-- **LOCATION:** This table MUST be the LAST element in the "description" field.
-- **HEADER:** <h3>Dimensions & Specifications</h3>
-- **COLUMNS:** Item | Metric | US/Imperial
-- **CONTENT:** Extract all measurements (width, depth, height, weight, capacity, etc.).
-- **FAILURE TO INCLUDE THIS TABLE IS A CRITICAL ERROR.**
-- **FORMAT:** Use standard HTML table tags (<table>, <thead>, <tbody>, <tr>, <th>, <td>). Do NOT use Markdown tables.
-""".rstrip()
-
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
@@ -607,7 +599,6 @@ ADDITIONAL LOCALIZATION RULES:
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
 {unit_conversion_block}
-{dimensions_block}
 {tone_block}
 {value_discovery_block}
 """
@@ -628,46 +619,59 @@ def _sanitize_html_for_json_fields(data: dict) -> dict:
     return data
 
 
-def _ensure_dimensions_table(*, description_html: str, source_text: str) -> str:
+def _augment_spec_tables_for_standard_pro(
+    *,
+    db: Session,
+    shop: str,
+    target_locale: str,
+    description_html: str,
+    source_text: str,
+    auto_convert_units: bool,
+) -> str:
     """
-    Enforce the Dimensions & Specifications contract.
-    Some model outputs omit the mandatory table even when measurements exist.
-    We append a minimal HTML table at the end when missing.
+    Standard/Pro-only technical correction pass:
+    - Generate Product Specifications + Detailed Dimensions HTML tables
+    - Append them to the existing description HTML
+    - Ensure no duplicate tables
+
+    IMPORTANT: We intentionally keep this separate from the main generation prompt
+    to reduce prompt complexity and improve table accuracy.
     """
-    desc = str(description_html or "")
-    if "<h3>Dimensions & Specifications</h3>" in desc:
-        return desc
+    system = SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE.format(target_locale=target_locale)
 
-    # Extract metric measurements from the source text (very defensive; keep it simple).
-    # Matches: 10 cm, 10cm, 10㎝, 300 ml, 1.5kg, etc.
-    import re
+    user = {
+        "target_locale": target_locale,
+        "auto_convert_units": bool(auto_convert_units),
+        "description_html": str(description_html or ""),
+        "source_text": str(source_text or ""),
+    }
 
-    src = str(source_text or "")
-    pattern = re.compile(r"(\d+(?:\.\d+)?)\s*(cm|mm|m|g|kg|ml|l|L|㎝|㎜)", re.IGNORECASE)
-    seen: set[str] = set()
-    rows: list[str] = []
-    for m in pattern.finditer(src):
-        num = m.group(1)
-        unit = m.group(2)
-        metric = f"{num} {unit}".strip()
-        if metric.lower() in seen:
-            continue
-        seen.add(metric.lower())
-        rows.append(f"<tr><td>Measurement</td><td>{metric}</td><td></td></tr>")
-
-    # If there are no measurements in the source, do NOT mutate the description.
-    # This keeps legacy unit tests stable while still enforcing the contract when
-    # measurable specs exist.
-    if not rows:
-        return desc
-
-    table = (
-        "<h3>Dimensions & Specifications</h3>"
-        "<table><thead><tr><th>Item</th><th>Metric</th><th>US/Imperial</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table>"
+    raw = openai_service.generate_json(
+        system_prompt=system,
+        user_json=user,
+        temperature=0.0,
+        max_tokens=1100,
+        # Force cheapest model for this technical pass (Standard/Pro only).
+        model=OPENAI_MODEL,
     )
-    # Append as the last element in the description field.
-    return (desc.rstrip() + "\n" + table).strip()
+    parsed = parse_llm_json(raw or "")
+    if not isinstance(parsed, dict):
+        return str(description_html or "")
+
+    final_html = str(parsed.get("final_description_html") or "").strip()
+    specs_tbl = str(parsed.get("product_specifications_table_html") or "").strip()
+    dims_tbl = str(parsed.get("detailed_dimensions_table_html") or "").strip()
+
+    # Minimal validation: if the model didn't produce both tables, keep original description.
+    if not final_html or "<table" not in final_html.lower():
+        return str(description_html or "")
+    if "<h3>Product Specifications</h3>" not in final_html and specs_tbl:
+        # If the model returned split fields but forgot to join, append defensively.
+        final_html = (final_html.rstrip() + "\n" + specs_tbl).strip()
+    if "<h3>Detailed Dimensions</h3>" not in final_html and dims_tbl:
+        final_html = (final_html.rstrip() + "\n" + dims_tbl).strip()
+
+    return final_html or str(description_html or "")
 
 
 def _clamp_len(s: str, max_len: int) -> str:
@@ -797,11 +801,20 @@ async def _generate_and_save_for_locale(
         parsed["title"] = product_name or "Generated Copy"
     if not str(parsed.get("description") or "").strip():
         parsed["description"] = raw_content or ""
-    # Enforce dimensions table contract deterministically (post-process).
-    parsed["description"] = _ensure_dimensions_table(
-        description_html=str(parsed.get("description") or ""),
-        source_text=processed_description,
-    )
+    # Standard/Pro: generate specs + dimensions tables in a separate, cheap technical pass.
+    try:
+        pname = str(plan_name or "").strip().lower()
+        if pname in ("standard", "pro"):
+            parsed["description"] = _augment_spec_tables_for_standard_pro(
+                db=db,
+                shop=shop,
+                target_locale=target_locale,
+                description_html=str(parsed.get("description") or ""),
+                source_text=processed_description,
+                auto_convert_units=bool(auto_convert_units),
+            )
+    except Exception as e:
+        logger.warning("[SpecTables] skipped shop=%s locale=%s err=%s", shop, target_locale, e)
     # Enforce SEO length constraints deterministically (post-process).
     parsed["seo_title"] = _clamp_len(str(parsed.get("seo_title") or ""), 70)
     parsed["seo_description"] = _clamp_len(str(parsed.get("seo_description") or ""), 160)

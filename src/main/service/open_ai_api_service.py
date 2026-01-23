@@ -109,6 +109,7 @@ class OpenAIService:
         user_json: dict,
         temperature: float = 0.7,
         max_tokens: int = 500,
+        model: str | None = None,
     ) -> str:
         """
         Generic helper for action-based agents: returns raw model text (expected to be JSON).
@@ -119,7 +120,7 @@ class OpenAIService:
 
         try:
             response = self.client.chat.completions.create(
-                model=OPENAI_MODEL,
+                model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
@@ -130,7 +131,7 @@ class OpenAIService:
             )
         except TypeError:
             response = self.client.chat.completions.create(
-                model=OPENAI_MODEL,
+                model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
