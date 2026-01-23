@@ -65,10 +65,8 @@ async def test_basic_includes_seo_recommendations_and_uses_cheapest_model(mock_d
 
     recs_json = (
         '{'
-        '"ctr_pst_patch":{"problem":"","solution":"","trust":"","cta":"","patched_seo_description":"Patched meta"},'
         '"competitive_edge":{"headline":"Edge","copy":"Edge copy"},'
-        '"strategy_keywords":{"recommended_keywords":["k1"],"suggested_insertions":[{"keyword":"k1","suggested_sentence":"Add k1","target_section_hint":"Product Overview"}]},'
-        '"search_intent":{"label":"Transactional","strategy":["Use buy-now phrasing"]}'
+        '"buyer_intent":{"strategy":["Use buyer-intent phrasing","Answer common buyer questions"]}'
         '}'
     )
 
@@ -87,6 +85,8 @@ async def test_basic_includes_seo_recommendations_and_uses_cheapest_model(mock_d
         resp = await process_generation_request(db=mock_db, request=request, user=mock_user, plan=mock_plan)
         assert resp["status"] == "success"
         assert "seo_recommendations" in resp["data"]
+        assert resp["data"]["seo_recommendations"]["competitive_edge"]["headline"] == "Edge"
+        assert len(resp["data"]["seo_recommendations"]["buyer_intent"]["strategy"]) >= 1
 
         # Ensure cheapest model was requested.
         _, kwargs = mock_recs.call_args

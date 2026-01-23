@@ -518,11 +518,21 @@ FACT ACCURACY (STRICT):
 
 SEO METADATA (STRICT):
 - Generate locale-specific SEO metadata for TARGET LANGUAGE ({target_locale}) and MARKET PERSONA ({market_persona}).
-- Use high-volume keywords relevant to that target market, but do NOT invent product specs.
-- Tone must be Call-to-Action focused (e.g., "Shop the authentic ...", "Discover ...").
-- seo_title must be <= 70 characters.
-- seo_description must be <= 160 characters.
-- seo_alt_text: generate a descriptive, keyword-relevant alt tag for the MAIN product image (no quotes needed).
+- Use high-volume keywords relevant to that target market, but do NOT invent product facts/specs/certifications/provenance.
+
+SEO TITLE (<= 70 chars):
+- Lead with the most important keyword + clear product type.
+- Keep it readable; remove filler if near the limit.
+
+SEO META DESCRIPTION (<= 160 chars) — MUST satisfy PST:
+- (PST Check) Start with ONE short problem/question or desire (P).
+- (Solution) Follow with a concrete benefit tied to a real product fact (S).
+- (Brand Trust) Add ONE trust cue ONLY if supported by the source text (e.g., made in Japan, artisan-crafted, region/provenance, traditional method, free shipping if present).
+- End with a simple CTA.
+- Avoid keyword stuffing and avoid repeating the SEO title verbatim.
+
+seo_alt_text:
+- Generate a descriptive, keyword-relevant alt tag for the MAIN product image (no quotes needed).
 """.rstrip()
 
     serp_insights_block = ""
@@ -547,7 +557,7 @@ SEO METADATA (STRICT):
   - Strategy: Lead with the most important keyword.
   - Brand Name: Use "{brand}" when appropriate; if it would harm clarity or exceed length, omit it.
 - **SEO Description (<= 160 chars):**
-  - Use the **PST Formula**: (1) State a specific **Problem** or desire, (2) Present the product as the **Solution**, (3) End with a high-authority **Trust** signal or CTA.
+  - Use the **PST Formula**: (1) State a specific **Problem** or desire, (2) Present the product as the **Solution**, (3) End with ONE **Trust** signal/CTA ONLY if supported by source text (made in Japan, artisan, provenance, shipping).
   - Example style: "Tired of mass-produced tea? (P) Discover handcrafted Uji Matcha (S). Direct from Japan—shop now. (T)"
 - **Image Alt-Text (seo_alt_text) (NEW):**
   - Generate a descriptive, keyword-rich Alt-tag for the main product image.
@@ -884,42 +894,25 @@ def _generate_seo_recommendations(
             return None
 
         # Minimal shape validation (keep permissive; UI will be defensive)
-        ctr = parsed.get("ctr_pst_patch") if isinstance(parsed.get("ctr_pst_patch"), dict) else {}
         edge = parsed.get("competitive_edge") if isinstance(parsed.get("competitive_edge"), dict) else {}
-        kw = parsed.get("strategy_keywords") if isinstance(parsed.get("strategy_keywords"), dict) else {}
-        intent = parsed.get("search_intent") if isinstance(parsed.get("search_intent"), dict) else {}
+        buyer = parsed.get("buyer_intent") if isinstance(parsed.get("buyer_intent"), dict) else {}
 
         out = {
-            "ctr_pst_patch": {
-                "problem": str(ctr.get("problem") or "").strip(),
-                "solution": str(ctr.get("solution") or "").strip(),
-                "trust": str(ctr.get("trust") or "").strip(),
-                "cta": str(ctr.get("cta") or "").strip(),
-                "patched_seo_description": str(ctr.get("patched_seo_description") or "").strip(),
-            },
             "competitive_edge": {
                 "headline": str(edge.get("headline") or "").strip(),
                 "copy": str(edge.get("copy") or "").strip(),
             },
-            "strategy_keywords": {
-                "recommended_keywords": kw.get("recommended_keywords") if isinstance(kw.get("recommended_keywords"), list) else [],
-                "suggested_insertions": kw.get("suggested_insertions") if isinstance(kw.get("suggested_insertions"), list) else [],
-            },
-            "search_intent": {
-                "label": str(intent.get("label") or "").strip(),
-                "strategy": intent.get("strategy") if isinstance(intent.get("strategy"), list) else [],
+            "buyer_intent": {
+                "strategy": buyer.get("strategy") if isinstance(buyer.get("strategy"), list) else [],
             },
         }
 
         logger.info(
-            "[SEORecs] ok shop=%s locale=%s has_patch=%s kw_count=%s ins_count=%s intent=%s has_edge=%s",
+            "[SEORecs] ok shop=%s locale=%s has_edge=%s buyer_intent_bullets=%s",
             shop,
             target_locale,
-            bool(out["ctr_pst_patch"].get("patched_seo_description")),
-            len(out["strategy_keywords"].get("recommended_keywords") or []),
-            len(out["strategy_keywords"].get("suggested_insertions") or []),
-            out["search_intent"].get("label") or "-",
             bool(out["competitive_edge"].get("copy") or out["competitive_edge"].get("headline")),
+            len(out["buyer_intent"].get("strategy") or []),
         )
 
         if _should_log_llm_full(shop):
