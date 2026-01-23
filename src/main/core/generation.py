@@ -19,6 +19,7 @@ from src.main.config.prompts import (
     TONE_PROMPTS,
     VALUE_DISCOVERY_PROMPT,
     SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE,
+    SEO_RECOMMENDATIONS_TECH_PASS_SYSTEM_TEMPLATE,
 )
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
@@ -276,6 +277,10 @@ def _should_log_llm_full(shop: str) -> bool:
     """
     if os.getenv("LOG_LLM_FULL", "").strip() != "1":
         return False
+    only = (os.getenv("LOG_LLM_SHOP", "") or "").strip().lower()
+    if only and only != str(shop or "").strip().lower():
+        return False
+    return True
 
 
 async def _fetch_primary_locale(shop: str, access_token: str | None) -> str:
@@ -293,10 +298,6 @@ async def _fetch_primary_locale(shop: str, access_token: str | None) -> str:
     except Exception:
         pass
     return primary_locale
-    only = (os.getenv("LOG_LLM_SHOP", "") or "").strip().lower()
-    if only and only != str(shop or "").strip().lower():
-        return False
-    return True
 
 
 def _log_llm_full_response(
@@ -646,6 +647,19 @@ def _augment_spec_tables_for_standard_pro(
         "source_text": str(source_text or ""),
     }
 
+    try:
+        logger.info(
+            "[SpecTables] start shop=%s locale=%s model=%s desc_len=%s source_len=%s auto_convert_units=%s",
+            shop,
+            target_locale,
+            OPENAI_MODEL,
+            len(str(description_html or "")),
+            len(str(source_text or "")),
+            bool(auto_convert_units),
+        )
+    except Exception:
+        pass
+
     raw = openai_service.generate_json(
         system_prompt=system,
         user_json=user,
@@ -654,16 +668,63 @@ def _augment_spec_tables_for_standard_pro(
         # Force cheapest model for this technical pass (Standard/Pro only).
         model=OPENAI_MODEL,
     )
+
+    if _should_log_llm_full(shop):
+        try:
+            logger.warning(
+                "[LLMFull] SPEC_TABLES_BEFORE_PARSE shop=%s locale=%s raw_len=%s\n-----BEGIN_LLM_RAW-----\n%s\n-----END_LLM_RAW-----",
+                shop,
+                target_locale,
+                len(raw or ""),
+                raw or "",
+            )
+        except Exception:
+            pass
+
     parsed = parse_llm_json(raw or "")
     if not isinstance(parsed, dict):
+        logger.warning(
+            "[SpecTables] parse_failed shop=%s locale=%s raw_len=%s",
+            shop,
+            target_locale,
+            len(raw or ""),
+        )
         return str(description_html or "")
 
     final_html = str(parsed.get("final_description_html") or "").strip()
     specs_tbl = str(parsed.get("product_specifications_table_html") or "").strip()
     dims_tbl = str(parsed.get("detailed_dimensions_table_html") or "").strip()
+    removed_tables_count = parsed.get("removed_tables_count")
+    try:
+        removed_tables_count = int(removed_tables_count) if removed_tables_count is not None else None
+    except Exception:
+        removed_tables_count = None
+
+    has_specs = "<h3>Product Specifications</h3>" in final_html
+    has_dims = "<h3>Detailed Dimensions</h3>" in final_html
+
+    try:
+        logger.info(
+            "[SpecTables] parsed shop=%s locale=%s raw_len=%s final_len=%s has_specs=%s has_dims=%s removed_tables_count=%s",
+            shop,
+            target_locale,
+            len(raw or ""),
+            len(final_html or ""),
+            bool(has_specs),
+            bool(has_dims),
+            removed_tables_count,
+        )
+    except Exception:
+        pass
 
     # Minimal validation: if the model didn't produce both tables, keep original description.
     if not final_html or "<table" not in final_html.lower():
+        logger.warning(
+            "[SpecTables] invalid_final_html shop=%s locale=%s final_len=%s",
+            shop,
+            target_locale,
+            len(final_html or ""),
+        )
         return str(description_html or "")
     if "<h3>Product Specifications</h3>" not in final_html and specs_tbl:
         # If the model returned split fields but forgot to join, append defensively.
@@ -671,7 +732,149 @@ def _augment_spec_tables_for_standard_pro(
     if "<h3>Detailed Dimensions</h3>" not in final_html and dims_tbl:
         final_html = (final_html.rstrip() + "\n" + dims_tbl).strip()
 
+    if _should_log_llm_full(shop):
+        try:
+            logger.warning(
+                "[LLMFull] SPEC_TABLES_AFTER_PARSE shop=%s locale=%s\n-----BEGIN_LLM_PARSED-----\n%s\n-----END_LLM_PARSED-----",
+                shop,
+                target_locale,
+                json.dumps(parsed or {}, ensure_ascii=False),
+            )
+        except Exception:
+            pass
+
     return final_html or str(description_html or "")
+
+
+def _generate_seo_recommendations(
+    *,
+    db: Session,
+    shop: str,
+    target_locale: str,
+    product_name: str,
+    category: str,
+    description_html: str,
+    seo_title: str,
+    seo_description: str,
+) -> dict | None:
+    """
+    Cheap, always-on (all plans) technical recommendation pass executed during Optimize.
+    Returns a JSON dict to attach under `seo_recommendations` in the generation response.
+    Never raises.
+    """
+    try:
+        # NOTE: This prompt contains literal JSON braces; avoid `.format(...)` to prevent KeyError.
+        system = str(SEO_RECOMMENDATIONS_TECH_PASS_SYSTEM_TEMPLATE).replace("{target_locale}", str(target_locale))
+        user = {
+            "product_name": str(product_name or "").strip(),
+            "category": str(category or "").strip(),
+            "target_locale": str(target_locale or "").strip(),
+            "description_html": str(description_html or ""),
+            "seo_title": str(seo_title or ""),
+            "seo_description": str(seo_description or ""),
+        }
+
+        logger.info(
+            "[SEORecs] start shop=%s locale=%s model=%s desc_len=%s seo_title_len=%s seo_desc_len=%s",
+            shop,
+            target_locale,
+            OPENAI_MODEL,
+            len(str(description_html or "")),
+            len(str(seo_title or "")),
+            len(str(seo_description or "")),
+        )
+
+        resp = openai_service.generate_json_response(
+            system_prompt=system,
+            user_json=user,
+            temperature=0.0,
+            max_tokens=900,
+            model=OPENAI_MODEL,
+        )
+
+        # Cost accounting (best-effort)
+        try:
+            record_cost_from_usage(db, shop, getattr(resp, "usage", None), model_used=OPENAI_MODEL)
+        except Exception as e:
+            logger.warning(f"[SEORecs] cost_accounting_skipped shop={shop}: {e}")
+
+        raw = ""
+        try:
+            raw = resp.choices[0].message.content or ""
+        except Exception:
+            raw = ""
+
+        if _should_log_llm_full(shop):
+            try:
+                logger.warning(
+                    "[LLMFull] SEO_RECS_BEFORE_PARSE shop=%s locale=%s raw_len=%s\n-----BEGIN_LLM_RAW-----\n%s\n-----END_LLM_RAW-----",
+                    shop,
+                    target_locale,
+                    len(raw or ""),
+                    raw or "",
+                )
+            except Exception:
+                pass
+
+        parsed = parse_llm_json(raw or "")
+        if not isinstance(parsed, dict):
+            logger.warning("[SEORecs] parse_failed shop=%s locale=%s raw_len=%s", shop, target_locale, len(raw or ""))
+            return None
+
+        # Minimal shape validation (keep permissive; UI will be defensive)
+        ctr = parsed.get("ctr_pst_patch") if isinstance(parsed.get("ctr_pst_patch"), dict) else {}
+        edge = parsed.get("competitive_edge") if isinstance(parsed.get("competitive_edge"), dict) else {}
+        kw = parsed.get("strategy_keywords") if isinstance(parsed.get("strategy_keywords"), dict) else {}
+        intent = parsed.get("search_intent") if isinstance(parsed.get("search_intent"), dict) else {}
+
+        out = {
+            "ctr_pst_patch": {
+                "problem": str(ctr.get("problem") or "").strip(),
+                "solution": str(ctr.get("solution") or "").strip(),
+                "trust": str(ctr.get("trust") or "").strip(),
+                "cta": str(ctr.get("cta") or "").strip(),
+                "patched_seo_description": str(ctr.get("patched_seo_description") or "").strip(),
+            },
+            "competitive_edge": {
+                "headline": str(edge.get("headline") or "").strip(),
+                "copy": str(edge.get("copy") or "").strip(),
+            },
+            "strategy_keywords": {
+                "recommended_keywords": kw.get("recommended_keywords") if isinstance(kw.get("recommended_keywords"), list) else [],
+                "suggested_insertions": kw.get("suggested_insertions") if isinstance(kw.get("suggested_insertions"), list) else [],
+            },
+            "search_intent": {
+                "label": str(intent.get("label") or "").strip(),
+                "strategy": intent.get("strategy") if isinstance(intent.get("strategy"), list) else [],
+            },
+        }
+
+        logger.info(
+            "[SEORecs] ok shop=%s locale=%s has_patch=%s kw_count=%s ins_count=%s intent=%s has_edge=%s",
+            shop,
+            target_locale,
+            bool(out["ctr_pst_patch"].get("patched_seo_description")),
+            len(out["strategy_keywords"].get("recommended_keywords") or []),
+            len(out["strategy_keywords"].get("suggested_insertions") or []),
+            out["search_intent"].get("label") or "-",
+            bool(out["competitive_edge"].get("copy") or out["competitive_edge"].get("headline")),
+        )
+
+        if _should_log_llm_full(shop):
+            try:
+                logger.warning(
+                    "[LLMFull] SEO_RECS_AFTER_PARSE shop=%s locale=%s\n-----BEGIN_LLM_PARSED-----\n%s\n-----END_LLM_PARSED-----",
+                    shop,
+                    target_locale,
+                    json.dumps(out or {}, ensure_ascii=False),
+                )
+            except Exception:
+                pass
+
+        return out
+    except Exception as e:
+        logger.warning("[SEORecs] failed shop=%s locale=%s err=%s", shop, target_locale, e)
+        return None
 
 
 def _clamp_len(s: str, max_len: int) -> str:
@@ -815,6 +1018,22 @@ async def _generate_and_save_for_locale(
             )
     except Exception as e:
         logger.warning("[SpecTables] skipped shop=%s locale=%s err=%s", shop, target_locale, e)
+    # All plans: cheap SEO recommendations during Optimize (non-blocking).
+    try:
+        seo_recs = _generate_seo_recommendations(
+            db=db,
+            shop=shop,
+            target_locale=target_locale,
+            product_name=product_name,
+            category=category,
+            description_html=str(parsed.get("description") or ""),
+            seo_title=str(parsed.get("seo_title") or ""),
+            seo_description=str(parsed.get("seo_description") or ""),
+        )
+        if seo_recs:
+            parsed["seo_recommendations"] = seo_recs
+    except Exception as e:
+        logger.warning("[SEORecs] skipped shop=%s locale=%s err=%s", shop, target_locale, e)
     # Enforce SEO length constraints deterministically (post-process).
     parsed["seo_title"] = _clamp_len(str(parsed.get("seo_title") or ""), 70)
     parsed["seo_description"] = _clamp_len(str(parsed.get("seo_description") or ""), 160)

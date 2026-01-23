@@ -141,6 +141,45 @@ class OpenAIService:
             )
         return response.choices[0].message.content or ""
 
+    def generate_json_response(
+        self,
+        system_prompt: str,
+        user_json: dict,
+        *,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        model: str | None = None,
+    ) -> object:
+        """
+        Like generate_json, but returns the full OpenAI response object so callers
+        can access `usage` for cost accounting.
+        """
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+
+        try:
+            response = self.client.chat.completions.create(
+                model=model or OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+        except TypeError:
+            response = self.client.chat.completions.create(
+                model=model or OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        return response
+
     def generate_copy_stream(
         self,
         product_name: str,
