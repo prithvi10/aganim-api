@@ -188,3 +188,60 @@ async def test_standard_pass2_invalid_json_falls_back_to_original_description(mo
         saved_desc = mock_save_content.call_args.kwargs["description"]
         assert saved_desc == base_desc
 
+
+@pytest.mark.asyncio
+async def test_standard_pass2_uses_split_table_fields_when_final_html_missing_tables(mock_db, mock_user):
+    """
+    Regression: Sometimes the model returns a small/empty final_description_html but still provides the split
+    table fields. We must still append the two tables deterministically.
+    """
+    request = RewriteRequest(
+        product_name="P",
+        japanese_description="サイズ: 高さ10cm 幅5cm 重量100g",
+        category="C",
+        product_id=123,
+        target_locale="en",
+        auto_convert_units=True,
+    )
+    mock_plan = MagicMock(spec=Plan)
+    mock_plan.can_stream_responses = False
+    mock_plan.name = "Standard"
+
+    mock_shop_info_resp = MagicMock()
+    mock_shop_info_resp.status_code = 200
+    mock_shop_info_resp.json.return_value = {"shop": {"primary_locale": "en"}}
+
+    base_desc = "<div>Base</div>"
+
+    pass2_json = (
+        "{"
+        '"final_description_html": "<div>Too short</div>",'
+        '"product_specifications_table_html": "<table><tbody><tr><td>Weight</td><td>100 g</td><td>3.5 oz</td></tr></tbody></table>",'
+        '"detailed_dimensions_table_html": "<table><tbody><tr><td>Height</td><td>10 cm</td><td>3.9 in</td></tr></tbody></table>",'
+        '"removed_tables_count": 0'
+        "}"
+    )
+
+    with patch("src.main.core.generation.openai_service.generate_copy", return_value=_openai_resp_with_contract(description_html=base_desc)), \
+         patch("src.main.core.generation.openai_service.generate_json", return_value=pass2_json) as mock_pass2, \
+         patch("src.main.core.generation.get_shop_access_token", return_value="token"), \
+         patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
+         patch("src.main.core.generation.serp_service.fetch_top_results", new_callable=AsyncMock, return_value=[]), \
+         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.main.core.generation.limiter.is_allowed", return_value=True):
+
+        mock_client = MockClient.return_value
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client.get = AsyncMock(return_value=mock_shop_info_resp)
+
+        resp = await process_generation_request(db=mock_db, request=request, user=mock_user, plan=mock_plan)
+        assert resp["status"] == "success"
+        assert mock_pass2.call_count == 1
+
+        mock_save_content.assert_called_once()
+        saved_desc = mock_save_content.call_args.kwargs["description"]
+        assert "<h3>Product Specifications</h3>" in saved_desc
+        assert "<h3>Detailed Dimensions</h3>" in saved_desc
+        assert "<table" in saved_desc.lower()
+

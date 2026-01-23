@@ -700,16 +700,76 @@ def _augment_spec_tables_for_standard_pro(
     except Exception:
         removed_tables_count = None
 
-    has_specs = "<h3>Product Specifications</h3>" in final_html
-    has_dims = "<h3>Detailed Dimensions</h3>" in final_html
+    def _strip_existing_spec_dim_tables(html: str) -> str:
+        """
+        Remove previously-inserted Product Specifications / Detailed Dimensions blocks.
+        Conservative: only strips when it sees the exact <h3> headers and a following <table>.
+        """
+        import re
+
+        out = str(html or "")
+        patterns = [
+            r"<h3>\s*Product Specifications\s*</h3>\s*<table[\s\S]*?</table>",
+            r"<h3>\s*Detailed Dimensions\s*</h3>\s*<table[\s\S]*?</table>",
+        ]
+        for pat in patterns:
+            out = re.sub(pat, "", out, flags=re.IGNORECASE)
+        return out.strip()
+
+    def _extract_table_block(html: str, heading: str) -> str:
+        """
+        Extract a '<h3>HEADING</h3> + <table>...</table>' block from html.
+        Returns empty string if not found.
+        """
+        import re
+
+        s = str(html or "")
+        pat = rf"(<h3>\s*{re.escape(heading)}\s*</h3>\s*<table[\s\S]*?</table>)"
+        m = re.search(pat, s, flags=re.IGNORECASE)
+        return str(m.group(1)).strip() if m else ""
+
+    # We accept either:
+    # - a fully-merged final_description_html that already contains the tables, OR
+    # - split table fields we can append ourselves.
+    final_has_any_table = "<table" in final_html.lower()
+    final_has_specs = "<h3>Product Specifications</h3>" in final_html
+    final_has_dims = "<h3>Detailed Dimensions</h3>" in final_html
+
+    specs_block = ""
+    dims_block = ""
+
+    # Prefer explicit split fields if present; otherwise try extracting from final_html.
+    if "<table" in (specs_tbl or "").lower():
+        specs_block = specs_tbl
+    else:
+        specs_block = _extract_table_block(final_html, "Product Specifications")
+
+    if "<table" in (dims_tbl or "").lower():
+        dims_block = dims_tbl
+    else:
+        dims_block = _extract_table_block(final_html, "Detailed Dimensions")
+
+    # Ensure headings exist (some models might return bare <table>...</table>)
+    if specs_block and "<h3" not in specs_block.lower():
+        specs_block = f"<h3>Product Specifications</h3>\n{specs_block}".strip()
+    if dims_block and "<h3" not in dims_block.lower():
+        dims_block = f"<h3>Detailed Dimensions</h3>\n{dims_block}".strip()
+
+    has_specs = "<h3>Product Specifications</h3>" in specs_block
+    has_dims = "<h3>Detailed Dimensions</h3>" in dims_block
 
     try:
         logger.info(
-            "[SpecTables] parsed shop=%s locale=%s raw_len=%s final_len=%s has_specs=%s has_dims=%s removed_tables_count=%s",
+            "[SpecTables] parsed shop=%s locale=%s raw_len=%s final_len=%s final_has_table=%s final_has_specs=%s final_has_dims=%s specs_len=%s dims_len=%s has_specs=%s has_dims=%s removed_tables_count=%s",
             shop,
             target_locale,
             len(raw or ""),
             len(final_html or ""),
+            bool(final_has_any_table),
+            bool(final_has_specs),
+            bool(final_has_dims),
+            len(specs_block or ""),
+            len(dims_block or ""),
             bool(has_specs),
             bool(has_dims),
             removed_tables_count,
@@ -717,20 +777,22 @@ def _augment_spec_tables_for_standard_pro(
     except Exception:
         pass
 
-    # Minimal validation: if the model didn't produce both tables, keep original description.
-    if not final_html or "<table" not in final_html.lower():
+    # Minimal validation: if we don't have BOTH tables, keep original description.
+    if not (has_specs and has_dims):
         logger.warning(
-            "[SpecTables] invalid_final_html shop=%s locale=%s final_len=%s",
+            "[SpecTables] invalid_final_html shop=%s locale=%s final_len=%s specs_len=%s dims_len=%s",
             shop,
             target_locale,
             len(final_html or ""),
+            len(specs_block or ""),
+            len(dims_block or ""),
         )
         return str(description_html or "")
-    if "<h3>Product Specifications</h3>" not in final_html and specs_tbl:
-        # If the model returned split fields but forgot to join, append defensively.
-        final_html = (final_html.rstrip() + "\n" + specs_tbl).strip()
-    if "<h3>Detailed Dimensions</h3>" not in final_html and dims_tbl:
-        final_html = (final_html.rstrip() + "\n" + dims_tbl).strip()
+
+    # Deterministic merge (prevents accidental prose edits and avoids trusting malformed final_html).
+    base = _strip_existing_spec_dim_tables(description_html)
+    append = "\n\n<hr />\n" + specs_block.strip() + "\n\n" + dims_block.strip()
+    merged = (base.rstrip() + append).strip()
 
     if _should_log_llm_full(shop):
         try:
@@ -743,7 +805,7 @@ def _augment_spec_tables_for_standard_pro(
         except Exception:
             pass
 
-    return final_html or str(description_html or "")
+    return merged or str(description_html or "")
 
 
 def _generate_seo_recommendations(
