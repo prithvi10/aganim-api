@@ -11,10 +11,15 @@ from src.main.service import serp_service
 from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import (
     LOCAL_RATE_LIMIT_CONFIG,
-    SYSTEM_PROMPT,
     LOCALE_PERSONA_MAP,
+    OPENAI_MODEL,
+)
+from src.main.config.prompts import (
+    SYSTEM_PROMPT,
     TONE_PROMPTS,
     VALUE_DISCOVERY_PROMPT,
+    SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE,
+    SEO_RECOMMENDATIONS_TECH_PASS_SYSTEM_TEMPLATE,
 )
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
@@ -272,6 +277,10 @@ def _should_log_llm_full(shop: str) -> bool:
     """
     if os.getenv("LOG_LLM_FULL", "").strip() != "1":
         return False
+    only = (os.getenv("LOG_LLM_SHOP", "") or "").strip().lower()
+    if only and only != str(shop or "").strip().lower():
+        return False
+    return True
 
 
 async def _fetch_primary_locale(shop: str, access_token: str | None) -> str:
@@ -289,10 +298,6 @@ async def _fetch_primary_locale(shop: str, access_token: str | None) -> str:
     except Exception:
         pass
     return primary_locale
-    only = (os.getenv("LOG_LLM_SHOP", "") or "").strip().lower()
-    if only and only != str(shop or "").strip().lower():
-        return False
-    return True
 
 
 def _log_llm_full_response(
@@ -513,11 +518,21 @@ FACT ACCURACY (STRICT):
 
 SEO METADATA (STRICT):
 - Generate locale-specific SEO metadata for TARGET LANGUAGE ({target_locale}) and MARKET PERSONA ({market_persona}).
-- Use high-volume keywords relevant to that target market, but do NOT invent product specs.
-- Tone must be Call-to-Action focused (e.g., "Shop the authentic ...", "Discover ...").
-- seo_title must be <= 70 characters.
-- seo_description must be <= 160 characters.
-- seo_alt_text: generate a descriptive, keyword-relevant alt tag for the MAIN product image (no quotes needed).
+- Use high-volume keywords relevant to that target market, but do NOT invent product facts/specs/certifications/provenance.
+
+SEO TITLE (<= 70 chars):
+- Lead with the most important keyword + clear product type.
+- Keep it readable; remove filler if near the limit.
+
+SEO META DESCRIPTION (<= 160 chars) — MUST satisfy PST:
+- (PST Check) Start with ONE short problem/question or desire (P).
+- (Solution) Follow with a concrete benefit tied to a real product fact (S).
+- (Brand Trust) Add ONE trust cue ONLY if supported by the source text (e.g., made in Japan, artisan-crafted, region/provenance, traditional method, free shipping if present).
+- End with a simple CTA.
+- Avoid keyword stuffing and avoid repeating the SEO title verbatim.
+
+seo_alt_text:
+- Generate a descriptive, keyword-relevant alt tag for the MAIN product image (no quotes needed).
 """.rstrip()
 
     serp_insights_block = ""
@@ -542,7 +557,7 @@ SEO METADATA (STRICT):
   - Strategy: Lead with the most important keyword.
   - Brand Name: Use "{brand}" when appropriate; if it would harm clarity or exceed length, omit it.
 - **SEO Description (<= 160 chars):**
-  - Use the **PST Formula**: (1) State a specific **Problem** or desire, (2) Present the product as the **Solution**, (3) End with a high-authority **Trust** signal or CTA.
+  - Use the **PST Formula**: (1) State a specific **Problem** or desire, (2) Present the product as the **Solution**, (3) End with ONE **Trust** signal/CTA ONLY if supported by source text (made in Japan, artisan, provenance, shipping).
   - Example style: "Tired of mass-produced tea? (P) Discover handcrafted Uji Matcha (S). Direct from Japan—shop now. (T)"
 - **Image Alt-Text (seo_alt_text) (NEW):**
   - Generate a descriptive, keyword-rich Alt-tag for the main product image.
@@ -573,18 +588,6 @@ CTR / PST GUARDRAIL (ALL TIERS):
 - If misc content (SEO/meta/multilingual notes/hashtags/logistics) appears in source, handle it according to the MISC block above.
 """.rstrip()
 
-    dimensions_block = """
-
-### MANDATORY OUTPUT REQUIREMENT: DIMENSIONS TABLE
-- You MUST generate an HTML <table> containing all product dimensions and specifications found in the text.
-- **LOCATION:** This table MUST be the LAST element in the "description" field.
-- **HEADER:** <h3>Dimensions & Specifications</h3>
-- **COLUMNS:** Item | Metric | US/Imperial
-- **CONTENT:** Extract all measurements (width, depth, height, weight, capacity, etc.).
-- **FAILURE TO INCLUDE THIS TABLE IS A CRITICAL ERROR.**
-- **FORMAT:** Use standard HTML table tags (<table>, <thead>, <tbody>, <tr>, <th>, <td>). Do NOT use Markdown tables.
-""".rstrip()
-
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
@@ -607,7 +610,6 @@ ADDITIONAL LOCALIZATION RULES:
 SECTION TAGS:
 - The Japanese input may include [Section: LABEL] ... [/Section] markers. Preserve order. For each Section, create a distinct <h3> with that LABEL. Do not merge sections. Use <hr /> between major section groups if needed.
 {unit_conversion_block}
-{dimensions_block}
 {tone_block}
 {value_discovery_block}
 """
@@ -628,46 +630,306 @@ def _sanitize_html_for_json_fields(data: dict) -> dict:
     return data
 
 
-def _ensure_dimensions_table(*, description_html: str, source_text: str) -> str:
+def _augment_spec_tables_for_standard_pro(
+    *,
+    db: Session,
+    shop: str,
+    target_locale: str,
+    description_html: str,
+    source_text: str,
+    auto_convert_units: bool,
+) -> str:
     """
-    Enforce the Dimensions & Specifications contract.
-    Some model outputs omit the mandatory table even when measurements exist.
-    We append a minimal HTML table at the end when missing.
+    Standard/Pro-only technical correction pass:
+    - Generate Product Specifications + Detailed Dimensions HTML tables
+    - Append them to the existing description HTML
+    - Ensure no duplicate tables
+
+    IMPORTANT: We intentionally keep this separate from the main generation prompt
+    to reduce prompt complexity and improve table accuracy.
     """
-    desc = str(description_html or "")
-    if "<h3>Dimensions & Specifications</h3>" in desc:
-        return desc
+    system = SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE.format(target_locale=target_locale)
 
-    # Extract metric measurements from the source text (very defensive; keep it simple).
-    # Matches: 10 cm, 10cm, 10㎝, 300 ml, 1.5kg, etc.
-    import re
+    user = {
+        "target_locale": target_locale,
+        "auto_convert_units": bool(auto_convert_units),
+        "description_html": str(description_html or ""),
+        "source_text": str(source_text or ""),
+    }
 
-    src = str(source_text or "")
-    pattern = re.compile(r"(\d+(?:\.\d+)?)\s*(cm|mm|m|g|kg|ml|l|L|㎝|㎜)", re.IGNORECASE)
-    seen: set[str] = set()
-    rows: list[str] = []
-    for m in pattern.finditer(src):
-        num = m.group(1)
-        unit = m.group(2)
-        metric = f"{num} {unit}".strip()
-        if metric.lower() in seen:
-            continue
-        seen.add(metric.lower())
-        rows.append(f"<tr><td>Measurement</td><td>{metric}</td><td></td></tr>")
+    try:
+        logger.info(
+            "[SpecTables] start shop=%s locale=%s model=%s desc_len=%s source_len=%s auto_convert_units=%s",
+            shop,
+            target_locale,
+            OPENAI_MODEL,
+            len(str(description_html or "")),
+            len(str(source_text or "")),
+            bool(auto_convert_units),
+        )
+    except Exception:
+        pass
 
-    # If there are no measurements in the source, do NOT mutate the description.
-    # This keeps legacy unit tests stable while still enforcing the contract when
-    # measurable specs exist.
-    if not rows:
-        return desc
-
-    table = (
-        "<h3>Dimensions & Specifications</h3>"
-        "<table><thead><tr><th>Item</th><th>Metric</th><th>US/Imperial</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table>"
+    raw = openai_service.generate_json(
+        system_prompt=system,
+        user_json=user,
+        temperature=0.0,
+        max_tokens=1100,
+        # Force cheapest model for this technical pass (Standard/Pro only).
+        model=OPENAI_MODEL,
     )
-    # Append as the last element in the description field.
-    return (desc.rstrip() + "\n" + table).strip()
+
+    if _should_log_llm_full(shop):
+        try:
+            logger.warning(
+                "[LLMFull] SPEC_TABLES_BEFORE_PARSE shop=%s locale=%s raw_len=%s\n-----BEGIN_LLM_RAW-----\n%s\n-----END_LLM_RAW-----",
+                shop,
+                target_locale,
+                len(raw or ""),
+                raw or "",
+            )
+        except Exception:
+            pass
+
+    parsed = parse_llm_json(raw or "")
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "[SpecTables] parse_failed shop=%s locale=%s raw_len=%s",
+            shop,
+            target_locale,
+            len(raw or ""),
+        )
+        return str(description_html or "")
+
+    final_html = str(parsed.get("final_description_html") or "").strip()
+    specs_tbl = str(parsed.get("product_specifications_table_html") or "").strip()
+    dims_tbl = str(parsed.get("detailed_dimensions_table_html") or "").strip()
+    removed_tables_count = parsed.get("removed_tables_count")
+    try:
+        removed_tables_count = int(removed_tables_count) if removed_tables_count is not None else None
+    except Exception:
+        removed_tables_count = None
+
+    def _strip_existing_spec_dim_tables(html: str) -> str:
+        """
+        Remove previously-inserted Product Specifications / Detailed Dimensions blocks.
+        Conservative: only strips when it sees the exact <h3> headers and a following <table>.
+        """
+        import re
+
+        out = str(html or "")
+        patterns = [
+            r"<h3>\s*Product Specifications\s*</h3>\s*<table[\s\S]*?</table>",
+            r"<h3>\s*Detailed Dimensions\s*</h3>\s*<table[\s\S]*?</table>",
+        ]
+        for pat in patterns:
+            out = re.sub(pat, "", out, flags=re.IGNORECASE)
+        return out.strip()
+
+    def _extract_table_block(html: str, heading: str) -> str:
+        """
+        Extract a '<h3>HEADING</h3> + <table>...</table>' block from html.
+        Returns empty string if not found.
+        """
+        import re
+
+        s = str(html or "")
+        pat = rf"(<h3>\s*{re.escape(heading)}\s*</h3>\s*<table[\s\S]*?</table>)"
+        m = re.search(pat, s, flags=re.IGNORECASE)
+        return str(m.group(1)).strip() if m else ""
+
+    # We accept either:
+    # - a fully-merged final_description_html that already contains the tables, OR
+    # - split table fields we can append ourselves.
+    final_has_any_table = "<table" in final_html.lower()
+    final_has_specs = "<h3>Product Specifications</h3>" in final_html
+    final_has_dims = "<h3>Detailed Dimensions</h3>" in final_html
+
+    specs_block = ""
+    dims_block = ""
+
+    # Prefer explicit split fields if present; otherwise try extracting from final_html.
+    if "<table" in (specs_tbl or "").lower():
+        specs_block = specs_tbl
+    else:
+        specs_block = _extract_table_block(final_html, "Product Specifications")
+
+    if "<table" in (dims_tbl or "").lower():
+        dims_block = dims_tbl
+    else:
+        dims_block = _extract_table_block(final_html, "Detailed Dimensions")
+
+    # Ensure headings exist (some models might return bare <table>...</table>)
+    if specs_block and "<h3" not in specs_block.lower():
+        specs_block = f"<h3>Product Specifications</h3>\n{specs_block}".strip()
+    if dims_block and "<h3" not in dims_block.lower():
+        dims_block = f"<h3>Detailed Dimensions</h3>\n{dims_block}".strip()
+
+    has_specs = "<h3>Product Specifications</h3>" in specs_block
+    has_dims = "<h3>Detailed Dimensions</h3>" in dims_block
+
+    try:
+        logger.info(
+            "[SpecTables] parsed shop=%s locale=%s raw_len=%s final_len=%s final_has_table=%s final_has_specs=%s final_has_dims=%s specs_len=%s dims_len=%s has_specs=%s has_dims=%s removed_tables_count=%s",
+            shop,
+            target_locale,
+            len(raw or ""),
+            len(final_html or ""),
+            bool(final_has_any_table),
+            bool(final_has_specs),
+            bool(final_has_dims),
+            len(specs_block or ""),
+            len(dims_block or ""),
+            bool(has_specs),
+            bool(has_dims),
+            removed_tables_count,
+        )
+    except Exception:
+        pass
+
+    # Minimal validation: if we don't have BOTH tables, keep original description.
+    if not (has_specs and has_dims):
+        logger.warning(
+            "[SpecTables] invalid_final_html shop=%s locale=%s final_len=%s specs_len=%s dims_len=%s",
+            shop,
+            target_locale,
+            len(final_html or ""),
+            len(specs_block or ""),
+            len(dims_block or ""),
+        )
+        return str(description_html or "")
+
+    # Deterministic merge (prevents accidental prose edits and avoids trusting malformed final_html).
+    base = _strip_existing_spec_dim_tables(description_html)
+    append = "\n\n<hr />\n" + specs_block.strip() + "\n\n" + dims_block.strip()
+    merged = (base.rstrip() + append).strip()
+
+    if _should_log_llm_full(shop):
+        try:
+            logger.warning(
+                "[LLMFull] SPEC_TABLES_AFTER_PARSE shop=%s locale=%s\n-----BEGIN_LLM_PARSED-----\n%s\n-----END_LLM_PARSED-----",
+                shop,
+                target_locale,
+                json.dumps(parsed or {}, ensure_ascii=False),
+            )
+        except Exception:
+            pass
+
+    return merged or str(description_html or "")
+
+
+def _generate_seo_recommendations(
+    *,
+    db: Session,
+    shop: str,
+    target_locale: str,
+    product_name: str,
+    category: str,
+    description_html: str,
+    seo_title: str,
+    seo_description: str,
+) -> dict | None:
+    """
+    Cheap, always-on (all plans) technical recommendation pass executed during Optimize.
+    Returns a JSON dict to attach under `seo_recommendations` in the generation response.
+    Never raises.
+    """
+    try:
+        # NOTE: This prompt contains literal JSON braces; avoid `.format(...)` to prevent KeyError.
+        system = str(SEO_RECOMMENDATIONS_TECH_PASS_SYSTEM_TEMPLATE).replace("{target_locale}", str(target_locale))
+        user = {
+            "product_name": str(product_name or "").strip(),
+            "category": str(category or "").strip(),
+            "target_locale": str(target_locale or "").strip(),
+            "description_html": str(description_html or ""),
+            "seo_title": str(seo_title or ""),
+            "seo_description": str(seo_description or ""),
+        }
+
+        logger.info(
+            "[SEORecs] start shop=%s locale=%s model=%s desc_len=%s seo_title_len=%s seo_desc_len=%s",
+            shop,
+            target_locale,
+            OPENAI_MODEL,
+            len(str(description_html or "")),
+            len(str(seo_title or "")),
+            len(str(seo_description or "")),
+        )
+
+        resp = openai_service.generate_json_response(
+            system_prompt=system,
+            user_json=user,
+            temperature=0.0,
+            max_tokens=900,
+            model=OPENAI_MODEL,
+        )
+
+        # Cost accounting (best-effort)
+        try:
+            record_cost_from_usage(db, shop, getattr(resp, "usage", None), model_used=OPENAI_MODEL)
+        except Exception as e:
+            logger.warning(f"[SEORecs] cost_accounting_skipped shop={shop}: {e}")
+
+        raw = ""
+        try:
+            raw = resp.choices[0].message.content or ""
+        except Exception:
+            raw = ""
+
+        if _should_log_llm_full(shop):
+            try:
+                logger.warning(
+                    "[LLMFull] SEO_RECS_BEFORE_PARSE shop=%s locale=%s raw_len=%s\n-----BEGIN_LLM_RAW-----\n%s\n-----END_LLM_RAW-----",
+                    shop,
+                    target_locale,
+                    len(raw or ""),
+                    raw or "",
+                )
+            except Exception:
+                pass
+
+        parsed = parse_llm_json(raw or "")
+        if not isinstance(parsed, dict):
+            logger.warning("[SEORecs] parse_failed shop=%s locale=%s raw_len=%s", shop, target_locale, len(raw or ""))
+            return None
+
+        # Minimal shape validation (keep permissive; UI will be defensive)
+        edge = parsed.get("competitive_edge") if isinstance(parsed.get("competitive_edge"), dict) else {}
+        buyer = parsed.get("buyer_intent") if isinstance(parsed.get("buyer_intent"), dict) else {}
+
+        out = {
+            "competitive_edge": {
+                "headline": str(edge.get("headline") or "").strip(),
+                "copy": str(edge.get("copy") or "").strip(),
+            },
+            "buyer_intent": {
+                "strategy": buyer.get("strategy") if isinstance(buyer.get("strategy"), list) else [],
+            },
+        }
+
+        logger.info(
+            "[SEORecs] ok shop=%s locale=%s has_edge=%s buyer_intent_bullets=%s",
+            shop,
+            target_locale,
+            bool(out["competitive_edge"].get("copy") or out["competitive_edge"].get("headline")),
+            len(out["buyer_intent"].get("strategy") or []),
+        )
+
+        if _should_log_llm_full(shop):
+            try:
+                logger.warning(
+                    "[LLMFull] SEO_RECS_AFTER_PARSE shop=%s locale=%s\n-----BEGIN_LLM_PARSED-----\n%s\n-----END_LLM_PARSED-----",
+                    shop,
+                    target_locale,
+                    json.dumps(out or {}, ensure_ascii=False),
+                )
+            except Exception:
+                pass
+
+        return out
+    except Exception as e:
+        logger.warning("[SEORecs] failed shop=%s locale=%s err=%s", shop, target_locale, e)
+        return None
 
 
 def _clamp_len(s: str, max_len: int) -> str:
@@ -797,11 +1059,36 @@ async def _generate_and_save_for_locale(
         parsed["title"] = product_name or "Generated Copy"
     if not str(parsed.get("description") or "").strip():
         parsed["description"] = raw_content or ""
-    # Enforce dimensions table contract deterministically (post-process).
-    parsed["description"] = _ensure_dimensions_table(
-        description_html=str(parsed.get("description") or ""),
-        source_text=processed_description,
-    )
+    # Standard/Pro: generate specs + dimensions tables in a separate, cheap technical pass.
+    try:
+        pname = str(plan_name or "").strip().lower()
+        if pname in ("standard", "pro"):
+            parsed["description"] = _augment_spec_tables_for_standard_pro(
+                db=db,
+                shop=shop,
+                target_locale=target_locale,
+                description_html=str(parsed.get("description") or ""),
+                source_text=processed_description,
+                auto_convert_units=bool(auto_convert_units),
+            )
+    except Exception as e:
+        logger.warning("[SpecTables] skipped shop=%s locale=%s err=%s", shop, target_locale, e)
+    # All plans: cheap SEO recommendations during Optimize (non-blocking).
+    try:
+        seo_recs = _generate_seo_recommendations(
+            db=db,
+            shop=shop,
+            target_locale=target_locale,
+            product_name=product_name,
+            category=category,
+            description_html=str(parsed.get("description") or ""),
+            seo_title=str(parsed.get("seo_title") or ""),
+            seo_description=str(parsed.get("seo_description") or ""),
+        )
+        if seo_recs:
+            parsed["seo_recommendations"] = seo_recs
+    except Exception as e:
+        logger.warning("[SEORecs] skipped shop=%s locale=%s err=%s", shop, target_locale, e)
     # Enforce SEO length constraints deterministically (post-process).
     parsed["seo_title"] = _clamp_len(str(parsed.get("seo_title") or ""), 70)
     parsed["seo_description"] = _clamp_len(str(parsed.get("seo_description") or ""), 160)
