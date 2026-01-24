@@ -548,6 +548,17 @@ seo_alt_text:
   - competitive_edge (one unique Japanese detail competitors missed)
 """.rstrip()
 
+    spec_tables_handoff_block = ""
+    if pname in ("standard", "pro"):
+        spec_tables_handoff_block = """
+
+### SPEC TABLES HANDOFF (STANDARD/PRO):
+- IMPORTANT: Do NOT generate any specification/dimensions tables in the main description.
+- Do NOT create sections titled: "Specifications", "Product Specifications", "Detailed Dimensions", "Specs", or "仕様".
+- If the source contains specs (capacity/material/compatibility) mention them briefly as plain text or simple bullets inside existing narrative sections (no <table>).
+- The system will generate the Product Specifications + Detailed Dimensions tables in a separate technical pass.
+""".rstrip()
+
     if pname == "basic":
         seo_block = f"""
 
@@ -604,6 +615,7 @@ ADDITIONAL LOCALIZATION RULES:
 - Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned.
 {seo_block}
 {serp_insights_block}
+{spec_tables_handoff_block}
 {pst_block}
 {misc_block}
 
