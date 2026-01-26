@@ -1,15 +1,25 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
+from sqlalchemy import create_engine, pool
+from sqlalchemy.orm import sessionmaker
 
 from src.main.api.main import app
 from src.main.api import controller as controller_module
-from src.main.db.database import SessionLocal, Base, engine, get_db
+from src.main.db.database import Base, get_db
 from src.main.db.db_models import Shop
+
+TEST_DATABASE_URL = "sqlite:///:memory:"
+engine = create_engine(
+    TEST_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=pool.StaticPool,
+)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def _override_get_db():
-    db = SessionLocal()
+    db = TestingSessionLocal()
     try:
         yield db
     finally:
@@ -19,7 +29,7 @@ def _override_get_db():
 def _seed_shop(domain: str) -> None:
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+    db = TestingSessionLocal()
     try:
         db.query(Shop).filter(Shop.domain == domain).delete()
         db.add(Shop(domain=domain, access_token=""))
@@ -31,9 +41,11 @@ def _seed_shop(domain: str) -> None:
 @pytest.fixture
 def _overrides():
     app.dependency_overrides[get_db] = _override_get_db
+    controller_module.SessionLocal = TestingSessionLocal
     yield
     app.dependency_overrides.pop(get_db, None)
     app.dependency_overrides.pop(controller_module.resolve_shop_domain, None)
+    Base.metadata.drop_all(bind=engine)
 
 
 def test_brand_context_status_idle(_overrides):
@@ -54,7 +66,7 @@ def test_brand_context_ingest_async_accepts_and_sets_ready(_overrides):
     app.dependency_overrides[controller_module.resolve_shop_domain] = lambda: shop
 
     def _mock_run(*, shop_id: str, raw_texts: list[dict], job_id: str) -> None:
-        db = SessionLocal()
+        db = TestingSessionLocal()
         try:
             rec = db.query(Shop).filter(Shop.domain == shop_id).first()
             if rec:
