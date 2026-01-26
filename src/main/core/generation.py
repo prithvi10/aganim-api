@@ -20,6 +20,7 @@ from src.main.config.prompts import (
     VALUE_DISCOVERY_PROMPT,
     SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE,
     SEO_RECOMMENDATIONS_TECH_PASS_SYSTEM_TEMPLATE,
+    BRAND_CONTEXT_INJECTION_TEMPLATE,
 )
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
@@ -28,6 +29,7 @@ from src.main.db.db_transactions import get_shop_access_token
 from src.main.service.shopify_service import save_product_content_with_locale
 from src.main.api.validation import validate_rewrite_request
 from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
+from src.main.service.brand_context_retrieval import get_brand_context
 
 logger = get_logger(__name__)
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
@@ -479,6 +481,29 @@ def _effective_tone(plan_name: str | None, requested: str | None) -> str:
     return tone if tone in TONE_PROMPTS else "professional"
 
 
+def _should_use_brand_context(plan_name: str | None, requested: bool | None) -> bool:
+    if not requested:
+        return False
+    name = str(plan_name or "").strip().lower()
+    return name in ("standard", "pro")
+
+
+def _render_brand_context_block(chunks: list[dict]) -> str:
+    if not chunks:
+        return ""
+    blocks = []
+    for item in chunks:
+        content = str(item.get("content") or "").strip()
+        meta = item.get("metadata") or {}
+        source = str(meta.get("source_url") or meta.get("source_type") or "brand_source").strip()
+        if not content:
+            continue
+        blocks.append(f"[{source}] {content}")
+    if not blocks:
+        return ""
+    return BRAND_CONTEXT_INJECTION_TEMPLATE.format(context="\n\n".join(blocks))
+
+
 def _build_dynamic_prompt(
     target_locale: str,
     *,
@@ -487,6 +512,7 @@ def _build_dynamic_prompt(
     plan_name: str | None = None,
     brand_name: str | None = None,
     remove_irrelevant_content: bool = True,
+    brand_context_block: str | None = None,
 ) -> str:
     market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
     pname = str(plan_name or "").strip().lower()
@@ -599,11 +625,16 @@ CTR / PST GUARDRAIL (ALL TIERS):
 - If misc content (SEO/meta/multilingual notes/hashtags/logistics) appears in source, handle it according to the MISC block above.
 """.rstrip()
 
+    brand_context_section = ""
+    if brand_context_block:
+        brand_context_section = f"\n\n{brand_context_block}".rstrip()
+
     return f"""{SYSTEM_PROMPT}
 
 TARGET LANGUAGE: {target_locale}
 MARKET PERSONA: {market_persona}
 BRAND NAME: {brand or "N/A"}
+{brand_context_section}
 
 ADDITIONAL LOCALIZATION RULES:
 - Write both "title" and "description" in the TARGET LANGUAGE ({target_locale}) only.
@@ -977,6 +1008,7 @@ async def _generate_and_save_for_locale(
     plan_name: str | None = None,
     competitor_context: list[dict] | None = None,
     remove_irrelevant_content: bool = True,
+    brand_context_block: str | None = None,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
@@ -989,6 +1021,7 @@ async def _generate_and_save_for_locale(
         plan_name=plan_name,
         brand_name=str(shop or "").replace(".myshopify.com", ""),
         remove_irrelevant_content=remove_irrelevant_content,
+        brand_context_block=brand_context_block,
     )
 
     base_model = get_base_model_for_shop(db, shop)
@@ -1192,6 +1225,15 @@ async def process_generation_request(
         else:
             primary_locale = await _fetch_primary_locale(shop, access_token)
 
+        brand_context_block = None
+        try:
+            if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+                query_text = f"{request.product_name}\n{processed_desc}".strip()
+                chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=3)
+                brand_context_block = _render_brand_context_block(chunks)
+        except Exception as e:
+            logger.warning("[BrandContext] skipped shop=%s err=%s", shop, e)
+
         result = await _generate_and_save_for_locale(
             db,
             shop,
@@ -1207,6 +1249,7 @@ async def process_generation_request(
             plan_name=plan_name,
             competitor_context=competitor_context,
             remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
+            brand_context_block=brand_context_block,
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -1288,6 +1331,15 @@ async def process_bulk_generation_request(
 
         tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
 
+        brand_context_block = None
+        try:
+            if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+                query_text = f"{request.product_name}\n{processed_desc}".strip()
+                chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=3)
+                brand_context_block = _render_brand_context_block(chunks)
+        except Exception as e:
+            logger.warning("[BrandContext] skipped shop=%s err=%s", shop, e)
+
         def _task(locale: str):
             return _generate_and_save_for_locale(
                 db,
@@ -1304,6 +1356,7 @@ async def process_bulk_generation_request(
                 plan_name=plan_name,
                 competitor_context=competitor_context,
                 remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
+                brand_context_block=brand_context_block,
             )
 
         results: list = []

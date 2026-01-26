@@ -1,4 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Date, BigInteger, Numeric, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Date, BigInteger, Numeric, Text, JSON
+from sqlalchemy.types import Text as TextType
+from sqlalchemy.dialects.postgresql import JSONB
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -71,6 +74,12 @@ class Shop(Base):
     # 0..4 (4 = completed)
     onboarding_step = Column(Integer, nullable=False, default=0, server_default="0")
     is_onboarding_finished = Column(Boolean, nullable=False, default=False, server_default="0")
+    # Brand context summary (generated during onboarding ingestion)
+    brand_context_summary = Column(Text, nullable=True)
+    brand_context_updated_at = Column(DateTime(timezone=True), nullable=True)
+    brand_context_status = Column(String, nullable=True)
+    brand_context_last_error = Column(Text, nullable=True)
+    brand_context_job_id = Column(String, nullable=True)
 
     # -----------------------------------------------------------------------------
     # Plan change scheduling (DB is the source of truth)
@@ -131,3 +140,15 @@ class Plan(Base):
     
     # Relationships
     users = relationship("User", back_populates="plan")
+
+
+class StoreContext(Base):
+    __tablename__ = "store_context"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Use shop domain as the tenant identifier (matches Shop.domain)
+    shop_id = Column(String, index=True, nullable=False)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(1536).with_variant(TextType, "sqlite"), nullable=False)
+    metadata_json = Column("metadata", JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

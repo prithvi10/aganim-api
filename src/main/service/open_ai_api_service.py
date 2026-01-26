@@ -8,11 +8,14 @@ from sqlalchemy.orm import Session
 from datetime import date
 
 from src.main.config.configs import (
-    SYSTEM_PROMPT, 
-    OPENAI_MODEL, 
-    OPENAI_TEMPERATURE, 
-    OPENAI_MAX_TOKENS
+    SYSTEM_PROMPT,
+    OPENAI_MODEL,
+    OPENAI_TEMPERATURE,
+    OPENAI_MAX_TOKENS,
+    EMBEDDING_MODEL,
+    EMBEDDING_BATCH_SIZE,
 )
+from src.main.config.prompts import BRAND_CONTEXT_FILE_EXTRACT_PROMPT
 from src.main.logging.logger import get_logger
 from src.main.db.db_transactions import record_successful_rewrite
 from src.main.db.db_transactions import increment_monthly_rewrites_used  # backwards-compat for tests/patches
@@ -179,6 +182,41 @@ class OpenAIService:
                 max_tokens=max_tokens,
             )
         return response
+
+    def embed_texts(self, texts: list[str], *, model: str | None = None) -> list[list[float]]:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+        if not texts:
+            return []
+        embed_model = model or EMBEDDING_MODEL
+        vectors: list[list[float]] = []
+        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            batch = texts[i : i + EMBEDDING_BATCH_SIZE]
+            resp = self.client.embeddings.create(model=embed_model, input=batch)
+            vectors.extend([item.embedding for item in resp.data])
+        return vectors
+
+    def extract_text_from_file(self, *, file_b64: str, mime_type: str) -> str:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+        data_url = f"data:{mime_type};base64,{file_b64}"
+        response = self.client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": BRAND_CONTEXT_FILE_EXTRACT_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract the readable brand story text from this file."},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+            temperature=0.2,
+            max_tokens=800,
+            response_format={"type": "json_object"},
+        )
+        return response.choices[0].message.content or ""
 
     def generate_copy_stream(
         self,
