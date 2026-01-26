@@ -16,6 +16,8 @@ OPENAI_TEMPERATURE = 0.5
 # IMPORTANT: 700 tokens was causing truncated JSON for long, detail-heavy descriptions
 # (especially when Shop/Shipping/Returns sections are present), which dropped SEO + discovered_values.
 OPENAI_MAX_TOKENS = int(os.getenv("OPENAI_MAX_TOKENS", "2200"))
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
 
 # ------------------------------------------------------------------------------
 # Internal Fair Use Monitoring (never shown to merchants)

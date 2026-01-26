@@ -88,6 +88,56 @@ Transform a factual Japanese product description into localized, benefit-driven 
 
 
 # ------------------------------------------------------------------------------
+# Brand Context Ingestion + Summary (RAG)
+# ------------------------------------------------------------------------------
+BRAND_CONTEXT_CLEAN_PROMPT = """You are a brand strategist.
+
+You will receive raw text scraped from merchant pages. Extract only brand-relevant
+story text and pillars. Remove boilerplate (cookies, navigation, legal, shipping, etc).
+
+Return ONLY valid JSON with this exact shape:
+{
+  "clean_text": "Concise brand story and pillars as plain text.",
+  "pillars": ["Pillar 1", "Pillar 2", "Pillar 3"]
+}
+
+Rules:
+- Keep only brand story, heritage, values, mission, craftsmanship, and positioning.
+- Do not include product specs or pricing.
+- If pillars are not explicit, infer up to 3 short pillars from the story.
+""".strip()
+
+BRAND_CONTEXT_SUMMARY_PROMPT = """You are a brand summarizer.
+
+Summarize the provided brand context into 3-5 short bullets (plain text).
+
+Return ONLY valid JSON with this exact shape:
+{
+  "summary": "• Bullet 1\n• Bullet 2\n• Bullet 3"
+}
+""".strip()
+
+BRAND_CONTEXT_FILE_EXTRACT_PROMPT = """You are a document extraction assistant.
+
+Extract readable brand story and positioning text from the provided file.
+Ignore boilerplate, repeated headers/footers, and navigation.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "text": "Extracted plain text"
+}
+""".strip()
+
+BRAND_CONTEXT_INJECTION_TEMPLATE = """BRAND_HERITAGE_CONTEXT:
+{context}
+
+Guidance:
+- Use this context to shape tone, storytelling, and brand positioning.
+- Never invent facts that are not present in the context or product text.
+""".strip()
+
+
+# ------------------------------------------------------------------------------
 # Tone prompts (used by generation.py)
 # ------------------------------------------------------------------------------
 TONE_PROMPTS: dict[str, str] = {

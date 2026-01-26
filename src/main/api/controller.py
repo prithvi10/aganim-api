@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query, Header
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query, Header, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 import secrets
@@ -6,9 +6,16 @@ import os
 import jwt
 from pydantic import ValidationError
 
-from .models import RewriteRequest, OnboardingRequest, BulkRewriteRequest, AgentRequest
+from .models import (
+    RewriteRequest,
+    OnboardingRequest,
+    BulkRewriteRequest,
+    AgentRequest,
+    BrandContextIngestRequest,
+    BrandContextFileExtractRequest,
+)
 from src.main.db.db_models import User
-from src.main.db.database import get_db
+from src.main.db.database import get_db, SessionLocal
 from src.main.db.db_transactions import (
     get_plan_by_name,
     get_shop_quota_context,
@@ -16,7 +23,7 @@ from src.main.db.db_transactions import (
     record_successful_rewrite,
 )
 from src.main.db.db_transactions import get_user_by_username
-from src.main.db.db_models import Shop, User, Plan
+from src.main.db.db_models import Shop, User, Plan, StoreContext
 from src.main.security.security import (
     verify_shopify_session, 
     verify_webhook_signature, 
@@ -27,6 +34,7 @@ from src.main.security.security import (
 )
 from src.main.api.validation import validate_rewrite_request, validate_shop_and_quota 
 from src.main.service.onboarding import onboard_user
+from src.main.service.brand_context_ingest import ingest_brand_context, scrape_urls, extract_file_text
 from src.main.config.configs import SHOPIFY_UI_URL, PROMO_PRICING_ENABLED
 from src.main.logging.logger import get_logger, get_security_logger
 from typing import Optional
@@ -547,6 +555,250 @@ async def onboarding_update_step(
         "shop": shop_domain,
         "onboarding_step": int(getattr(shop, "onboarding_step", 0) or 0),
         "is_onboarding_finished": bool(getattr(shop, "is_onboarding_finished", False)),
+    }
+
+
+@router.post("/api/admin/brand-context/ingest")
+async def brand_context_ingest_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Ingest brand context from URLs and/or wizard text inputs.
+    Authenticated via Shopify session token or proxy signature.
+    """
+    rid = _rid(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    try:
+        payload = BrandContextIngestRequest(**body)
+    except ValidationError as e:
+        logger.info("[BrandIngest] invalid_payload rid=%s errors=%s", rid, e.errors())
+        raise HTTPException(status_code=422, detail=e.errors())
+
+    raw_texts: list[dict] = []
+    if payload.urls:
+        raw_texts.extend(scrape_urls(payload.urls))
+
+    wizard_blocks = []
+    if payload.brand_persona:
+        wizard_blocks.append(f"Brand Persona: {payload.brand_persona}")
+    if payload.core_pillars:
+        pillars = [str(p).strip() for p in payload.core_pillars if str(p).strip()]
+        if pillars:
+            wizard_blocks.append("Core Pillars:\n" + "\n".join(f"- {p}" for p in pillars))
+    if payload.raw_text:
+        wizard_blocks.append(str(payload.raw_text))
+    if payload.file_text:
+        wizard_blocks.append(str(payload.file_text))
+    if wizard_blocks:
+        raw_texts.append(
+            {
+                "source_url": None,
+                "source_type": "wizard",
+                "text": "\n\n".join(wizard_blocks),
+            }
+        )
+
+    if not raw_texts:
+        raise HTTPException(status_code=400, detail="No brand context content provided")
+
+    result = ingest_brand_context(db, shop_id=shop, raw_texts=raw_texts)
+    logger.info(
+        "[BrandIngest] done rid=%s shop=%s inserted=%s chunks=%s",
+        rid,
+        shop,
+        result.get("inserted"),
+        result.get("chunk_count"),
+    )
+    return {"status": "success", **result}
+
+
+def _run_brand_context_ingest(
+    *,
+    shop_id: str,
+    raw_texts: list[dict],
+    job_id: str,
+) -> None:
+    db = SessionLocal()
+    try:
+        shop = db.query(Shop).filter(Shop.domain == shop_id).first()
+        if shop:
+            shop.brand_context_status = "running"
+            shop.brand_context_last_error = None
+            shop.brand_context_job_id = job_id
+            db.add(shop)
+            db.commit()
+
+        ingest_brand_context(db, shop_id=shop_id, raw_texts=raw_texts)
+
+        shop = db.query(Shop).filter(Shop.domain == shop_id).first()
+        if shop:
+            shop.brand_context_status = "ready"
+            shop.brand_context_last_error = None
+            shop.brand_context_job_id = job_id
+            db.add(shop)
+            db.commit()
+    except Exception as e:
+        try:
+            shop = db.query(Shop).filter(Shop.domain == shop_id).first()
+            if shop:
+                shop.brand_context_status = "failed"
+                shop.brand_context_last_error = str(e)
+                shop.brand_context_job_id = job_id
+                db.add(shop)
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+@router.post("/api/admin/brand-context/ingest-async")
+async def brand_context_ingest_async_endpoint(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Async ingestion: returns immediately and processes in background.
+    """
+    rid = _rid(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    try:
+        payload = BrandContextIngestRequest(**body)
+    except ValidationError as e:
+        logger.info("[BrandIngest] async_invalid rid=%s errors=%s", rid, e.errors())
+        raise HTTPException(status_code=422, detail=e.errors())
+
+    raw_texts: list[dict] = []
+    if payload.urls:
+        raw_texts.extend(scrape_urls(payload.urls))
+
+    wizard_blocks = []
+    if payload.brand_persona:
+        wizard_blocks.append(f"Brand Persona: {payload.brand_persona}")
+    if payload.core_pillars:
+        pillars = [str(p).strip() for p in payload.core_pillars if str(p).strip()]
+        if pillars:
+            wizard_blocks.append("Core Pillars:\n" + "\n".join(f"- {p}" for p in pillars))
+    if payload.raw_text:
+        wizard_blocks.append(str(payload.raw_text))
+    if payload.file_text:
+        wizard_blocks.append(str(payload.file_text))
+    if wizard_blocks:
+        raw_texts.append(
+            {
+                "source_url": None,
+                "source_type": "wizard",
+                "text": "\n\n".join(wizard_blocks),
+            }
+        )
+
+    if not raw_texts:
+        raise HTTPException(status_code=400, detail="No brand context content provided")
+
+    import uuid
+
+    job_id = uuid.uuid4().hex[:12]
+    background_tasks.add_task(_run_brand_context_ingest, shop_id=shop, raw_texts=raw_texts, job_id=job_id)
+    logger.info("[BrandIngest] async_accepted rid=%s shop=%s job_id=%s", rid, shop, job_id)
+    return {"status": "accepted", "job_id": job_id}
+
+
+@router.post("/api/admin/brand-context/extract-file")
+async def brand_context_extract_file_endpoint(
+    request: Request,
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Extract text from an uploaded file using GPT-4o-mini (vision).
+    """
+    rid = _rid(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        payload = BrandContextFileExtractRequest(**body)
+    except ValidationError as e:
+        logger.info("[BrandIngest] extract_invalid rid=%s errors=%s", rid, e.errors())
+        raise HTTPException(status_code=422, detail=e.errors())
+
+    try:
+        text = extract_file_text(file_b64=payload.file_b64, mime_type=payload.mime_type)
+    except Exception as e:
+        logger.warning("[BrandIngest] extract_failed rid=%s shop=%s err=%s", rid, shop, e)
+        raise HTTPException(status_code=500, detail="Failed to extract text from file")
+
+    return {"status": "success", "text": text}
+
+
+@router.get("/api/admin/brand-context/summary")
+async def brand_context_summary_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    shop_domain = (request.query_params.get("shop") or "").strip() or (
+        request.headers.get("X-Shopify-Shop-Domain") or ""
+    ).strip()
+    if not shop_domain:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    chunk_count = (
+        db.query(StoreContext).filter(StoreContext.shop_id == shop_domain).count()
+    )
+    return {
+        "shop": shop_domain,
+        "summary": str(getattr(shop, "brand_context_summary", "") or "").strip(),
+        "updated_at": (
+            getattr(shop, "brand_context_updated_at", None).isoformat()
+            if getattr(shop, "brand_context_updated_at", None)
+            else None
+        ),
+        "chunk_count": int(chunk_count or 0),
+    }
+
+
+@router.get("/api/admin/brand-context/status")
+async def brand_context_status_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    shop_domain = (request.query_params.get("shop") or "").strip() or (
+        request.headers.get("X-Shopify-Shop-Domain") or ""
+    ).strip()
+    if not shop_domain:
+        raise HTTPException(status_code=400, detail="Missing shop parameter")
+
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    return {
+        "shop": shop_domain,
+        "status": getattr(shop, "brand_context_status", None) or "idle",
+        "job_id": getattr(shop, "brand_context_job_id", None),
+        "last_error": getattr(shop, "brand_context_last_error", None),
+        "summary": str(getattr(shop, "brand_context_summary", "") or "").strip(),
+        "updated_at": (
+            getattr(shop, "brand_context_updated_at", None).isoformat()
+            if getattr(shop, "brand_context_updated_at", None)
+            else None
+        ),
     }
 
 
