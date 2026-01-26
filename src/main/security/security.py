@@ -76,7 +76,8 @@ def verify_shopify_session(authorization: str = Header(...)):
 
     # DEV BYPASS: Allow a specific magic token for local testing
     if token == "dev-token-123":
-        return "dev-shop.myshopify.com"
+        override = os.getenv("DEV_SHOP_DOMAIN", "").strip()
+        return override or "dev-shop.myshopify.com"
 
     try:
         # 3. Decode & Verify the JWT

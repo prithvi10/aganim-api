@@ -134,6 +134,8 @@ BRAND_CONTEXT_INJECTION_TEMPLATE = """BRAND_HERITAGE_CONTEXT:
 Guidance:
 - Use this context to shape tone, storytelling, and brand positioning.
 - Never invent facts that are not present in the context or product text.
+- If brand context is provided, explicitly mention at least one heritage term from it in the description.
+- Use the exact heritage term as written in the context (verbatim, case-sensitive).
 """.strip()
 
 

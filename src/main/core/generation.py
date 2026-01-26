@@ -1,4 +1,5 @@
 import os
+import re
 import httpx
 import asyncio
 from fastapi import HTTPException
@@ -502,6 +503,36 @@ def _render_brand_context_block(chunks: list[dict]) -> str:
     if not blocks:
         return ""
     return BRAND_CONTEXT_INJECTION_TEMPLATE.format(context="\n\n".join(blocks))
+
+
+def _extract_heritage_line(context_block: str) -> str:
+    for line in str(context_block or "").splitlines():
+        line = line.strip()
+        if line.startswith("[") and "]" in line:
+            after = line.split("]", 1)[1].strip()
+            if after:
+                return after
+    return ""
+
+
+def _ensure_brand_heritage_in_description(description: str, context_block: str | None) -> str:
+    if not description or not context_block:
+        return description
+    line = _extract_heritage_line(context_block)
+    if not line:
+        return description
+    # Prefer explicit heritage terms (e.g., Arita-yaki)
+    term = ""
+    for token in re.findall(r"[A-Za-z][A-Za-z\-]{3,}", line):
+        if "-" in token or token.lower().endswith("yaki"):
+            term = token
+            break
+    if term and term in description:
+        return description
+    insertion = f"Heritage note: {line}"
+    if "</div>" in description:
+        return description.replace("</div>", f"<p>{insertion}</p></div>", 1)
+    return description + f"\n<p>{insertion}</p>"
 
 
 def _build_dynamic_prompt(
@@ -1104,6 +1135,13 @@ async def _generate_and_save_for_locale(
         parsed["title"] = product_name or "Generated Copy"
     if not str(parsed.get("description") or "").strip():
         parsed["description"] = raw_content or ""
+    # If brand context is present, ensure at least one heritage term appears in description.
+    try:
+        parsed["description"] = _ensure_brand_heritage_in_description(
+            str(parsed.get("description") or ""), brand_context_block
+        )
+    except Exception:
+        pass
     # Standard/Pro: generate specs + dimensions tables in a separate, cheap technical pass.
     try:
         pname = str(plan_name or "").strip().lower()
