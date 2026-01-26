@@ -7,6 +7,7 @@ services:
     command: uvicorn src.main.api.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
+      - ./tmp:/app/tmp
     ports:
       - "8000:8000"
     depends_on:
@@ -14,6 +15,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/shopify_translator
       - LOG_LEVEL=DEBUG
+      - BRAND_PROMPT_TRACE_PATH=/app/tmp/brand_prompt_trace.txt
       # Add other environment variables here or use env_file
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
       # - SHOPIFY_API_SECRET=${SHOPIFY_API_SECRET}
@@ -22,7 +24,7 @@ services:
       - .env
 
   db:
-    image: postgres:15
+    image: pgvector/pgvector:pg16
     container_name: shopify-translator-db
     restart: always
     environment:
@@ -33,6 +35,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
 
 volumes:
   postgres_data:

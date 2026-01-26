@@ -715,6 +715,25 @@ async def brand_context_ingest_async_endpoint(
     return {"status": "accepted", "job_id": job_id}
 
 
+@router.post("/api/onboarding/brand-soul")
+async def onboarding_brand_soul_endpoint(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Onboarding entrypoint for Brand Soul wizard.
+    Delegates to the async ingestion pipeline.
+    """
+    return await brand_context_ingest_async_endpoint(
+        request=request,
+        background_tasks=background_tasks,
+        db=db,
+        shop=shop,
+    )
+
+
 @router.post("/api/admin/brand-context/extract-file")
 async def brand_context_extract_file_endpoint(
     request: Request,
