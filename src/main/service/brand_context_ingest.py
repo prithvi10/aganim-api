@@ -2,6 +2,7 @@ import re
 from datetime import datetime, timezone
 from html import unescape
 from typing import Iterable
+import json
 
 import httpx
 from sqlalchemy.orm import Session
@@ -80,9 +81,9 @@ def _clean_brand_text(raw_text: str) -> dict:
     }
 
 
-def _summarize_brand_context(chunks: list[str], *, language: str) -> str:
+def _summarize_brand_context(chunks: list[str], *, language: str) -> dict:
     if not chunks:
-        return ""
+        return {"summary": "", "key_facts": []}
     service = OpenAIService()
     payload = {"brand_context": "\n\n".join(chunks[:12])}
     raw = service.generate_json(
@@ -92,9 +93,14 @@ def _summarize_brand_context(chunks: list[str], *, language: str) -> str:
         max_tokens=500,
     )
     parsed = parse_llm_json(raw or "")
-    if isinstance(parsed, dict) and parsed.get("summary"):
-        return str(parsed.get("summary") or "").strip()
-    return str(raw or "").strip()
+    if isinstance(parsed, dict):
+        summary = str(parsed.get("summary") or "").strip()
+        key_facts_raw = parsed.get("key_facts")
+        key_facts: list[str] = []
+        if isinstance(key_facts_raw, list):
+            key_facts = [str(k).strip() for k in key_facts_raw if str(k).strip()]
+        return {"summary": summary, "key_facts": key_facts}
+    return {"summary": str(raw or "").strip(), "key_facts": []}
 
 
 def ingest_brand_context(
@@ -178,8 +184,11 @@ def ingest_brand_context(
         db.add(row)
         inserted += 1
 
-    summary_en = _summarize_brand_context(chunks, language="English")
-    summary_ja = _summarize_brand_context(chunks, language="Japanese")
+    summary_en_payload = _summarize_brand_context(chunks, language="English")
+    summary_ja_payload = _summarize_brand_context(chunks, language="Japanese")
+    summary_en = str(summary_en_payload.get("summary") or "").strip()
+    summary_ja = str(summary_ja_payload.get("summary") or "").strip()
+    key_facts = summary_en_payload.get("key_facts") or summary_ja_payload.get("key_facts") or []
     try:
         shop = db.query(Shop).filter(Shop.domain == shop_id).first()
         if shop:
@@ -187,6 +196,7 @@ def ingest_brand_context(
             shop.brand_context_summary_ja = summary_ja
             # Keep legacy field for compatibility (default to English).
             shop.brand_context_summary = summary_en or summary_ja
+            shop.brand_context_key_facts = json.dumps(key_facts, ensure_ascii=False)
             shop.brand_context_updated_at = now
             shop.brand_context_status = "ready"
             shop.brand_context_last_error = None
@@ -200,5 +210,6 @@ def ingest_brand_context(
         "summary_en": summary_en,
         "summary_ja": summary_ja,
         "summary": summary_en or summary_ja,
+        "key_facts": key_facts,
         "chunk_count": len(chunks),
     }

@@ -1216,6 +1216,16 @@ async def process_generation_request(
     target_locale = request.target_locale or "en"
     plan_name = str(getattr(plan, "name", "") or "")
     tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
+    logger.info(
+        "[GenFlags] shop=%s plan=%s brand_soul=%s auto_convert_units=%s remove_irrelevant=%s tone=%s locale=%s",
+        shop,
+        plan_name,
+        bool(getattr(request, "brand_soul_enabled", False)),
+        bool(getattr(request, "auto_convert_units", False)),
+        bool(getattr(request, "remove_irrelevant_content", True)),
+        tone_profile,
+        target_locale,
+    )
     dynamic_prompt = _build_dynamic_prompt(
         target_locale,
         auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
@@ -1316,6 +1326,19 @@ async def process_bulk_generation_request(
     shop = user.username
     if not limiter.is_allowed(shop):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
+
+    plan_name = str(getattr(plan, "name", "") or "")
+    tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
+    logger.info(
+        "[GenFlags] shop=%s plan=%s brand_soul=%s auto_convert_units=%s remove_irrelevant=%s tone=%s locales=%s",
+        shop,
+        plan_name,
+        bool(getattr(request, "brand_soul_enabled", False)),
+        bool(getattr(request, "auto_convert_units", False)),
+        bool(getattr(request, "remove_irrelevant_content", True)),
+        tone_profile,
+        list(getattr(request, "target_locales", []) or []),
+    )
 
     # 1. Plan Check for Bulk (Multi-locale)
     if len(request.target_locales) > 1 and plan.name not in ("Standard", "Pro"):

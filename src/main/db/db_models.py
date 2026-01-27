@@ -78,6 +78,7 @@ class Shop(Base):
     brand_context_summary = Column(Text, nullable=True)
     brand_context_summary_en = Column(Text, nullable=True)
     brand_context_summary_ja = Column(Text, nullable=True)
+    brand_context_key_facts = Column(Text, nullable=True)
     brand_context_updated_at = Column(DateTime(timezone=True), nullable=True)
     brand_context_status = Column(String, nullable=True)
     brand_context_last_error = Column(Text, nullable=True)

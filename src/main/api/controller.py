@@ -38,6 +38,7 @@ from src.main.service.brand_context_ingest import ingest_brand_context, scrape_u
 from src.main.config.configs import SHOPIFY_UI_URL, PROMO_PRICING_ENABLED
 from src.main.logging.logger import get_logger, get_security_logger
 from typing import Optional
+import json
 
 # Import core business logic
 from src.main.core.generation import process_generation_request, process_bulk_generation_request
@@ -787,11 +788,21 @@ async def brand_context_summary_endpoint(
     summary_en = str(getattr(shop, "brand_context_summary_en", "") or "").strip()
     summary_ja = str(getattr(shop, "brand_context_summary_ja", "") or "").strip()
     summary = str(getattr(shop, "brand_context_summary", "") or "").strip() or summary_en or summary_ja
+    key_facts_raw = str(getattr(shop, "brand_context_key_facts", "") or "").strip()
+    key_facts: list[str] = []
+    if key_facts_raw:
+        try:
+            parsed = json.loads(key_facts_raw)
+            if isinstance(parsed, list):
+                key_facts = [str(k).strip() for k in parsed if str(k).strip()]
+        except Exception:
+            key_facts = []
     return {
         "shop": shop_domain,
         "summary": summary,
         "summary_en": summary_en,
         "summary_ja": summary_ja,
+        "key_facts": key_facts,
         "updated_at": (
             getattr(shop, "brand_context_updated_at", None).isoformat()
             if getattr(shop, "brand_context_updated_at", None)
@@ -819,6 +830,15 @@ async def brand_context_status_endpoint(
     summary_en = str(getattr(shop, "brand_context_summary_en", "") or "").strip()
     summary_ja = str(getattr(shop, "brand_context_summary_ja", "") or "").strip()
     summary = str(getattr(shop, "brand_context_summary", "") or "").strip() or summary_en or summary_ja
+    key_facts_raw = str(getattr(shop, "brand_context_key_facts", "") or "").strip()
+    key_facts: list[str] = []
+    if key_facts_raw:
+        try:
+            parsed = json.loads(key_facts_raw)
+            if isinstance(parsed, list):
+                key_facts = [str(k).strip() for k in parsed if str(k).strip()]
+        except Exception:
+            key_facts = []
     return {
         "shop": shop_domain,
         "status": getattr(shop, "brand_context_status", None) or "idle",
@@ -827,6 +847,7 @@ async def brand_context_status_endpoint(
         "summary": summary,
         "summary_en": summary_en,
         "summary_ja": summary_ja,
+        "key_facts": key_facts,
         "updated_at": (
             getattr(shop, "brand_context_updated_at", None).isoformat()
             if getattr(shop, "brand_context_updated_at", None)

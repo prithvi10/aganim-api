@@ -109,12 +109,18 @@ Rules:
 
 BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE = """You are a brand summarizer.
 
-Summarize the provided brand context into 3-5 short bullets (plain text).
+Task:
+- Read the provided brand context.
+- DO NOT reword or paraphrase key facts.
+- Preserve exact terms, dates, places, and phrases as written.
+- Build 3–5 bullets using the same wording (copy/trim is OK).
+
 Write the summary in {language}.
 
 Return ONLY valid JSON with this exact shape:
 {{
-  "summary": "• Bullet 1\n• Bullet 2\n• Bullet 3"
+  "summary": "• Bullet 1\n• Bullet 2\n• Bullet 3",
+  "key_facts": ["Exact Term 1", "Exact Term 2", "Exact Term 3"]
 }}
 """.strip()
 
