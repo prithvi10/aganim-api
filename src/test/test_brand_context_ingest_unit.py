@@ -21,8 +21,8 @@ def test_ingest_brand_context_inserts_chunks_and_summary():
 
     # generate_json called three times: clean + summary_en + summary_ja
     clean_json = '{"clean_text": "Brand story. More story.", "pillars": ["Heritage"]}'
-    summary_en_json = '{"summary": "• Heritage craft"}'
-    summary_ja_json = '{"summary": "• 伝統の工芸"}'
+    summary_en_json = '{"summary": "• Heritage craft", "key_facts": ["1885", "Kyoto"]}'
+    summary_ja_json = '{"summary": "• 伝統の工芸", "key_facts": ["1885", "京都"]}'
 
     with patch(
         "src.main.service.brand_context_ingest.OpenAIService.generate_json",
@@ -36,6 +36,8 @@ def test_ingest_brand_context_inserts_chunks_and_summary():
     assert result["summary"] == "• Heritage craft"
     assert result["summary_en"] == "• Heritage craft"
     assert result["summary_ja"] == "• 伝統の工芸"
+    assert result["key_facts"] == ["1885", "Kyoto"]
     assert mock_shop.brand_context_status == "ready"
     assert mock_shop.brand_context_summary_en == "• Heritage craft"
     assert mock_shop.brand_context_summary_ja == "• 伝統の工芸"
+    assert mock_shop.brand_context_key_facts == '["1885", "Kyoto"]'
