@@ -634,13 +634,17 @@ def _run_brand_context_ingest(
             db.add(shop)
             db.commit()
 
-        ingest_brand_context(db, shop_id=shop_id, raw_texts=raw_texts)
+        result = ingest_brand_context(db, shop_id=shop_id, raw_texts=raw_texts)
 
         shop = db.query(Shop).filter(Shop.domain == shop_id).first()
         if shop:
             shop.brand_context_status = "ready"
             shop.brand_context_last_error = None
             shop.brand_context_job_id = job_id
+            if isinstance(result, dict):
+                shop.brand_context_summary_en = result.get("summary_en") or shop.brand_context_summary_en
+                shop.brand_context_summary_ja = result.get("summary_ja") or shop.brand_context_summary_ja
+                shop.brand_context_summary = result.get("summary") or shop.brand_context_summary
             db.add(shop)
             db.commit()
     except Exception as e:
@@ -780,9 +784,14 @@ async def brand_context_summary_endpoint(
     chunk_count = (
         db.query(StoreContext).filter(StoreContext.shop_id == shop_domain).count()
     )
+    summary_en = str(getattr(shop, "brand_context_summary_en", "") or "").strip()
+    summary_ja = str(getattr(shop, "brand_context_summary_ja", "") or "").strip()
+    summary = str(getattr(shop, "brand_context_summary", "") or "").strip() or summary_en or summary_ja
     return {
         "shop": shop_domain,
-        "summary": str(getattr(shop, "brand_context_summary", "") or "").strip(),
+        "summary": summary,
+        "summary_en": summary_en,
+        "summary_ja": summary_ja,
         "updated_at": (
             getattr(shop, "brand_context_updated_at", None).isoformat()
             if getattr(shop, "brand_context_updated_at", None)
@@ -807,12 +816,17 @@ async def brand_context_status_endpoint(
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
 
+    summary_en = str(getattr(shop, "brand_context_summary_en", "") or "").strip()
+    summary_ja = str(getattr(shop, "brand_context_summary_ja", "") or "").strip()
+    summary = str(getattr(shop, "brand_context_summary", "") or "").strip() or summary_en or summary_ja
     return {
         "shop": shop_domain,
         "status": getattr(shop, "brand_context_status", None) or "idle",
         "job_id": getattr(shop, "brand_context_job_id", None),
         "last_error": getattr(shop, "brand_context_last_error", None),
-        "summary": str(getattr(shop, "brand_context_summary", "") or "").strip(),
+        "summary": summary,
+        "summary_en": summary_en,
+        "summary_ja": summary_ja,
         "updated_at": (
             getattr(shop, "brand_context_updated_at", None).isoformat()
             if getattr(shop, "brand_context_updated_at", None)

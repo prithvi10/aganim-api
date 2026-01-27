@@ -6,7 +6,10 @@ from typing import Iterable
 import httpx
 from sqlalchemy.orm import Session
 
-from src.main.config.prompts import BRAND_CONTEXT_CLEAN_PROMPT, BRAND_CONTEXT_SUMMARY_PROMPT
+from src.main.config.prompts import (
+    BRAND_CONTEXT_CLEAN_PROMPT,
+    BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE,
+)
 from src.main.db.db_models import StoreContext, Shop
 from src.main.logging.logger import get_logger
 from src.main.rag.chunking import chunk_text
@@ -77,13 +80,13 @@ def _clean_brand_text(raw_text: str) -> dict:
     }
 
 
-def _summarize_brand_context(chunks: list[str]) -> str:
+def _summarize_brand_context(chunks: list[str], *, language: str) -> str:
     if not chunks:
         return ""
     service = OpenAIService()
     payload = {"brand_context": "\n\n".join(chunks[:12])}
     raw = service.generate_json(
-        system_prompt=BRAND_CONTEXT_SUMMARY_PROMPT,
+        system_prompt=BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE.format(language=language),
         user_json=payload,
         temperature=0.2,
         max_tokens=500,
@@ -175,11 +178,15 @@ def ingest_brand_context(
         db.add(row)
         inserted += 1
 
-    summary = _summarize_brand_context(chunks)
+    summary_en = _summarize_brand_context(chunks, language="English")
+    summary_ja = _summarize_brand_context(chunks, language="Japanese")
     try:
         shop = db.query(Shop).filter(Shop.domain == shop_id).first()
         if shop:
-            shop.brand_context_summary = summary
+            shop.brand_context_summary_en = summary_en
+            shop.brand_context_summary_ja = summary_ja
+            # Keep legacy field for compatibility (default to English).
+            shop.brand_context_summary = summary_en or summary_ja
             shop.brand_context_updated_at = now
             shop.brand_context_status = "ready"
             shop.brand_context_last_error = None
@@ -188,4 +195,10 @@ def ingest_brand_context(
         logger.warning("[BrandIngest] summary_save_failed shop=%s err=%s", shop_id, e)
 
     db.commit()
-    return {"inserted": inserted, "summary": summary, "chunk_count": len(chunks)}
+    return {
+        "inserted": inserted,
+        "summary_en": summary_en,
+        "summary_ja": summary_ja,
+        "summary": summary_en or summary_ja,
+        "chunk_count": len(chunks),
+    }

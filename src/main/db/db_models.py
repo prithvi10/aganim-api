@@ -76,6 +76,8 @@ class Shop(Base):
     is_onboarding_finished = Column(Boolean, nullable=False, default=False, server_default="0")
     # Brand context summary (generated during onboarding ingestion)
     brand_context_summary = Column(Text, nullable=True)
+    brand_context_summary_en = Column(Text, nullable=True)
+    brand_context_summary_ja = Column(Text, nullable=True)
     brand_context_updated_at = Column(DateTime(timezone=True), nullable=True)
     brand_context_status = Column(String, nullable=True)
     brand_context_last_error = Column(Text, nullable=True)
