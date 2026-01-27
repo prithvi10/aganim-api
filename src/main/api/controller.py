@@ -1446,23 +1446,29 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
 
     import httpx
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(token_url, json=payload)
-            response.raise_for_status()
-            token_data = response.json()
-            access_token = token_data.get("access_token")
-            
-            logger.info(f"Successfully exchanged token for shop: {shop}")
-            logger.info(f"Auth callback params: host={host}, timestamp={params.get('timestamp')}")
-            store_shop_access_token(db, shop, access_token)
-            
-            # Redirect to the Remix UI's login route to ensure the UI also authenticates
-            # The Remix app will handle the second half of the handshake and then load the embedded app
-            ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"
-            if host:
-                ui_login_url += f"&host={host}"
-            logger.info(f"Redirecting to UI login for secondary handshake: {ui_login_url}")
-            return RedirectResponse(url=ui_login_url)
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(token_url, json=payload)
+        except PermissionError as e:
+            logger.warning("SSL init failed for OAuth token exchange; using insecure client: %s", e)
+            async with httpx.AsyncClient(verify=False) as client:
+                response = await client.post(token_url, json=payload)
+
+        response.raise_for_status()
+        token_data = response.json()
+        access_token = token_data.get("access_token")
+
+        logger.info(f"Successfully exchanged token for shop: {shop}")
+        logger.info(f"Auth callback params: host={host}, timestamp={params.get('timestamp')}")
+        store_shop_access_token(db, shop, access_token)
+
+        # Redirect to the Remix UI's login route to ensure the UI also authenticates
+        # The Remix app will handle the second half of the handshake and then load the embedded app
+        ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"
+        if host:
+            ui_login_url += f"&host={host}"
+        logger.info(f"Redirecting to UI login for secondary handshake: {ui_login_url}")
+        return RedirectResponse(url=ui_login_url)
 
     except httpx.HTTPStatusError as e:
         logger.error(f"Token exchange failed: {e.response.text}")

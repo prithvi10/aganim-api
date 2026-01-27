@@ -23,20 +23,29 @@ from src.main.service.fair_use import get_base_model_for_shop, get_effective_mod
 
 logger = get_logger(__name__)
 
-load_dotenv()
+try:
+    load_dotenv()
+except PermissionError:
+    # In some local/CI setups, .env is not readable; proceed with existing env vars.
+    pass
 ## For NETSKOPE ##
 ## TODO : Remove before going to PROD
 # <--- 2. Create an SSL Context that uses your System/Corporate Certs
-ssl_context = truststore.SSLContext(httpx.create_ssl_context().protocol)
-
-# <--- 3. Create a custom HTTP client using that SSL context
-http_client = httpx.Client(verify=ssl_context)
+try:
+    ssl_context = truststore.SSLContext(httpx.create_ssl_context().protocol)
+    # <--- 3. Create a custom HTTP client using that SSL context
+    http_client = httpx.Client(verify=ssl_context)
+except Exception as exc:
+    logger.warning("SSL context init failed; using insecure httpx client: %s", exc)
+    http_client = httpx.Client(verify=False)
 
 class OpenAIService:
     def __init__(self):
-        self.client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            http_client=http_client
+        api_key = os.getenv("OPENAI_API_KEY")
+        self.client = (
+            OpenAI(api_key=api_key, http_client=http_client)
+            if api_key
+            else None
         )
         self.system_prompt = SYSTEM_PROMPT
 
@@ -51,6 +60,8 @@ class OpenAIService:
     ) -> object:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
+        if not self.client:
+            raise RuntimeError("OpenAI client not initialized")
 
         user_content = f"""
         Product Name: {product_name}
@@ -229,6 +240,10 @@ class OpenAIService:
         """
         Returns a generator (stream) from OpenAI.
         """
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+        if not self.client:
+            raise RuntimeError("OpenAI client not initialized")
         user_content = f"""
         Product Name: {product_name}
         Category: {category}

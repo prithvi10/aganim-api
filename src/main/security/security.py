@@ -11,7 +11,11 @@ from urllib.parse import urlencode
 logger = get_logger(__name__)
 
 # Load environment variables
-load_dotenv()
+try:
+    load_dotenv()
+except PermissionError:
+    # In some local/CI setups, .env is not readable; proceed with existing env vars.
+    pass
 
 # Configuration
 def _env_strip(name: str) -> str | None:
