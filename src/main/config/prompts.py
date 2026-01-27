@@ -107,15 +107,19 @@ Rules:
 - If pillars are not explicit, infer up to 3 short pillars from the story.
 """.strip()
 
-BRAND_CONTEXT_SUMMARY_PROMPT = """You are a brand summarizer.
+BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE = """You are a brand summarizer.
 
 Summarize the provided brand context into 3-5 short bullets (plain text).
+Write the summary in {language}.
 
 Return ONLY valid JSON with this exact shape:
-{
+{{
   "summary": "• Bullet 1\n• Bullet 2\n• Bullet 3"
-}
+}}
 """.strip()
+
+# Backwards-compatible default (English).
+BRAND_CONTEXT_SUMMARY_PROMPT = BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE.format(language="English")
 
 BRAND_CONTEXT_FILE_EXTRACT_PROMPT = """You are a document extraction assistant.
 

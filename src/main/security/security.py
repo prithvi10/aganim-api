@@ -74,9 +74,12 @@ def verify_shopify_session(authorization: str = Header(...)):
     
     token = authorization.split(" ")[1]
 
-    # DEV BYPASS: Allow a specific magic token for local testing
+    # DEV BYPASS: Allow magic tokens for local testing
     if token == "dev-token-123":
         override = os.getenv("DEV_SHOP_DOMAIN", "").strip()
+        return override or "dev-shop.myshopify.com"
+    if token.startswith("dev-token:"):
+        override = token.split(":", 1)[1].strip()
         return override or "dev-shop.myshopify.com"
 
     try:

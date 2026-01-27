@@ -1,0 +1,119 @@
+{
+  "shops": [
+    {
+      "shop_domain": "brand-soul-kyoto.myshopify.com",
+      "brand_persona": "Koto-gama",
+      "raw_text": "【ご挨拶】\n古都窯（ことがま）は、明治18年（1885年）に京都・東山で開窯しました。\n私たちは「用の美（Yo-no-bi）」―使ってこそ美しい―という哲学を大切にしています。\n飾るための器ではなく、日々の食卓で愛される器を目指しています。\n",
+      "expected_keywords": ["1885", "Kyoto", "Higashiyama", "Yo-no-bi"],
+      "min_expected_hits": 2,
+      "products": [
+        {
+          "product_name": "蒼釉・深皿（24cm）",
+          "japanese_description": "商品名: 蒼釉・深皿（24cm）\n説明: パスタやカレーに最適な深皿です。 直径24cm、高さ5cm。 電子レンジ使用可、食洗機は推奨しません。 桐箱に入れてお届けします。",
+          "category": "Tableware",
+          "expected_keywords": ["1885", "Kyoto", "Yo-no-bi"],
+          "min_expected_hits": 2
+        },
+        {
+          "product_name": "白磁・湯呑み",
+          "japanese_description": "商品名: 白磁・湯呑み\n説明: 口当たりの良い白磁の湯呑みです。 容量180ml。 電子レンジ可、食洗機可。 ギフト箱入り。",
+          "category": "Tableware",
+          "expected_keywords": ["Kyoto", "Higashiyama", "Yo-no-bi"],
+          "min_expected_hits": 1
+        }
+      ]
+    },
+    {
+      "shop_domain": "edo-lacquer.myshopify.com",
+      "brand_persona": "Edo Lacquer",
+      "raw_text": "【会社概要】\n江戸漆工房は1920年に東京・浅草で創業しました。\n私たちは「侘び寂び」の美意識を大切にし、日常に馴染む漆器を作り続けています。\n天然木と伝統技法にこだわり、長く使える器を届けます。\n",
+      "expected_keywords": ["1920", "Tokyo", "Asakusa", "wabi-sabi"],
+      "min_expected_hits": 2,
+      "products": [
+        {
+          "product_name": "黒漆・汁椀",
+          "japanese_description": "商品名: 黒漆・汁椀\n説明: 味噌汁に最適な漆の汁椀です。 直径11cm、高さ7cm。 電子レンジ不可、手洗い推奨。",
+          "category": "Tableware",
+          "expected_keywords": ["1920", "Tokyo", "wabi-sabi"],
+          "min_expected_hits": 2
+        },
+        {
+          "product_name": "朱塗り・小皿",
+          "japanese_description": "商品名: 朱塗り・小皿\n説明: 前菜に使いやすい小皿です。 直径12cm。 電子レンジ不可、手洗い推奨。 化粧箱入り。",
+          "category": "Tableware",
+          "expected_keywords": ["Asakusa", "wabi-sabi"],
+          "min_expected_hits": 1
+        }
+      ]
+    },
+    {
+      "shop_domain": "kutani-ware.myshopify.com",
+      "brand_persona": "Kutani Ware",
+      "raw_text": "【私たちの物語】\n九谷焼工房は1804年に石川県で始まりました。\n鮮やかな五彩（緑・黄・紫・赤・紺）と、手描きの筆致が特徴です。\n日常の器にも「華やぎ」を添えることを大切にしています。\n",
+      "expected_keywords": ["1804", "Ishikawa", "gosai", "five colors"],
+      "min_expected_hits": 2,
+      "products": [
+        {
+          "product_name": "九谷焼・角皿",
+          "japanese_description": "商品名: 九谷焼・角皿\n説明: 前菜や和菓子に合う角皿です。 約18cm角。 電子レンジ可、食洗機は推奨しません。",
+          "category": "Tableware",
+          "expected_keywords": ["1804", "gosai", "five colors"],
+          "min_expected_hits": 2
+        },
+        {
+          "product_name": "九谷焼・茶碗",
+          "japanese_description": "商品名: 九谷焼・茶碗\n説明: ご飯が美味しく感じる九谷焼の茶碗です。 直径11.5cm。 電子レンジ可、食洗機不可。",
+          "category": "Tableware",
+          "expected_keywords": ["Ishikawa", "gosai"],
+          "min_expected_hits": 1
+        }
+      ]
+    },
+    {
+      "shop_domain": "nishijin-textiles.myshopify.com",
+      "brand_persona": "Nishijin Textiles",
+      "raw_text": "【織の歴史】\n西陣織の工房は17世紀に京都で発展しました。\n金糸・銀糸を用いた華やかな文様と、手織りの技を守り続けています。\n着物文化を未来へつなぐことを使命としています。\n\n【素材と技法】\n経糸と緯糸の緻密な組み合わせにより、奥行きのある織り表現を実現します。\n職人が手作業で糸の張りや間隔を調整し、長年培った感覚で仕上げます。\n\n【工房からの便り】\nこの資料はPDFとして配布されることが多く、長文の説明や段落が続きます。\nそのため、同一テーマの説明が繰り返される場合があります。\n\n【品質について】\n織りムラや糸の節は天然素材ならではの個性として大切にしています。\n一つ一つの工程に検品基準を設け、最終チェックを行っています。\n\n【保存と手入れ】\n湿気を避け、直射日光を避けて保管してください。\n長期保存時は防虫剤を使用し、風通しの良い場所で管理します。\n\n【PDF補足】\n以下はPDFから抽出した追加の説明です。\n西陣織は多様な組織と色彩で知られ、金糸・銀糸の輝きを生かした意匠が特徴です。\n手織りの工程では、細かなテンション調整と経験に基づく微調整が重要です。\n",
+      "expected_keywords": ["17th century", "Kyoto", "gold thread", "silver thread", "Nishijin"],
+      "min_expected_hits": 2,
+      "products": [
+        {
+          "product_name": "西陣織・名刺入れ",
+          "japanese_description": "商品名: 西陣織・名刺入れ\n説明: 手織りの西陣織を使用した名刺入れです。 収納枚数20枚。 内側ポケット付き。",
+          "category": "Textiles",
+          "expected_keywords": ["Nishijin", "Kyoto", "gold thread", "silver thread"],
+          "min_expected_hits": 2
+        },
+        {
+          "product_name": "西陣織・ストール",
+          "japanese_description": "商品名: 西陣織・ストール\n説明: 軽やかな肌触りのストールです。 幅45cm、長さ180cm。 ドライクリーニング推奨。",
+          "category": "Textiles",
+          "expected_keywords": ["Nishijin", "handwoven", "Kyoto"],
+          "min_expected_hits": 1
+        }
+      ]
+    },
+    {
+      "shop_domain": "yuzu-skincare.myshopify.com",
+      "brand_persona": "Yuzu Skincare",
+      "raw_text": "【ブランドストーリー】\n高知県の柚子農園と共に、1998年から自然派スキンケアを作っています。\n低温圧搾の柚子精油を使用し、合成香料は加えません。\n肌と心の調和を大切にしています。\n",
+      "expected_keywords": ["1998", "Kochi", "cold-pressed", "yuzu"],
+      "min_expected_hits": 2,
+      "products": [
+        {
+          "product_name": "柚子・フェイスセラム",
+          "japanese_description": "商品名: 柚子・フェイスセラム\n説明: しっとり潤うフェイスセラムです。 30ml。 朝晩使用可。 敏感肌にも対応。",
+          "category": "Cosmetics",
+          "expected_keywords": ["yuzu", "cold-pressed", "Kochi"],
+          "min_expected_hits": 2
+        },
+        {
+          "product_name": "柚子・ハンドクリーム",
+          "japanese_description": "商品名: 柚子・ハンドクリーム\n説明: べたつかない使用感のハンドクリームです。 50g。 乾燥が気になる時に。",
+          "category": "Cosmetics",
+          "expected_keywords": ["yuzu", "1998"],
+          "min_expected_hits": 1
+        }
+      ]
+    }
+  ]
+}
