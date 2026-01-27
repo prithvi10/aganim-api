@@ -73,7 +73,7 @@ def test_brand_context_ingest_async_accepts_and_sets_ready(_overrides):
                 rec.brand_context_status = "ready"
                 rec.brand_context_job_id = job_id
                 rec.brand_context_last_error = None
-                rec.brand_context_summary = "Summary ready"
+                rec.brand_context = {"summary_en": "Summary ready"}
                 db.add(rec)
                 db.commit()
         finally:
