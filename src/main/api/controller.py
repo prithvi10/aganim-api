@@ -785,24 +785,38 @@ async def brand_context_summary_endpoint(
     chunk_count = (
         db.query(StoreContext).filter(StoreContext.shop_id == shop_domain).count()
     )
-    summary_en = str(getattr(shop, "brand_context_summary_en", "") or "").strip()
-    summary_ja = str(getattr(shop, "brand_context_summary_ja", "") or "").strip()
-    summary = str(getattr(shop, "brand_context_summary", "") or "").strip() or summary_en or summary_ja
-    key_facts_raw = str(getattr(shop, "brand_context_key_facts", "") or "").strip()
-    key_facts: list[str] = []
-    if key_facts_raw:
+    brand_context = getattr(shop, "brand_context", None) or {}
+    if isinstance(brand_context, str):
         try:
-            parsed = json.loads(key_facts_raw)
-            if isinstance(parsed, list):
-                key_facts = [str(k).strip() for k in parsed if str(k).strip()]
+            brand_context = json.loads(brand_context)
         except Exception:
-            key_facts = []
+            brand_context = {}
+    if not isinstance(brand_context, dict):
+        brand_context = {}
+
+    summary_en = str(brand_context.get("summary_en") or "").strip()
+    summary_ja = str(brand_context.get("summary_ja") or "").strip()
+    summary = summary_en or summary_ja
+    key_facts_en = (
+        brand_context.get("key_facts_en")
+        if isinstance(brand_context.get("key_facts_en"), list)
+        else []
+    )
+    key_facts_ja = (
+        brand_context.get("key_facts_ja")
+        if isinstance(brand_context.get("key_facts_ja"), list)
+        else []
+    )
+    key_facts = key_facts_en or key_facts_ja
     return {
         "shop": shop_domain,
         "summary": summary,
         "summary_en": summary_en,
         "summary_ja": summary_ja,
         "key_facts": key_facts,
+        "key_facts_en": key_facts_en,
+        "key_facts_ja": key_facts_ja,
+        "brand_context": brand_context,
         "updated_at": (
             getattr(shop, "brand_context_updated_at", None).isoformat()
             if getattr(shop, "brand_context_updated_at", None)
@@ -827,18 +841,29 @@ async def brand_context_status_endpoint(
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
 
-    summary_en = str(getattr(shop, "brand_context_summary_en", "") or "").strip()
-    summary_ja = str(getattr(shop, "brand_context_summary_ja", "") or "").strip()
-    summary = str(getattr(shop, "brand_context_summary", "") or "").strip() or summary_en or summary_ja
-    key_facts_raw = str(getattr(shop, "brand_context_key_facts", "") or "").strip()
-    key_facts: list[str] = []
-    if key_facts_raw:
+    brand_context = getattr(shop, "brand_context", None) or {}
+    if isinstance(brand_context, str):
         try:
-            parsed = json.loads(key_facts_raw)
-            if isinstance(parsed, list):
-                key_facts = [str(k).strip() for k in parsed if str(k).strip()]
+            brand_context = json.loads(brand_context)
         except Exception:
-            key_facts = []
+            brand_context = {}
+    if not isinstance(brand_context, dict):
+        brand_context = {}
+
+    summary_en = str(brand_context.get("summary_en") or "").strip()
+    summary_ja = str(brand_context.get("summary_ja") or "").strip()
+    summary = summary_en or summary_ja
+    key_facts_en = (
+        brand_context.get("key_facts_en")
+        if isinstance(brand_context.get("key_facts_en"), list)
+        else []
+    )
+    key_facts_ja = (
+        brand_context.get("key_facts_ja")
+        if isinstance(brand_context.get("key_facts_ja"), list)
+        else []
+    )
+    key_facts = key_facts_en or key_facts_ja
     return {
         "shop": shop_domain,
         "status": getattr(shop, "brand_context_status", None) or "idle",
@@ -848,6 +873,9 @@ async def brand_context_status_endpoint(
         "summary_en": summary_en,
         "summary_ja": summary_ja,
         "key_facts": key_facts,
+        "key_facts_en": key_facts_en,
+        "key_facts_ja": key_facts_ja,
+        "brand_context": brand_context,
         "updated_at": (
             getattr(shop, "brand_context_updated_at", None).isoformat()
             if getattr(shop, "brand_context_updated_at", None)
