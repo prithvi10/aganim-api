@@ -37,7 +37,18 @@ def test_ingest_brand_context_inserts_chunks_and_summary():
     assert result["summary_en"] == "• Heritage craft"
     assert result["summary_ja"] == "• 伝統の工芸"
     assert result["key_facts"] == ["1885", "Kyoto"]
+    assert result["key_facts_en"] == ["1885", "Kyoto"]
+    assert result["key_facts_ja"] == ["1885", "京都"]
+    assert result["brand_context"] == {
+        "summary_en": "• Heritage craft",
+        "summary_ja": "• 伝統の工芸",
+        "key_facts_en": ["1885", "Kyoto"],
+        "key_facts_ja": ["1885", "京都"],
+    }
     assert mock_shop.brand_context_status == "ready"
-    assert mock_shop.brand_context_summary_en == "• Heritage craft"
-    assert mock_shop.brand_context_summary_ja == "• 伝統の工芸"
-    assert mock_shop.brand_context_key_facts == '["1885", "Kyoto"]'
+    assert mock_shop.brand_context == {
+        "summary_en": "• Heritage craft",
+        "summary_ja": "• 伝統の工芸",
+        "key_facts_en": ["1885", "Kyoto"],
+        "key_facts_ja": ["1885", "京都"],
+    }

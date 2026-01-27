@@ -188,15 +188,20 @@ def ingest_brand_context(
     summary_ja_payload = _summarize_brand_context(chunks, language="Japanese")
     summary_en = str(summary_en_payload.get("summary") or "").strip()
     summary_ja = str(summary_ja_payload.get("summary") or "").strip()
-    key_facts = summary_en_payload.get("key_facts") or summary_ja_payload.get("key_facts") or []
+    key_facts_en = summary_en_payload.get("key_facts") or []
+    key_facts_ja = summary_ja_payload.get("key_facts") or []
+    key_facts = key_facts_en or key_facts_ja or []
+    brand_context = {
+        "summary_en": summary_en,
+        "summary_ja": summary_ja,
+        "key_facts_en": key_facts_en,
+        "key_facts_ja": key_facts_ja,
+    }
     try:
         shop = db.query(Shop).filter(Shop.domain == shop_id).first()
         if shop:
-            shop.brand_context_summary_en = summary_en
-            shop.brand_context_summary_ja = summary_ja
-            # Keep legacy field for compatibility (default to English).
-            shop.brand_context_summary = summary_en or summary_ja
-            shop.brand_context_key_facts = json.dumps(key_facts, ensure_ascii=False)
+            # Store JSON blob for UI use.
+            shop.brand_context = brand_context
             shop.brand_context_updated_at = now
             shop.brand_context_status = "ready"
             shop.brand_context_last_error = None
@@ -211,5 +216,8 @@ def ingest_brand_context(
         "summary_ja": summary_ja,
         "summary": summary_en or summary_ja,
         "key_facts": key_facts,
+        "key_facts_en": key_facts_en,
+        "key_facts_ja": key_facts_ja,
+        "brand_context": brand_context,
         "chunk_count": len(chunks),
     }
