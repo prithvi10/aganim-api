@@ -29,6 +29,7 @@ EXPOSE 8000
 
 # Define environment variable
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 # Run the entrypoint script
 CMD ["./scripts/entrypoint.sh"]

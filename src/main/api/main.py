@@ -53,6 +53,11 @@ def _ensure_shop_columns_exist():
             add("last_plan_change_type TEXT", "last_plan_change_type")
             add("last_plan_change_at TEXT", "last_plan_change_at")
             add("last_shopify_subscription_status TEXT", "last_shopify_subscription_status")
+            add("brand_context TEXT", "brand_context")
+            add("brand_context_updated_at TEXT", "brand_context_updated_at")
+            add("brand_context_status TEXT", "brand_context_status")
+            add("brand_context_last_error TEXT", "brand_context_last_error")
+            add("brand_context_job_id TEXT", "brand_context_job_id")
             conn.commit()
         return
 
@@ -76,6 +81,27 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_plan_change_type VARCHAR"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_plan_change_at TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_shopify_subscription_status VARCHAR"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context JSONB"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_updated_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_status VARCHAR"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_last_error TEXT"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_job_id VARCHAR"))
+        conn.commit()
+
+
+def _ensure_pgvector_extension_and_indexes():
+    """Best-effort pgvector extension + indexes for store_context (Postgres only)."""
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS store_context_shop_id_idx ON store_context (shop_id)"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS store_context_embedding_idx "
+                "ON store_context USING ivfflat (embedding vector_cosine_ops)"
+            )
+        )
         conn.commit()
 
 
@@ -113,6 +139,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _ensure_plan_columns_exist()
     _ensure_shop_columns_exist()
+    _ensure_pgvector_extension_and_indexes()
     yield
     # Shutdown: (Cleanup if needed)
 
@@ -172,7 +199,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     # Regex to allow any Shopify store domain (e.g., https://my-store.myshopify.com)
-    allow_origin_regex=r"https://.*\.myshopify\.com|https://admin\.shopify\.com|https://extensions\.shopifycdn\.com",
+    allow_origin_regex=r"https://.*\.myshopify\.com|https://admin\.shopify\.com|https://extensions\.shopifycdn\.com|https://.*\.ngrok\.app|https://.*\.trycloudflare\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -15,6 +15,8 @@ class RewriteRequest(BaseModel):
     tone_profile: Literal["professional", "luxury", "minimalist", "playful"] | None = None
     # When true, strip non-product/misc metadata from the description entirely (default ON).
     remove_irrelevant_content: bool = True
+    # When true, inject brand-soul context via RAG (Standard+ only).
+    brand_soul_enabled: bool = False
 
 class BulkRewriteRequest(BaseModel):
     product_name: str
@@ -28,6 +30,8 @@ class BulkRewriteRequest(BaseModel):
     tone_profile: Literal["professional", "luxury", "minimalist", "playful"] | None = None
     # When true, strip non-product/misc metadata from the description entirely (default ON).
     remove_irrelevant_content: bool = True
+    # When true, inject brand-soul context via RAG (Standard+ only).
+    brand_soul_enabled: bool = False
 
 class OnboardingRequest(BaseModel):
     username: str # This will be the shop domain
@@ -56,3 +60,16 @@ class AgentRequest(BaseModel):
 class AgentResponse(BaseModel):
     status: Literal["success"]
     data: dict[str, Any]
+
+
+class BrandContextIngestRequest(BaseModel):
+    urls: list[str] = []
+    brand_persona: str | None = None
+    core_pillars: list[str] = []
+    raw_text: str | None = None
+    file_text: str | None = None
+
+
+class BrandContextFileExtractRequest(BaseModel):
+    file_b64: str
+    mime_type: str
