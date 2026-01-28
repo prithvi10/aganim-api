@@ -642,10 +642,6 @@ def _run_brand_context_ingest(
             shop.brand_context_status = "ready"
             shop.brand_context_last_error = None
             shop.brand_context_job_id = job_id
-            if isinstance(result, dict):
-                shop.brand_context_summary_en = result.get("summary_en") or shop.brand_context_summary_en
-                shop.brand_context_summary_ja = result.get("summary_ja") or shop.brand_context_summary_ja
-                shop.brand_context_summary = result.get("summary") or shop.brand_context_summary
             db.add(shop)
             db.commit()
     except Exception as e:
@@ -794,20 +790,25 @@ async def brand_context_summary_endpoint(
     if not isinstance(brand_context, dict):
         brand_context = {}
 
-    summary_en = str(brand_context.get("summary_en") or "").strip()
-    summary_ja = str(brand_context.get("summary_ja") or "").strip()
+    # Backward compatibility mapping:
+    # If using new nested shape (en/ja keys), map them to top-level fields for UI.
+    en = brand_context.get("en") or {}
+    ja = brand_context.get("ja") or {}
+    
+    summary_en = str(en.get("clean_text") or brand_context.get("summary_en") or "").strip()
+    summary_ja = str(ja.get("clean_text") or brand_context.get("summary_ja") or "").strip()
     summary = summary_en or summary_ja
+    
     key_facts_en = (
-        brand_context.get("key_facts_en")
-        if isinstance(brand_context.get("key_facts_en"), list)
-        else []
+        (en.get("pillars") if isinstance(en.get("pillars"), list) else []) or
+        (brand_context.get("key_facts_en") if isinstance(brand_context.get("key_facts_en"), list) else [])
     )
     key_facts_ja = (
-        brand_context.get("key_facts_ja")
-        if isinstance(brand_context.get("key_facts_ja"), list)
-        else []
+        (ja.get("pillars") if isinstance(ja.get("pillars"), list) else []) or
+        (brand_context.get("key_facts_ja") if isinstance(brand_context.get("key_facts_ja"), list) else [])
     )
     key_facts = key_facts_en or key_facts_ja
+    
     return {
         "shop": shop_domain,
         "summary": summary,
@@ -850,20 +851,25 @@ async def brand_context_status_endpoint(
     if not isinstance(brand_context, dict):
         brand_context = {}
 
-    summary_en = str(brand_context.get("summary_en") or "").strip()
-    summary_ja = str(brand_context.get("summary_ja") or "").strip()
+    # Backward compatibility mapping:
+    # If using new nested shape (en/ja keys), map them to top-level fields for UI.
+    en = brand_context.get("en") or {}
+    ja = brand_context.get("ja") or {}
+    
+    summary_en = str(en.get("clean_text") or brand_context.get("summary_en") or "").strip()
+    summary_ja = str(ja.get("clean_text") or brand_context.get("summary_ja") or "").strip()
     summary = summary_en or summary_ja
+    
     key_facts_en = (
-        brand_context.get("key_facts_en")
-        if isinstance(brand_context.get("key_facts_en"), list)
-        else []
+        (en.get("pillars") if isinstance(en.get("pillars"), list) else []) or
+        (brand_context.get("key_facts_en") if isinstance(brand_context.get("key_facts_en"), list) else [])
     )
     key_facts_ja = (
-        brand_context.get("key_facts_ja")
-        if isinstance(brand_context.get("key_facts_ja"), list)
-        else []
+        (ja.get("pillars") if isinstance(ja.get("pillars"), list) else []) or
+        (brand_context.get("key_facts_ja") if isinstance(brand_context.get("key_facts_ja"), list) else [])
     )
     key_facts = key_facts_en or key_facts_ja
+    
     return {
         "shop": shop_domain,
         "status": getattr(shop, "brand_context_status", None) or "idle",
@@ -1457,11 +1463,11 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         response.raise_for_status()
         token_data = response.json()
         access_token = token_data.get("access_token")
-
+        
         logger.info(f"Successfully exchanged token for shop: {shop}")
         logger.info(f"Auth callback params: host={host}, timestamp={params.get('timestamp')}")
         store_shop_access_token(db, shop, access_token)
-
+        
         # Redirect to the Remix UI's login route to ensure the UI also authenticates
         # The Remix app will handle the second half of the handshake and then load the embedded app
         ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"

@@ -7,10 +7,7 @@ import json
 import httpx
 from sqlalchemy.orm import Session
 
-from src.main.config.prompts import (
-    BRAND_CONTEXT_CLEAN_PROMPT,
-    BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE,
-)
+from src.main.config.prompts import BRAND_CONTEXT_CLEAN_PROMPT
 from src.main.db.db_models import StoreContext, Shop
 from src.main.logging.logger import get_logger
 from src.main.rag.chunking import chunk_text
@@ -68,39 +65,30 @@ def _clean_brand_text(raw_text: str) -> dict:
         system_prompt=BRAND_CONTEXT_CLEAN_PROMPT,
         user_json=payload,
         temperature=0.2,
-        max_tokens=800,
+        max_tokens=1500,
     )
     parsed = parse_llm_json(raw or "")
     if not isinstance(parsed, dict):
-        return {"clean_text": raw_text.strip(), "pillars": []}
-    clean_text = str(parsed.get("clean_text") or "").strip()
-    pillars = parsed.get("pillars") if isinstance(parsed.get("pillars"), list) else []
+        return {
+            "en": {"clean_text": raw_text.strip(), "pillars": []},
+            "ja": {"clean_text": "", "pillars": []}
+        }
+    
+    # Ensure nested keys exist
+    en = parsed.get("en") or {}
+    ja = parsed.get("ja") or {}
+    
     return {
-        "clean_text": clean_text or raw_text.strip(),
-        "pillars": [str(p).strip() for p in pillars if str(p).strip()],
+        "en": {
+            "clean_text": str(en.get("clean_text") or "").strip(),
+            "pillars": [str(p).strip() for p in (en.get("pillars") or []) if str(p).strip()]
+        },
+        "ja": {
+            "clean_text": str(ja.get("clean_text") or "").strip(),
+            "pillars": [str(p).strip() for p in (ja.get("pillars") or []) if str(p).strip()]
+        }
     }
 
-
-def _summarize_brand_context(chunks: list[str], *, language: str) -> dict:
-    if not chunks:
-        return {"summary": "", "key_facts": []}
-    service = OpenAIService()
-    payload = {"brand_context": "\n\n".join(chunks[:12])}
-    raw = service.generate_json(
-        system_prompt=BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE.format(language=language),
-        user_json=payload,
-        temperature=0.2,
-        max_tokens=500,
-    )
-    parsed = parse_llm_json(raw or "")
-    if isinstance(parsed, dict):
-        summary = str(parsed.get("summary") or "").strip()
-        key_facts_raw = parsed.get("key_facts")
-        key_facts: list[str] = []
-        if isinstance(key_facts_raw, list):
-            key_facts = [str(k).strip() for k in key_facts_raw if str(k).strip()]
-        return {"summary": summary, "key_facts": key_facts}
-    return {"summary": str(raw or "").strip(), "key_facts": []}
 
 
 def ingest_brand_context(
@@ -128,29 +116,59 @@ def ingest_brand_context(
             {
                 "source_url": str(item.get("source_url") or "").strip() or None,
                 "source_type": str(item.get("source_type") or "text").strip(),
-                "clean_text": cleaned.get("clean_text") or "",
-                "pillars": cleaned.get("pillars") or [],
+                "clean_blob": cleaned, # Store the full nested EN/JP structure
             }
         )
 
+    # Process clean_text results to chunks
     chunks = []
     chunk_meta = []
+    
+    # We will prioritize English for chunking if available, or fallback to Japanese.
+    # The chunking logic remains the same (StoreContext stores vectors).
+    # NOTE: StoreContext 'content' is used for RAG retrieval. If we want cross-lingual RAG,
+    # we typically embed the language that matches the user's queries.
+    # Here we default to storing the English clean text if present, else Japanese.
+    
     for item in cleaned_items:
-        for chunk in chunk_text(item["clean_text"], max_len=max_len, overlap=overlap):
-            if not chunk.content.strip():
-                continue
-            chunks.append(chunk.content)
-            chunk_meta.append(
-                {
-                    "source_url": item.get("source_url"),
-                    "source_type": item.get("source_type"),
-                    "chunk_index": chunk.chunk_index,
-                    "pillars": item.get("pillars") or [],
-                }
-            )
+        # Extract clean text from nested structure
+        # item['clean_blob'] = { 'en': {...}, 'ja': {...} }
+        blob = item.get("clean_blob") or {}
+        en_text = blob.get("en", {}).get("clean_text") or ""
+        ja_text = blob.get("ja", {}).get("clean_text") or ""
+        
+        # Determine what to vector-store. 
+        # Strategy: Store both if available? Or just English?
+        # Current logic iterates 'cleaned_items' and makes chunks. 
+        # Let's store both segments as separate chunks to allow multilingual retrieval match.
+        
+        texts_to_chunk = []
+        if en_text:
+            texts_to_chunk.append({"text": en_text, "lang": "en", "pillars": blob.get("en", {}).get("pillars") or []})
+        if ja_text and ja_text != en_text:
+            texts_to_chunk.append({"text": ja_text, "lang": "ja", "pillars": blob.get("ja", {}).get("pillars") or []})
+            
+        # If both empty, fallback to raw? But _clean_brand_text guarantees structure.
+        if not texts_to_chunk:
+             continue
+
+        for txt_obj in texts_to_chunk:
+            for chunk in chunk_text(txt_obj["text"], max_len=max_len, overlap=overlap):
+                if not chunk.content.strip():
+                    continue
+                chunks.append(chunk.content)
+                chunk_meta.append(
+                    {
+                        "source_url": item.get("source_url"),
+                        "source_type": item.get("source_type"),
+                        "chunk_index": chunk.chunk_index,
+                        "pillars": txt_obj["pillars"],
+                        "lang": txt_obj["lang"]
+                    }
+                )
 
     if not chunks:
-        return {"inserted": 0, "summary": "", "chunk_count": 0}
+        return {"inserted": 0, "chunk_count": 0}
 
     vectors = embed_texts(chunks)
     now = datetime.now(timezone.utc)
@@ -178,25 +196,44 @@ def ingest_brand_context(
                 "source_type": meta.get("source_type"),
                 "chunk_index": meta.get("chunk_index"),
                 "pillars": meta.get("pillars"),
+                "lang": meta.get("lang"),
                 "extracted_at": now.isoformat(),
             },
         )
         db.add(row)
         inserted += 1
 
-    summary_en_payload = _summarize_brand_context(chunks, language="English")
-    summary_ja_payload = _summarize_brand_context(chunks, language="Japanese")
-    summary_en = str(summary_en_payload.get("summary") or "").strip()
-    summary_ja = str(summary_ja_payload.get("summary") or "").strip()
-    key_facts_en = summary_en_payload.get("key_facts") or []
-    key_facts_ja = summary_ja_payload.get("key_facts") or []
-    key_facts = key_facts_en or key_facts_ja or []
+    # Consolidated brand_context blob construction
+    # Merge pillars from all items
+    pillars_en = set()
+    pillars_ja = set()
+    clean_text_en_parts = []
+    clean_text_ja_parts = []
+
+    for item in cleaned_items:
+        blob = item.get("clean_blob") or {}
+        
+        pe = blob.get("en", {}).get("pillars") or []
+        pj = blob.get("ja", {}).get("pillars") or []
+        pillars_en.update(pe)
+        pillars_ja.update(pj)
+        
+        te = blob.get("en", {}).get("clean_text") or ""
+        tj = blob.get("ja", {}).get("clean_text") or ""
+        if te: clean_text_en_parts.append(te)
+        if tj: clean_text_ja_parts.append(tj)
+
     brand_context = {
-        "summary_en": summary_en,
-        "summary_ja": summary_ja,
-        "key_facts_en": key_facts_en,
-        "key_facts_ja": key_facts_ja,
+        "en": {
+            "clean_text": "\n\n".join(clean_text_en_parts),
+            "pillars": list(pillars_en)
+        },
+        "ja": {
+            "clean_text": "\n\n".join(clean_text_ja_parts),
+            "pillars": list(pillars_ja)
+        }
     }
+
     try:
         shop = db.query(Shop).filter(Shop.domain == shop_id).first()
         if shop:
@@ -212,12 +249,6 @@ def ingest_brand_context(
     db.commit()
     return {
         "inserted": inserted,
-        "summary_en": summary_en,
-        "summary_ja": summary_ja,
-        "summary": summary_en or summary_ja,
-        "key_facts": key_facts,
-        "key_facts_en": key_facts_en,
-        "key_facts_ja": key_facts_ja,
         "brand_context": brand_context,
         "chunk_count": len(chunks),
     }

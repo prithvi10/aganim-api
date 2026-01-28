@@ -92,40 +92,29 @@ Transform a factual Japanese product description into localized, benefit-driven 
 # ------------------------------------------------------------------------------
 BRAND_CONTEXT_CLEAN_PROMPT = """You are a brand strategist.
 
-You will receive raw text scraped from merchant pages. Extract only brand-relevant
-story text and pillars. Remove boilerplate (cookies, navigation, legal, shipping, etc).
+You will receive raw text scraped from merchant pages. Your task is to extract brand-relevant story text and pillars, and provide them in both English and Japanese.
 
-Return ONLY valid JSON with this exact shape:
+Return ONLY valid JSON with this exact nested shape:
 {
-  "clean_text": "Concise brand story and pillars as plain text.",
-  "pillars": ["Pillar 1", "Pillar 2", "Pillar 3"]
+  "en": {
+    "clean_text": "Concise brand story and pillars as plain text (English).",
+    "pillars": ["Pillar 1", "Pillar 2", "Pillar 3"]
+  },
+  "ja": {
+    "clean_text": "Concise brand story and pillars as plain text (Japanese).",
+    "pillars": ["Pillar 1", "Pillar 2", "Pillar 3"]
+  }
 }
 
 Rules:
 - Keep only brand story, heritage, values, mission, craftsmanship, and positioning.
+- Remove boilerplate (cookies, navigation, legal, shipping, etc).
 - Do not include product specs or pricing.
 - If pillars are not explicit, infer up to 3 short pillars from the story.
+- Ensure the English and Japanese sections convey the same core meaning.
+- If the input is only in one language, translate it to fill the other language fields.
 """.strip()
 
-BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE = """You are a brand summarizer.
-
-Task:
-- Read the provided brand context.
-- DO NOT reword or paraphrase key facts.
-- Preserve exact terms, dates, places, and phrases as written.
-- Build 3–5 bullets using the same wording (copy/trim is OK).
-
-Write the summary in {language}.
-
-Return ONLY valid JSON with this exact shape:
-{{
-  "summary": "• Bullet 1\n• Bullet 2\n• Bullet 3",
-  "key_facts": ["Exact Term 1", "Exact Term 2", "Exact Term 3"]
-}}
-""".strip()
-
-# Backwards-compatible default (English).
-BRAND_CONTEXT_SUMMARY_PROMPT = BRAND_CONTEXT_SUMMARY_PROMPT_TEMPLATE.format(language="English")
 
 BRAND_CONTEXT_FILE_EXTRACT_PROMPT = """You are a document extraction assistant.
 

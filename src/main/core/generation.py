@@ -520,26 +520,33 @@ def _normalize_brand_context_blob(raw: object) -> dict:
     return {}
 
 
-def _locale_prefers_japanese(locale: str | None) -> bool:
-    return str(locale or "").lower().startswith("ja")
-
-
 def _render_brand_context_block_from_blob(brand_context: dict, target_locale: str) -> str:
     if not brand_context:
         return ""
-    lang = "ja" if _locale_prefers_japanese(target_locale) else "en"
-    summary = str(brand_context.get(f"summary_{lang}") or "").strip()
-    key_facts_raw = brand_context.get(f"key_facts_{lang}")
-    key_facts = []
-    if isinstance(key_facts_raw, list):
-        key_facts = [str(k).strip() for k in key_facts_raw if str(k).strip()]
-    if not summary and not key_facts:
+    # Inject EN clean text for all targets (including JP).
+    lang = "en"
+    
+    # Retrieve clean_text/pillars from nested shape
+    # Structure: { "en": {"clean_text": "...", "pillars": [...]}, "ja": {...} }
+    # Also support legacy flat structure for backward compat if needed, though we just migrated.
+    
+    node = brand_context.get(lang) or {}
+    clean_text = str(node.get("clean_text") or brand_context.get(f"summary_{lang}") or "").strip()
+    
+    pillars_raw = node.get("pillars") or brand_context.get(f"key_facts_{lang}")
+    pillars = []
+    if isinstance(pillars_raw, list):
+        pillars = [str(k).strip() for k in pillars_raw if str(k).strip()]
+        
+    if not clean_text and not pillars:
         return ""
+        
     parts = []
-    if summary:
-        parts.append(summary)
-    if key_facts:
-        parts.append("Key Facts: " + "; ".join(key_facts))
+    if clean_text:
+        parts.append(clean_text)
+    if pillars:
+        parts.append("Core Pillars: " + "; ".join(pillars))
+        
     return BRAND_CONTEXT_INJECTION_TEMPLATE.format(context="\n\n".join(parts))
 
 
@@ -555,22 +562,40 @@ def _build_brand_context_block(
     shop_rec = db.query(Shop).filter(Shop.domain == shop).first()
     brand_context_blob = _normalize_brand_context_blob(getattr(shop_rec, "brand_context", None) if shop_rec else None)
     brand_context_block = _render_brand_context_block_from_blob(brand_context_blob, target_locale)
+    
     if brand_context_block:
         return brand_context_block
-    # Fallback to chunks only for Japanese output, to avoid injecting JP into other locales.
-    if _locale_prefers_japanese(target_locale):
-        chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=3)
-        return _render_brand_context_block(chunks)
-    return ""
+
+    # Fallback to chunks only if no clean-text blob exists (legacy/partial ingestion).
+    # Filter to English chunks to avoid injecting JP content.
+    chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=6)
+    if not chunks:
+        return ""
+    en_chunks = []
+    for item in chunks:
+        meta = item.get("metadata") or {}
+        if str(meta.get("lang") or "").lower() == "en":
+            en_chunks.append(item)
+    if not en_chunks:
+        return ""
+    return _render_brand_context_block(en_chunks)
 
 
 def _extract_heritage_line(context_block: str) -> str:
     for line in str(context_block or "").splitlines():
         line = line.strip()
+        if not line:
+            continue
+        if line.startswith("BRAND_HERITAGE_CONTEXT"):
+            continue
+        if line.startswith("Core Pillars:"):
+            continue
         if line.startswith("[") and "]" in line:
             after = line.split("]", 1)[1].strip()
             if after:
                 return after
+        # Fallback: use the first meaningful line
+        return line
     return ""
 
 

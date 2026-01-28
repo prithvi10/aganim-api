@@ -1,7 +1,23 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Date, BigInteger, Numeric, Text, JSON
 from sqlalchemy.types import Text as TextType
 from sqlalchemy.dialects.postgresql import JSONB
-from pgvector.sqlalchemy import Vector
+try:
+    from pgvector.sqlalchemy import Vector
+except Exception:  # pragma: no cover - fallback for local/dev environments without pgvector
+    from sqlalchemy.types import TypeDecorator, JSON
+    import warnings
+
+    warnings.warn(
+        "pgvector not installed; falling back to JSON for Vector column types.",
+        RuntimeWarning,
+    )
+
+    class Vector(TypeDecorator):
+        impl = JSON
+        cache_ok = True
+
+        def __init__(self, *args, **kwargs):
+            super().__init__()
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
