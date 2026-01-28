@@ -5,7 +5,7 @@ import asyncio
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 import json
-from src.main.db.db_models import User
+from src.main.db.db_models import User, Shop
 from src.main.api.models import RewriteRequest, BulkRewriteRequest
 from src.main.service.open_ai_api_service import OpenAIService
 from src.main.service import serp_service
@@ -503,6 +503,65 @@ def _render_brand_context_block(chunks: list[dict]) -> str:
     if not blocks:
         return ""
     return BRAND_CONTEXT_INJECTION_TEMPLATE.format(context="\n\n".join(blocks))
+
+
+def _normalize_brand_context_blob(raw: object) -> dict:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+def _locale_prefers_japanese(locale: str | None) -> bool:
+    return str(locale or "").lower().startswith("ja")
+
+
+def _render_brand_context_block_from_blob(brand_context: dict, target_locale: str) -> str:
+    if not brand_context:
+        return ""
+    lang = "ja" if _locale_prefers_japanese(target_locale) else "en"
+    summary = str(brand_context.get(f"summary_{lang}") or "").strip()
+    key_facts_raw = brand_context.get(f"key_facts_{lang}")
+    key_facts = []
+    if isinstance(key_facts_raw, list):
+        key_facts = [str(k).strip() for k in key_facts_raw if str(k).strip()]
+    if not summary and not key_facts:
+        return ""
+    parts = []
+    if summary:
+        parts.append(summary)
+    if key_facts:
+        parts.append("Key Facts: " + "; ".join(key_facts))
+    return BRAND_CONTEXT_INJECTION_TEMPLATE.format(context="\n\n".join(parts))
+
+
+def _build_brand_context_block(
+    db: Session,
+    *,
+    shop: str,
+    target_locale: str,
+    query_text: str,
+) -> str:
+    brand_context_block = ""
+    # Prefer locale-specific summary/key facts from the Shop blob.
+    shop_rec = db.query(Shop).filter(Shop.domain == shop).first()
+    brand_context_blob = _normalize_brand_context_blob(getattr(shop_rec, "brand_context", None) if shop_rec else None)
+    brand_context_block = _render_brand_context_block_from_blob(brand_context_blob, target_locale)
+    if brand_context_block:
+        return brand_context_block
+    # Fallback to chunks only for Japanese output, to avoid injecting JP into other locales.
+    if _locale_prefers_japanese(target_locale):
+        chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=3)
+        return _render_brand_context_block(chunks)
+    return ""
 
 
 def _extract_heritage_line(context_block: str) -> str:
@@ -1277,8 +1336,12 @@ async def process_generation_request(
         try:
             if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
                 query_text = f"{request.product_name}\n{processed_desc}".strip()
-                chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=3)
-                brand_context_block = _render_brand_context_block(chunks)
+                brand_context_block = _build_brand_context_block(
+                    db,
+                    shop=shop,
+                    target_locale=target_locale,
+                    query_text=query_text,
+                )
         except Exception as e:
             logger.warning("[BrandContext] skipped shop=%s err=%s", shop, e)
 
@@ -1396,12 +1459,23 @@ async def process_bulk_generation_request(
         try:
             if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
                 query_text = f"{request.product_name}\n{processed_desc}".strip()
-                chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=3)
-                brand_context_block = _render_brand_context_block(chunks)
+                # Compute per-locale in the task below.
+                brand_context_block = None
         except Exception as e:
             logger.warning("[BrandContext] skipped shop=%s err=%s", shop, e)
 
         def _task(locale: str):
+            locale_context_block = brand_context_block
+            try:
+                if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+                    locale_context_block = _build_brand_context_block(
+                        db,
+                        shop=shop,
+                        target_locale=locale,
+                        query_text=f"{request.product_name}\n{processed_desc}".strip(),
+                    )
+            except Exception as e:
+                logger.warning("[BrandContext] locale_fallback shop=%s locale=%s err=%s", shop, locale, e)
             return _generate_and_save_for_locale(
                 db,
                 shop,
@@ -1417,7 +1491,7 @@ async def process_bulk_generation_request(
                 plan_name=plan_name,
                 competitor_context=competitor_context,
                 remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
-                brand_context_block=brand_context_block,
+                brand_context_block=locale_context_block,
             )
 
         results: list = []
