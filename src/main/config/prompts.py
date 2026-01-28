@@ -127,14 +127,30 @@ Return ONLY valid JSON with this exact shape:
 }
 """.strip()
 
-BRAND_CONTEXT_INJECTION_TEMPLATE = """BRAND_HERITAGE_CONTEXT:
+BRAND_CONTEXT_INJECTION_TEMPLATE = """
+### BRAND SOUL & HERITAGE CONTEXT (DYNAMIC RAG):
+The following are verified facts about the brand's history, philosophy, and techniques:
+'''
 {context}
+'''
 
-Guidance:
-- Use this context to shape tone, storytelling, and brand positioning.
-- Never invent facts that are not present in the context or product text.
-- If brand context is provided, explicitly mention at least one heritage term from it in the description.
-- Use the exact heritage term as written in the context (verbatim, case-sensitive).
+### INSTRUCTIONS FOR BRAND INTEGRATION (STRICT):
+1. **Bridge, Don't Repeat:**
+   - **FORBIDDEN:** Do not simply copy-paste the context as a static "About Us" paragraph at the top or bottom.
+   - **REQUIRED:** You must "weave" these facts into the product description to explain *why* a feature exists.
+   - *Example:* Instead of saying "We value 'Yo-no-bi'. This plate is durable," say "Designed with our philosophy of 'Yo-no-bi' (Beauty in Utility), this plate is crafted to be durable enough for daily use."
+
+2. **Contextual Relevance:**
+   - If the product is *modern*, use the heritage to validate its quality (e.g., "Traditional techniques applied to modern design").
+   - If the product is *traditional*, use the heritage to emphasize authenticity (e.g., "Fired in the same kilns established in 1885").
+
+3. **Tone Alignment:**
+   - Adhere to the personality found in the context. If the context is humble and artisan, do not use "Luxury/Hype" language.
+   - If the context mentions specific terms (e.g., "Arita-yaki", "Te-ato"), you MUST preserve them in the English output but briefly explain their meaning for Western readers.
+
+4. **Placement:**
+   - Distribute these details naturally throughout the `description` HTML.
+   - Use the "Overview" or "Craftsmanship" sections to highlight these values.
 """.strip()
 
 
@@ -183,23 +199,32 @@ VALUE DISCOVERY (ALWAYS ON):
 # ------------------------------------------------------------------------------
 # Follow-up “technical correction” pass prompts
 # ------------------------------------------------------------------------------
-SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE = """You are a meticulous e-commerce content editor.
+UNIFIED_STANDARD_PRO_PASS_SYSTEM_TEMPLATE = """You are a meticulous e-commerce content editor.
 
 You will be given:
 1) description_html: an existing product description in HTML
 2) source_text: the original Japanese source text (ground truth)
+3) seo_title: existing SEO title
+4) seo_description: existing SEO description
+5) brand_context: (Optional) Brand story and pillars
 
 TASK:
-- Do NOT rewrite or paraphrase the prose in description_html.
-- Produce exactly TWO tables in HTML and append them to the END of the description:
-  1) <h3>Product Specifications</h3> + <table>...</table>
-  2) <h3>Detailed Dimensions</h3> + <table>...</table>
-- Remove any existing specification/dimensions tables from description_html before appending your two tables.
-- Ensure there are NO duplicate tables (exactly one of each).
+1. **Brand Integration** (Only if brand_context is provided):
+   - Weave the brand story/pillars into `description_html` naturally to add depth.
+   - Example: Instead of just "Durable plate", say "Crafted with the 'Yo-no-bi' philosophy, this plate is durable..."
+   - Do NOT add a static "About Us" block.
+   - Do NOT invent product facts.
 
-FACTUAL ACCURACY (STRICT):
-- Only include specs/dimensions that are explicitly present in source_text. Do NOT invent values.
-- If a dimension/spec is not present, omit that row.
+2. **Spec Tables**:
+   - Produce exactly TWO tables in HTML and append them to the END of the description:
+     1) <h3>Product Specifications</h3> + <table>...</table>
+     2) <h3>Detailed Dimensions</h3> + <table>...</table>
+   - Remove any existing specification/dimensions tables from description_html before appending.
+   - **Strict constraint**: Only include specs/dimensions explicitly in `source_text`. If none, omit the row.
+
+3. **SEO Updates**:
+   - Update `seo_title` and `seo_description` ONLY if `brand_context` allows you to add high-value heritage/brand keywords not present before.
+   - Otherwise, return the input values.
 
 UNIT RULES:
 - TARGET LANGUAGE is {target_locale}.
@@ -215,6 +240,8 @@ OUTPUT:
 Return ONLY valid JSON with this exact shape:
 {{
   "final_description_html": "...",
+  "seo_title": "...",
+  "seo_description": "...",
   "product_specifications_table_html": "...",
   "detailed_dimensions_table_html": "...",
   "removed_tables_count": 0
