@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from datetime import date
 
 from src.main.config.configs import (
-    SYSTEM_PROMPT,
-    OPENAI_MODEL,
-    OPENAI_TEMPERATURE,
+    SYSTEM_PROMPT, 
+    OPENAI_MODEL, 
+    OPENAI_TEMPERATURE, 
     OPENAI_MAX_TOKENS,
     EMBEDDING_MODEL,
     EMBEDDING_BATCH_SIZE,

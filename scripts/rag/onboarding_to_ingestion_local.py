@@ -206,18 +206,26 @@ def test_rewriter_rag_injection() -> None:
     _ensure_plan_user_shop(SessionLocal, SHOP_DOMAIN)
     db = SessionLocal()
     try:
-        # Seed brand context: Arita-yaki
-        db.query(StoreContext).filter(StoreContext.shop_id == SHOP_DOMAIN).delete(
-            synchronize_session=False
-        )
-        db.add(
-            StoreContext(
-                shop_id=SHOP_DOMAIN,
-                content="We use Arita-yaki porcelain techniques for every piece.",
-                embedding=[0.0] * 1536,
-                metadata_json={"source_type": "seed"},
-            )
-        )
+        # Seed brand context: Arita-yaki (now stored on Shop.brand_context)
+        shop = db.query(Shop).filter(Shop.domain == SHOP_DOMAIN).first()
+        if not shop:
+            shop = Shop(domain=SHOP_DOMAIN, access_token="")
+            db.add(shop)
+            db.commit()
+            db.refresh(shop)
+        shop.brand_context = {
+            "en": {
+                "clean_text": "We use Arita-yaki porcelain techniques for every piece.",
+                "pillars": ["Arita-yaki porcelain techniques"],
+            },
+            "ja": {
+                "clean_text": "有田焼の技法をすべての器に用いています。",
+                "pillars": ["有田焼の技法"],
+            },
+        }
+        shop.brand_context_status = "ready"
+        shop.brand_context_last_error = None
+        db.add(shop)
         db.commit()
         _log("✅ Brand context seeded")
     finally:
