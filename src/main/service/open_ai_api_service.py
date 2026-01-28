@@ -11,8 +11,11 @@ from src.main.config.configs import (
     SYSTEM_PROMPT, 
     OPENAI_MODEL, 
     OPENAI_TEMPERATURE, 
-    OPENAI_MAX_TOKENS
+    OPENAI_MAX_TOKENS,
+    EMBEDDING_MODEL,
+    EMBEDDING_BATCH_SIZE,
 )
+from src.main.config.prompts import BRAND_CONTEXT_FILE_EXTRACT_PROMPT
 from src.main.logging.logger import get_logger
 from src.main.db.db_transactions import record_successful_rewrite
 from src.main.db.db_transactions import increment_monthly_rewrites_used  # backwards-compat for tests/patches
@@ -20,20 +23,29 @@ from src.main.service.fair_use import get_base_model_for_shop, get_effective_mod
 
 logger = get_logger(__name__)
 
-load_dotenv()
+try:
+    load_dotenv()
+except PermissionError:
+    # In some local/CI setups, .env is not readable; proceed with existing env vars.
+    pass
 ## For NETSKOPE ##
 ## TODO : Remove before going to PROD
 # <--- 2. Create an SSL Context that uses your System/Corporate Certs
-ssl_context = truststore.SSLContext(httpx.create_ssl_context().protocol)
-
-# <--- 3. Create a custom HTTP client using that SSL context
-http_client = httpx.Client(verify=ssl_context)
+try:
+    ssl_context = truststore.SSLContext(httpx.create_ssl_context().protocol)
+    # <--- 3. Create a custom HTTP client using that SSL context
+    http_client = httpx.Client(verify=ssl_context)
+except Exception as exc:
+    logger.warning("SSL context init failed; using insecure httpx client: %s", exc)
+    http_client = httpx.Client(verify=False)
 
 class OpenAIService:
     def __init__(self):
-        self.client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            http_client=http_client
+        api_key = os.getenv("OPENAI_API_KEY")
+        self.client = (
+            OpenAI(api_key=api_key, http_client=http_client)
+            if api_key
+            else None
         )
         self.system_prompt = SYSTEM_PROMPT
 
@@ -48,6 +60,8 @@ class OpenAIService:
     ) -> object:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
+        if not self.client:
+            raise RuntimeError("OpenAI client not initialized")
 
         user_content = f"""
         Product Name: {product_name}
@@ -72,6 +86,7 @@ class OpenAIService:
         logger.debug(f"User Content: {user_content}")
 
         prompt_to_use = system_prompt or self.system_prompt
+        logger.debug(f"System Prompt: {prompt_to_use}")
         
         # Non-streaming call
         # Prefer structured JSON output to avoid parse failures (which would drop SEO + discovered_values).
@@ -118,12 +133,15 @@ class OpenAIService:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
 
+        user_content = json.dumps(user_json, ensure_ascii=False)
+        logger.debug(f"System Prompt: {system_prompt}")
+        logger.debug(f"User Content: {user_content}")
         try:
             response = self.client.chat.completions.create(
                 model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -134,7 +152,7 @@ class OpenAIService:
                 model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -157,12 +175,15 @@ class OpenAIService:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
 
+        user_content = json.dumps(user_json, ensure_ascii=False)
+        logger.debug(f"System Prompt: {system_prompt}")
+        logger.debug(f"User Content: {user_content}")
         try:
             response = self.client.chat.completions.create(
                 model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -173,12 +194,47 @@ class OpenAIService:
                 model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
         return response
+
+    def embed_texts(self, texts: list[str], *, model: str | None = None) -> list[list[float]]:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+        if not texts:
+            return []
+        embed_model = model or EMBEDDING_MODEL
+        vectors: list[list[float]] = []
+        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            batch = texts[i : i + EMBEDDING_BATCH_SIZE]
+            resp = self.client.embeddings.create(model=embed_model, input=batch)
+            vectors.extend([item.embedding for item in resp.data])
+        return vectors
+
+    def extract_text_from_file(self, *, file_b64: str, mime_type: str) -> str:
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+        data_url = f"data:{mime_type};base64,{file_b64}"
+        response = self.client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": BRAND_CONTEXT_FILE_EXTRACT_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract the readable brand story text from this file."},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+            temperature=0.2,
+            max_tokens=800,
+            response_format={"type": "json_object"},
+        )
+        return response.choices[0].message.content or ""
 
     def generate_copy_stream(
         self,
@@ -191,6 +247,10 @@ class OpenAIService:
         """
         Returns a generator (stream) from OpenAI.
         """
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY not configured")
+        if not self.client:
+            raise RuntimeError("OpenAI client not initialized")
         user_content = f"""
         Product Name: {product_name}
         Category: {category}
@@ -201,6 +261,8 @@ class OpenAIService:
         logger.info(f"Stream-Rewriting description for product: {product_name}")
         
         prompt_to_use = system_prompt or self.system_prompt
+        logger.debug(f"User Content: {user_content}")
+        logger.debug(f"System Prompt: {prompt_to_use}")
 
         # Streaming call
         stream = self.client.chat.completions.create(

@@ -1,10 +1,11 @@
 import os
+import re
 import httpx
 import asyncio
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 import json
-from src.main.db.db_models import User
+from src.main.db.db_models import User, Shop
 from src.main.api.models import RewriteRequest, BulkRewriteRequest
 from src.main.service.open_ai_api_service import OpenAIService
 from src.main.service import serp_service
@@ -18,8 +19,9 @@ from src.main.config.prompts import (
     SYSTEM_PROMPT,
     TONE_PROMPTS,
     VALUE_DISCOVERY_PROMPT,
-    SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE,
+    UNIFIED_STANDARD_PRO_PASS_SYSTEM_TEMPLATE,
     SEO_RECOMMENDATIONS_TECH_PASS_SYSTEM_TEMPLATE,
+    BRAND_CONTEXT_INJECTION_TEMPLATE,
 )
 from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
@@ -28,6 +30,7 @@ from src.main.db.db_transactions import get_shop_access_token
 from src.main.service.shopify_service import save_product_content_with_locale
 from src.main.api.validation import validate_rewrite_request
 from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
+from src.main.service.brand_context_retrieval import get_brand_context
 
 logger = get_logger(__name__)
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
@@ -479,6 +482,105 @@ def _effective_tone(plan_name: str | None, requested: str | None) -> str:
     return tone if tone in TONE_PROMPTS else "professional"
 
 
+def _should_use_brand_context(plan_name: str | None, requested: bool | None) -> bool:
+    if not requested:
+        return False
+    name = str(plan_name or "").strip().lower()
+    return name in ("standard", "pro")
+
+
+def _render_brand_context_block(chunks: list[dict]) -> str:
+    if not chunks:
+        return ""
+    blocks = []
+    for item in chunks:
+        content = str(item.get("content") or "").strip()
+        meta = item.get("metadata") or {}
+        source = str(meta.get("source_url") or meta.get("source_type") or "brand_source").strip()
+        if not content:
+            continue
+        blocks.append(f"[{source}] {content}")
+    if not blocks:
+        return ""
+    return BRAND_CONTEXT_INJECTION_TEMPLATE.format(context="\n\n".join(blocks))
+
+
+def _normalize_brand_context_blob(raw: object) -> dict:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+def _render_brand_context_block_from_blob(brand_context: dict, target_locale: str) -> str:
+    if not brand_context:
+        return ""
+    # Inject EN clean text for all targets (including JP).
+    lang = "en"
+    
+    # Retrieve clean_text/pillars from nested shape
+    # Structure: { "en": {"clean_text": "...", "pillars": [...]}, "ja": {...} }
+    # Also support legacy flat structure for backward compat if needed, though we just migrated.
+    
+    node = brand_context.get(lang) or {}
+    clean_text = str(node.get("clean_text") or brand_context.get(f"summary_{lang}") or "").strip()
+    
+    pillars_raw = node.get("pillars") or brand_context.get(f"key_facts_{lang}")
+    pillars = []
+    if isinstance(pillars_raw, list):
+        pillars = [str(k).strip() for k in pillars_raw if str(k).strip()]
+        
+    if not clean_text and not pillars:
+        return ""
+        
+    parts = []
+    if clean_text:
+        parts.append(clean_text)
+    if pillars:
+        parts.append("Core Pillars: " + "; ".join(pillars))
+        
+    return BRAND_CONTEXT_INJECTION_TEMPLATE.format(context="\n\n".join(parts))
+
+
+def _build_brand_context_block(
+    db: Session,
+    *,
+    shop: str,
+    target_locale: str,
+    query_text: str,
+) -> str:
+    brand_context_block = ""
+    # Prefer locale-specific summary/key facts from the Shop blob.
+    shop_rec = db.query(Shop).filter(Shop.domain == shop).first()
+    brand_context_blob = _normalize_brand_context_blob(getattr(shop_rec, "brand_context", None) if shop_rec else None)
+    brand_context_block = _render_brand_context_block_from_blob(brand_context_blob, target_locale)
+    
+    if brand_context_block:
+        return brand_context_block
+
+    # Fallback to chunks only if no clean-text blob exists (legacy/partial ingestion).
+    # Filter to English chunks to avoid injecting JP content.
+    chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=6)
+    if not chunks:
+        return ""
+    en_chunks = []
+    for item in chunks:
+        meta = item.get("metadata") or {}
+        if str(meta.get("lang") or "").lower() == "en":
+            en_chunks.append(item)
+    if not en_chunks:
+        return ""
+    return _render_brand_context_block(en_chunks)
+
+
 def _build_dynamic_prompt(
     target_locale: str,
     *,
@@ -650,34 +752,40 @@ def _augment_spec_tables_for_standard_pro(
     description_html: str,
     source_text: str,
     auto_convert_units: bool,
-) -> str:
+    brand_context: str | None = None,
+    seo_title: str | None = None,
+    seo_description: str | None = None,
+) -> dict:
     """
-    Standard/Pro-only technical correction pass:
-    - Generate Product Specifications + Detailed Dimensions HTML tables
-    - Append them to the existing description HTML
-    - Ensure no duplicate tables
-
-    IMPORTANT: We intentionally keep this separate from the main generation prompt
-    to reduce prompt complexity and improve table accuracy.
+    Standard/Pro-only unified pass:
+    - Weaves Brand Soul (if present) into description.
+    - Generates Product Specifications + Detailed Dimensions HTML tables.
+    - Refines SEO title/description if improved by brand context.
+    
+    Returns dict with keys: description, seo_title, seo_description
     """
-    system = SPEC_TABLES_TECH_PASS_SYSTEM_TEMPLATE.format(target_locale=target_locale)
+    system = UNIFIED_STANDARD_PRO_PASS_SYSTEM_TEMPLATE.format(target_locale=target_locale)
 
     user = {
         "target_locale": target_locale,
         "auto_convert_units": bool(auto_convert_units),
         "description_html": str(description_html or ""),
         "source_text": str(source_text or ""),
+        "seo_title": str(seo_title or ""),
+        "seo_description": str(seo_description or ""),
+        "brand_context": str(brand_context or "") if brand_context else None,
     }
 
     try:
         logger.info(
-            "[SpecTables] start shop=%s locale=%s model=%s desc_len=%s source_len=%s auto_convert_units=%s",
+            "[SpecTables] start shop=%s locale=%s model=%s desc_len=%s source_len=%s auto_convert_units=%s has_brand_context=%s",
             shop,
             target_locale,
             OPENAI_MODEL,
             len(str(description_html or "")),
             len(str(source_text or "")),
             bool(auto_convert_units),
+            bool(brand_context),
         )
     except Exception:
         pass
@@ -685,8 +793,8 @@ def _augment_spec_tables_for_standard_pro(
     raw = openai_service.generate_json(
         system_prompt=system,
         user_json=user,
-        temperature=0.0,
-        max_tokens=1100,
+        temperature=0.1,  # Slight creative freedom for brand weaving
+        max_tokens=1500,
         # Force cheapest model for this technical pass (Standard/Pro only).
         model=OPENAI_MODEL,
     )
@@ -704,6 +812,12 @@ def _augment_spec_tables_for_standard_pro(
             pass
 
     parsed = parse_llm_json(raw or "")
+    fallback_result = {
+        "description": str(description_html or ""),
+        "seo_title": str(seo_title or ""),
+        "seo_description": str(seo_description or ""),
+    }
+
     if not isinstance(parsed, dict):
         logger.warning(
             "[SpecTables] parse_failed shop=%s locale=%s raw_len=%s",
@@ -711,9 +825,12 @@ def _augment_spec_tables_for_standard_pro(
             target_locale,
             len(raw or ""),
         )
-        return str(description_html or "")
+        return fallback_result
 
     final_html = str(parsed.get("final_description_html") or "").strip()
+    new_seo_title = str(parsed.get("seo_title") or "").strip()
+    new_seo_desc = str(parsed.get("seo_description") or "").strip()
+    
     specs_tbl = str(parsed.get("product_specifications_table_html") or "").strip()
     dims_tbl = str(parsed.get("detailed_dimensions_table_html") or "").strip()
     removed_tables_count = parsed.get("removed_tables_count")
@@ -809,10 +926,20 @@ def _augment_spec_tables_for_standard_pro(
             len(specs_block or ""),
             len(dims_block or ""),
         )
-        return str(description_html or "")
+        # Even if tables fail, if we have a valid final_description_html (from brand weave), we might want to use it?
+        # But if tables are missing, it's safer to fallback to prevent data loss.
+        return fallback_result
 
+    # If final_description_html is provided, use it as the base (it has the brand weave).
+    # Otherwise fallback to input description_html.
+    base_html = final_html if final_html else description_html
+    
     # Deterministic merge (prevents accidental prose edits and avoids trusting malformed final_html).
-    base = _strip_existing_spec_dim_tables(description_html)
+    # However, if we used final_html for brand weave, we must use it. 
+    # The prompt asks for "final_description_html" which SHOULD have the weave.
+    # But we also strip existing tables from it to be safe before appending new ones.
+    
+    base = _strip_existing_spec_dim_tables(base_html)
     append = "\n\n<hr />\n" + specs_block.strip() + "\n\n" + dims_block.strip()
     merged = (base.rstrip() + append).strip()
 
@@ -827,7 +954,11 @@ def _augment_spec_tables_for_standard_pro(
         except Exception:
             pass
 
-    return merged or str(description_html or "")
+    return {
+        "description": merged or str(description_html or ""),
+        "seo_title": new_seo_title or seo_title or "",
+        "seo_description": new_seo_desc or seo_description or ""
+    }
 
 
 def _generate_seo_recommendations(
@@ -977,6 +1108,7 @@ async def _generate_and_save_for_locale(
     plan_name: str | None = None,
     competitor_context: list[dict] | None = None,
     remove_irrelevant_content: bool = True,
+    brand_context_block: str | None = None,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
@@ -1075,14 +1207,23 @@ async def _generate_and_save_for_locale(
     try:
         pname = str(plan_name or "").strip().lower()
         if pname in ("standard", "pro"):
-            parsed["description"] = _augment_spec_tables_for_standard_pro(
+            pass2_result = _augment_spec_tables_for_standard_pro(
                 db=db,
                 shop=shop,
                 target_locale=target_locale,
                 description_html=str(parsed.get("description") or ""),
                 source_text=processed_description,
                 auto_convert_units=bool(auto_convert_units),
+                brand_context=brand_context_block,
+                seo_title=str(parsed.get("seo_title") or ""),
+                seo_description=str(parsed.get("seo_description") or ""),
             )
+            parsed["description"] = pass2_result["description"]
+            # Update SEO fields if refined by Pass 2
+            if pass2_result.get("seo_title"):
+                parsed["seo_title"] = pass2_result["seo_title"]
+            if pass2_result.get("seo_description"):
+                parsed["seo_description"] = pass2_result["seo_description"]
     except Exception as e:
         logger.warning("[SpecTables] skipped shop=%s locale=%s err=%s", shop, target_locale, e)
     # All plans: cheap SEO recommendations during Optimize (non-blocking).
@@ -1145,6 +1286,16 @@ async def process_generation_request(
     target_locale = request.target_locale or "en"
     plan_name = str(getattr(plan, "name", "") or "")
     tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
+    logger.info(
+        "[GenFlags] shop=%s plan=%s brand_soul=%s auto_convert_units=%s remove_irrelevant=%s tone=%s locale=%s",
+        shop,
+        plan_name,
+        bool(getattr(request, "brand_soul_enabled", False)),
+        bool(getattr(request, "auto_convert_units", False)),
+        bool(getattr(request, "remove_irrelevant_content", True)),
+        tone_profile,
+        target_locale,
+    )
     dynamic_prompt = _build_dynamic_prompt(
         target_locale,
         auto_convert_units=bool(getattr(request, "auto_convert_units", False)),
@@ -1192,6 +1343,19 @@ async def process_generation_request(
         else:
             primary_locale = await _fetch_primary_locale(shop, access_token)
 
+        brand_context_block = None
+        try:
+            if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+                query_text = f"{request.product_name}\n{processed_desc}".strip()
+                brand_context_block = _build_brand_context_block(
+                    db,
+                    shop=shop,
+                    target_locale=target_locale,
+                    query_text=query_text,
+                )
+        except Exception as e:
+            logger.warning("[BrandContext] skipped shop=%s err=%s", shop, e)
+
         result = await _generate_and_save_for_locale(
             db,
             shop,
@@ -1207,6 +1371,7 @@ async def process_generation_request(
             plan_name=plan_name,
             competitor_context=competitor_context,
             remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
+            brand_context_block=brand_context_block,
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -1235,6 +1400,19 @@ async def process_bulk_generation_request(
     shop = user.username
     if not limiter.is_allowed(shop):
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please slow down.")
+
+    plan_name = str(getattr(plan, "name", "") or "")
+    tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
+    logger.info(
+        "[GenFlags] shop=%s plan=%s brand_soul=%s auto_convert_units=%s remove_irrelevant=%s tone=%s locales=%s",
+        shop,
+        plan_name,
+        bool(getattr(request, "brand_soul_enabled", False)),
+        bool(getattr(request, "auto_convert_units", False)),
+        bool(getattr(request, "remove_irrelevant_content", True)),
+        tone_profile,
+        list(getattr(request, "target_locales", []) or []),
+    )
 
     # 1. Plan Check for Bulk (Multi-locale)
     if len(request.target_locales) > 1 and plan.name not in ("Standard", "Pro"):
@@ -1288,7 +1466,27 @@ async def process_bulk_generation_request(
 
         tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
 
+        brand_context_block = None
+        try:
+            if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+                query_text = f"{request.product_name}\n{processed_desc}".strip()
+                # Compute per-locale in the task below.
+                brand_context_block = None
+        except Exception as e:
+            logger.warning("[BrandContext] skipped shop=%s err=%s", shop, e)
+
         def _task(locale: str):
+            locale_context_block = brand_context_block
+            try:
+                if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+                    locale_context_block = _build_brand_context_block(
+                        db,
+                        shop=shop,
+                        target_locale=locale,
+                        query_text=f"{request.product_name}\n{processed_desc}".strip(),
+                    )
+            except Exception as e:
+                logger.warning("[BrandContext] locale_fallback shop=%s locale=%s err=%s", shop, locale, e)
             return _generate_and_save_for_locale(
                 db,
                 shop,
@@ -1304,6 +1502,7 @@ async def process_bulk_generation_request(
                 plan_name=plan_name,
                 competitor_context=competitor_context,
                 remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
+                brand_context_block=locale_context_block,
             )
 
         results: list = []
