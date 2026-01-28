@@ -86,6 +86,7 @@ class OpenAIService:
         logger.debug(f"User Content: {user_content}")
 
         prompt_to_use = system_prompt or self.system_prompt
+        logger.debug(f"System Prompt: {prompt_to_use}")
         
         # Non-streaming call
         # Prefer structured JSON output to avoid parse failures (which would drop SEO + discovered_values).
@@ -132,12 +133,15 @@ class OpenAIService:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
 
+        user_content = json.dumps(user_json, ensure_ascii=False)
+        logger.debug(f"System Prompt: {system_prompt}")
+        logger.debug(f"User Content: {user_content}")
         try:
             response = self.client.chat.completions.create(
                 model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -148,7 +152,7 @@ class OpenAIService:
                 model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -171,12 +175,15 @@ class OpenAIService:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
 
+        user_content = json.dumps(user_json, ensure_ascii=False)
+        logger.debug(f"System Prompt: {system_prompt}")
+        logger.debug(f"User Content: {user_content}")
         try:
             response = self.client.chat.completions.create(
                 model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -187,7 +194,7 @@ class OpenAIService:
                 model=model or OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -254,6 +261,8 @@ class OpenAIService:
         logger.info(f"Stream-Rewriting description for product: {product_name}")
         
         prompt_to_use = system_prompt or self.system_prompt
+        logger.debug(f"User Content: {user_content}")
+        logger.debug(f"System Prompt: {prompt_to_use}")
 
         # Streaming call
         stream = self.client.chat.completions.create(

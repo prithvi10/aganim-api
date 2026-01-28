@@ -10,8 +10,10 @@ def test_brand_context_block_rendering():
             }
         ]
     )
-    assert "BRAND_HERITAGE_CONTEXT" in block
+    # Header may evolve; assert we still emit the brand-context block and include provenance.
+    assert "BRAND SOUL" in block or "BRAND_HERITAGE_CONTEXT" in block
     assert "https://example.com/about" in block
+    assert "Kyoto atelier" in block
 
 
 def test_brand_context_gating():

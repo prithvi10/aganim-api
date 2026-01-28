@@ -15,6 +15,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/shopify_translator
       - LOG_LEVEL=DEBUG
+      - LOG_PATH=/app/tmp/logs
       - BRAND_PROMPT_TRACE_PATH=/app/tmp/brand_prompt_trace.txt
       # Add other environment variables here or use env_file
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
