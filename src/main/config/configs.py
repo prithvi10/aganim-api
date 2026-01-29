@@ -72,6 +72,7 @@ ALLOWED_ORIGINS = [
     "http://localhost:8000",      # Local API/Swagger UI
     "http://127.0.0.1:3000",
     "http://127.0.0.1:8000",
+    "https://shopify-translator-ui.onrender.com",
     # Shopify Admin (Admin Action extensions run with this origin)
     "https://admin.shopify.com",
     # Shopify-hosted extensions origin (Admin UI Extensions)

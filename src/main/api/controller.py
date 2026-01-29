@@ -716,6 +716,12 @@ async def brand_context_ingest_async_endpoint(
     return {"status": "accepted", "job_id": job_id}
 
 
+@router.options("/api/admin/brand-context/ingest-async")
+async def brand_context_ingest_async_preflight():
+    # Explicit preflight handler to avoid proxy/CORS edge cases.
+    return Response(status_code=204)
+
+
 @router.post("/api/onboarding/brand-soul")
 async def onboarding_brand_soul_endpoint(
     request: Request,
