@@ -17,6 +17,8 @@ class RewriteRequest(BaseModel):
     remove_irrelevant_content: bool = True
     # When true, inject brand-soul context via RAG (Standard+ only).
     brand_soul_enabled: bool = False
+    # When true, save directly to Shopify (default). If false, save as a draft metafield.
+    save_to_shopify: bool = True
 
 class BulkRewriteRequest(BaseModel):
     product_name: str
@@ -32,6 +34,8 @@ class BulkRewriteRequest(BaseModel):
     remove_irrelevant_content: bool = True
     # When true, inject brand-soul context via RAG (Standard+ only).
     brand_soul_enabled: bool = False
+    # When true, save directly to Shopify (default). If false, save as a draft metafield.
+    save_to_shopify: bool = True
 
 class OnboardingRequest(BaseModel):
     username: str # This will be the shop domain

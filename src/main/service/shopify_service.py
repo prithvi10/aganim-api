@@ -1,5 +1,6 @@
 import httpx
 import os
+import json
 from src.main.logging.logger import get_logger
 from src.main.utils.httpx_verify import ssl_verify_shopify
 
@@ -68,7 +69,9 @@ async def create_shopify_translation(
                     title_digest = item["digest"]
                 elif item["key"] == "body_html":
                     desc_digest = item["digest"]
-
+            
+            # If no digests found (e.g. empty product?), might be problematic but let's try to proceed or fail.
+            # But standard is to require digests for updates.
             if not title_digest or not desc_digest:
                 logger.error(f"❌ Missing digests for title/body_html for product {product_id}; aborting translationsRegister.")
                 raise Exception("Missing content digests; cannot register translation.")
@@ -132,6 +135,79 @@ async def create_shopify_translation(
         except Exception as e:
             logger.error(f"Error registering translation: {e}")
             raise
+
+
+async def save_draft_metafield(
+    shop_domain: str,
+    access_token: str,
+    product_id: int | str,
+    content_json: dict,
+    target_locale: str
+) -> None:
+    """
+    Saves generated content as a draft in a private metafield.
+    Namespace: crossborderagent
+    Key: draft_content_{locale}
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json"
+    }
+    
+    product_gid = f"gid://shopify/Product/{product_id}"
+    
+    # We store the entire content_json which includes title, description, seo_*, etc.
+    value_str = json.dumps(content_json, ensure_ascii=False)
+    
+    mutation = """
+    mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields {
+          id
+          key
+          value
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    
+    variables = {
+        "metafields": [
+            {
+                "ownerId": product_gid,
+                "namespace": "crossborderagent",
+                "key": f"draft_content_{target_locale}",
+                "type": "json",
+                "value": value_str
+            }
+        ]
+    }
+    
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        try:
+            resp = await client.post(
+                f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+                headers=headers,
+                json={"query": mutation, "variables": variables}
+            )
+            if resp.status_code != 200:
+                logger.error(f"❌ Failed to save draft metafield {product_id}: {resp.status_code} {resp.text}")
+                return
+            
+            data = resp.json()
+            user_errors = data.get("data", {}).get("metafieldsSet", {}).get("userErrors", [])
+            if user_errors:
+                logger.error(f"❌ Draft metafield save error: {user_errors}")
+            else:
+                logger.info(f"✅ Saved draft metafield for {product_id} ({target_locale})")
+                
+        except Exception as e:
+            logger.error(f"Error saving draft metafield: {e}")
 
 
 async def save_product_content_with_locale(
