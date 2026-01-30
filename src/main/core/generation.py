@@ -27,7 +27,7 @@ from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
 from src.main.logging.logger import get_logger
 from src.main.db.db_transactions import get_shop_access_token
-from src.main.service.shopify_service import save_product_content_with_locale
+from src.main.service.shopify_service import save_product_content_with_locale, save_draft_metafield
 from src.main.api.validation import validate_rewrite_request
 from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
 from src.main.service.brand_context_retrieval import get_brand_context
@@ -1109,6 +1109,7 @@ async def _generate_and_save_for_locale(
     competitor_context: list[dict] | None = None,
     remove_irrelevant_content: bool = True,
     brand_context_block: str | None = None,
+    save_to_shopify: bool = True,
 ):
     """
     Helper to generate copy for a single locale and save it to Shopify.
@@ -1247,18 +1248,36 @@ async def _generate_and_save_for_locale(
     parsed["seo_description"] = _clamp_len(str(parsed.get("seo_description") or ""), 160)
 
     if product_id and access_token:
-        title_to_save = parsed.get("title") or product_name or "Translated Product"
-        desc_to_save = parsed.get("description") or raw_content or ""
-        logger.info(f"[Save] shop={shop} pid={product_id} target={target_locale} primary={primary_locale} title_sample={title_to_save[:80]}")
-        await save_product_content_with_locale(
-            shop_domain=shop,
-            access_token=access_token,
-            product_id=product_id,
-            title=title_to_save,
-            description=desc_to_save,
-            target_locale=target_locale,
-            shop_primary_locale=primary_locale,
-        )
+        # Construct the full data object to save (draft or live)
+        # Note: We use the same structure for draft as returned in API 'data'
+        final_data = {
+            **parsed,
+            "competitor_titles": competitor_titles,
+            "competitor_results": competitor_results,
+        }
+
+        if save_to_shopify:
+            title_to_save = parsed.get("title") or product_name or "Translated Product"
+            desc_to_save = parsed.get("description") or raw_content or ""
+            logger.info(f"[Save] shop={shop} pid={product_id} target={target_locale} primary={primary_locale} title_sample={title_to_save[:80]}")
+            await save_product_content_with_locale(
+                shop_domain=shop,
+                access_token=access_token,
+                product_id=product_id,
+                title=title_to_save,
+                description=desc_to_save,
+                target_locale=target_locale,
+                shop_primary_locale=primary_locale,
+            )
+        else:
+            logger.info(f"[Draft] shop={shop} pid={product_id} target={target_locale} saving to metafield")
+            await save_draft_metafield(
+                shop_domain=shop,
+                access_token=access_token,
+                product_id=product_id,
+                content_json=final_data,
+                target_locale=target_locale
+            )
     
     return {
         "locale": target_locale,
@@ -1372,6 +1391,7 @@ async def process_generation_request(
             competitor_context=competitor_context,
             remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
             brand_context_block=brand_context_block,
+            save_to_shopify=bool(getattr(request, "save_to_shopify", True)),
         )
         
         resp = {"status": "success", "data": result["data"]}
@@ -1503,6 +1523,7 @@ async def process_bulk_generation_request(
                 competitor_context=competitor_context,
                 remove_irrelevant_content=bool(getattr(request, "remove_irrelevant_content", True)),
                 brand_context_block=locale_context_block,
+                save_to_shopify=bool(getattr(request, "save_to_shopify", True)),
             )
 
         results: list = []
