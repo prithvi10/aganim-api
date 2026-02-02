@@ -1,0 +1,248 @@
+{
+  "copywriter_fixtures": [
+    {
+      "id": "kyoto_artisan_bowl",
+      "product_name": "京都職人の抹茶碗",
+      "japanese_description": "京都の職人が手作りした抹茶碗。有田焼の技法で焼き上げました。直径12cm、高さ8cm、重量250g。電子レンジ不可。桐箱入り。",
+      "category": "Tableware",
+      "expect_discovered_values": true,
+      "expected_keywords": ["Kyoto", "artisan", "Arita"],
+      "expected_categories": ["Regional Pedigree", "Artisan Technique"]
+    },
+    {
+      "id": "urushi_lacquer_box",
+      "product_name": "輪島塗の重箱",
+      "japanese_description": "漆塗りの重箱。輪島塗の伝統技法で仕上げた逸品。天然木（ヒノキ）使用。サイズ: 18cm x 18cm x 15cm。職人の手による蒔絵装飾。",
+      "category": "Home & Kitchen",
+      "expect_discovered_values": true,
+      "expected_keywords": ["Wajima", "lacquer", "urushi", "cypress"],
+      "expected_categories": ["Traditional Craft", "Premium Material"]
+    },
+    {
+      "id": "silk_kimono",
+      "product_name": "西陣織の絹着物",
+      "japanese_description": "西陣織の絹の着物。金糸・銀糸使用。手織り。反物幅38cm。京都の老舗工房で織られた一品。",
+      "category": "Clothing",
+      "expect_discovered_values": true,
+      "expected_keywords": ["Nishijin", "silk", "gold thread", "Kyoto"],
+      "expected_categories": ["Textile Heritage", "Premium Material"]
+    },
+    {
+      "id": "bizen_sake_cup",
+      "product_name": "備前焼のぐい呑み",
+      "japanese_description": "備前焼のぐい呑み。岡山県備前市の窯元で焼成。登り窯で2週間焼き上げた自然釉の逸品。直径6cm、高さ5cm。",
+      "category": "Tableware",
+      "expect_discovered_values": true,
+      "expected_keywords": ["Bizen", "Okayama", "kiln"],
+      "expected_categories": ["Regional Pedigree", "Artisan Technique"]
+    },
+    {
+      "id": "generic_mug",
+      "product_name": "シンプルマグカップ",
+      "japanese_description": "白いマグカップ。容量300ml。食洗機対応。",
+      "category": "Kitchenware",
+      "expect_discovered_values": false,
+      "expected_keywords": [],
+      "expected_categories": []
+    },
+    {
+      "id": "basic_plate",
+      "product_name": "丸皿",
+      "japanese_description": "直径20cmの丸皿。電子レンジ可。",
+      "category": "Tableware",
+      "expect_discovered_values": false,
+      "expected_keywords": [],
+      "expected_categories": []
+    }
+  ],
+  "marketing_fixtures": [
+    {
+      "id": "pst_optimized",
+      "product_name": "Kyoto Matcha Bowl",
+      "draft_content": "<p>Tired of bland tea experiences? This handcrafted Kyoto matcha bowl transforms your daily ritual into an authentic ceremony. Made by master artisans with 200 years of tradition. Ships free from Japan.</p>",
+      "category": "Tableware",
+      "expect_high_ctr": true,
+      "min_ctr_score": 0.7,
+      "expect_pain": true,
+      "expect_solution": true,
+      "expect_trust": true
+    },
+    {
+      "id": "solution_trust_only",
+      "product_name": "Artisan Ceramic Plate",
+      "draft_content": "<p>This beautiful ceramic plate is perfect for serving sushi. Handmade in Kyoto by master craftsmen. Made in Japan with traditional techniques.</p>",
+      "category": "Tableware",
+      "expect_high_ctr": false,
+      "min_ctr_score": 0.5,
+      "expect_pain": false,
+      "expect_solution": true,
+      "expect_trust": true
+    },
+    {
+      "id": "minimal_content",
+      "product_name": "Simple Bowl",
+      "draft_content": "<p>A bowl for everyday use.</p>",
+      "category": "Tableware",
+      "expect_high_ctr": false,
+      "min_ctr_score": 0.0,
+      "expect_pain": false,
+      "expect_solution": false,
+      "expect_trust": false
+    },
+    {
+      "id": "seo_keyword_rich",
+      "product_name": "Japanese Matcha Tea Bowl",
+      "draft_content": "<p>Authentic Japanese matcha tea bowl (chawan) for traditional tea ceremony. Hand-thrown by Kyoto artisans using Arita porcelain techniques. Perfect for whisking matcha with a bamboo chasen. Diameter 12cm, height 8cm.</p>",
+      "category": "Tableware",
+      "expect_high_ctr": true,
+      "min_ctr_score": 0.5,
+      "expect_pain": false,
+      "expect_solution": true,
+      "expect_trust": true
+    }
+  ],
+  "price_scout_fixtures": [
+    {
+      "id": "common_product",
+      "product_name": "抹茶碗",
+      "japanese_description": "抹茶碗 京都製。直径12cm。",
+      "category": "Tableware",
+      "expect_competitors": true,
+      "min_competitor_count": 1
+    },
+    {
+      "id": "niche_product",
+      "product_name": "特注品一点物花瓶",
+      "japanese_description": "特注品・一点物の花瓶。作家による署名入り。",
+      "category": "Home Decor",
+      "expect_competitors": false,
+      "expect_low_confidence": true
+    },
+    {
+      "id": "branded_product",
+      "product_name": "iPhone Case",
+      "japanese_description": "Apple iPhone 15 Pro用ケース。本革製。",
+      "category": "Electronics",
+      "expect_competitors": true,
+      "min_competitor_count": 3
+    }
+  ],
+  "compliance_fixtures": [
+    {
+      "id": "fda_violation_cure",
+      "draft_content": "This miracle supplement cures all diseases and treats cancer naturally. Proven to heal chronic conditions.",
+      "expect_flags": true,
+      "expected_flag_keywords": ["cure", "miracle", "treat"]
+    },
+    {
+      "id": "fda_violation_health",
+      "draft_content": "Anti-aging serum that reverses wrinkles and prevents disease. Doctor recommended for rejuvenation.",
+      "expect_flags": true,
+      "expected_flag_keywords": ["anti-aging", "prevent", "doctor"]
+    },
+    {
+      "id": "ftc_violation_superlatives",
+      "draft_content": "The best product in the world! #1 rated and 100% risk-free with guaranteed results!",
+      "expect_flags": true,
+      "expected_flag_keywords": ["best", "risk-free", "guaranteed"]
+    },
+    {
+      "id": "ftc_violation_claims",
+      "draft_content": "Clinically proven to work! Scientifically tested with patent pending technology.",
+      "expect_flags": true,
+      "expected_flag_keywords": ["clinically proven", "scientifically"]
+    },
+    {
+      "id": "clean_product",
+      "draft_content": "Beautiful handcrafted ceramic bowl by Kyoto artisans. Perfect for your daily tea ceremony. Made with traditional Japanese techniques.",
+      "expect_flags": false,
+      "expected_flag_keywords": []
+    },
+    {
+      "id": "clean_product_detailed",
+      "draft_content": "This elegant sake cup features the distinctive Bizen-yaki glaze developed over centuries in Okayama Prefecture. Each piece is unique due to the natural firing process in a traditional noborigama kiln.",
+      "expect_flags": false,
+      "expected_flag_keywords": []
+    }
+  ],
+  "spec_table_fixtures": [
+    {
+      "id": "full_dimensions",
+      "product_name": "Large Serving Platter",
+      "japanese_description": "サイズ: 幅30cm x 奥行20cm x 高さ5cm。重量: 1.5kg。容量: 2L。素材: 磁器。電子レンジ可。食洗機不可。",
+      "category": "Tableware",
+      "expect_specs": ["width", "depth", "height", "weight", "capacity", "material"],
+      "expect_unit_conversion": true,
+      "target_locale": "en"
+    },
+    {
+      "id": "minimal_dimensions",
+      "product_name": "Small Cup",
+      "japanese_description": "直径8cm、高さ6cm。容量150ml。",
+      "category": "Tableware",
+      "expect_specs": ["diameter", "height", "capacity"],
+      "expect_unit_conversion": true,
+      "target_locale": "en"
+    },
+    {
+      "id": "textile_specs",
+      "product_name": "Silk Scarf",
+      "japanese_description": "素材: シルク100%。サイズ: 90cm x 90cm。洗濯: ドライクリーニングのみ。",
+      "category": "Clothing",
+      "expect_specs": ["material", "size"],
+      "expect_unit_conversion": true,
+      "target_locale": "en"
+    },
+    {
+      "id": "japanese_locale_no_conversion",
+      "product_name": "茶碗",
+      "japanese_description": "直径12cm、高さ8cm。重量250g。",
+      "category": "Tableware",
+      "expect_specs": ["diameter", "height", "weight"],
+      "expect_unit_conversion": false,
+      "target_locale": "ja"
+    }
+  ],
+  "rag_brand_soul_fixtures": [
+    {
+      "id": "kyoto_pottery",
+      "shop_domain": "kyoto-pottery.myshopify.com",
+      "brand_persona": "Koto-gama",
+      "raw_text": "【ご挨拶】\n古都窯（ことがま）は、明治18年（1885年）に京都・東山で開窯しました。\n私たちは「用の美（Yo-no-bi）」―使ってこそ美しい―という哲学を大切にしています。\n飾るための器ではなく、日々の食卓で愛される器を目指しています。\n",
+      "core_pillars": ["1885年創業", "用の美", "京都・東山"],
+      "products": [
+        {
+          "product_name": "蒼釉・深皿（24cm）",
+          "japanese_description": "パスタやカレーに最適な深皿です。直径24cm、高さ5cm。電子レンジ使用可、食洗機は推奨しません。桐箱入り。",
+          "expected_keywords": ["1885", "Kyoto", "Yo-no-bi"],
+          "min_keyword_hits": 2
+        }
+      ]
+    },
+    {
+      "id": "asakusa_lacquer",
+      "shop_domain": "asakusa-lacquer.myshopify.com",
+      "brand_persona": "Edo Lacquerware",
+      "raw_text": "【会社概要】\n江戸漆工房は1920年に東京・浅草で創業しました。\n私たちは「侘び寂び」の美意識を大切にし、日常に馴染む漆器を作り続けています。\n天然木と伝統技法にこだわり、長く使える器を届けます。\n",
+      "core_pillars": ["1920年創業", "侘び寂び", "浅草"],
+      "products": [
+        {
+          "product_name": "黒漆・汁椀",
+          "japanese_description": "味噌汁に最適な漆の汁椀です。直径11cm、高さ7cm。電子レンジ不可、手洗い推奨。",
+          "expected_keywords": ["1920", "Tokyo", "Asakusa", "wabi-sabi"],
+          "min_keyword_hits": 2
+        }
+      ]
+    }
+  ],
+  "tier_test_fixtures": [
+    {
+      "id": "standard_product",
+      "product_name": "Artisan Tea Bowl",
+      "japanese_description": "京都の職人が手作りした抹茶碗。有田焼の技法で焼き上げました。直径12cm、高さ8cm、重量250g。",
+      "category": "Tableware",
+      "tiers_to_test": ["Free", "Basic", "Standard", "Pro"],
+      "expected_agents": ["Copywriter", "Marketing", "PriceScout", "Compliance"]
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-from src.main.service.value_discovery_service import ValueDiscoveryService
+from src.main.services.value_discovery_service import ValueDiscoveryService
 
 
 def test_value_discovery_no_match_returns_empty_list():

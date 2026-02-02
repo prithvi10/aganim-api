@@ -41,7 +41,8 @@ async def test_get_shop_locales_success(mock_auth_context):
         {"locale": "fr", "primary": False}
     ]
     
-    with patch("src.main.api.controller.fetch_shop_locales", new_callable=AsyncMock) as mock_fetch:
+    # Patch in the proxy module where fetch_shop_locales is used
+    with patch("src.main.api.shopify.proxy.fetch_shop_locales", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = {"status": "success", "locales": mock_locales}
 
         canonical = f"shop={shop}"
@@ -63,8 +64,9 @@ async def test_controller_delegates_to_core_generation(mock_auth_context):
     """Test that controller delegates generation request to core layer."""
     shop = "test-shop.myshopify.com"
     
-    with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.api.controller.process_generation_request", new_callable=AsyncMock) as mock_process:
+    # Patch in the proxy module where these are used
+    with patch("src.main.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
+         patch("src.main.api.shopify.proxy.process_generation_request", new_callable=AsyncMock) as mock_process:
         
         mock_process.return_value = {"status": "success", "data": {"title": "T", "description": "D"}}
 

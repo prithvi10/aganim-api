@@ -1,3 +1,9 @@
+"""
+OnboardingService - User onboarding workflow.
+
+Moved from service/onboarding.py to consolidate services.
+"""
+
 import secrets
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -48,4 +54,3 @@ def onboard_user(db: Session, request: OnboardingRequest) -> OnboardingResponse:
         plan_name=plan.name,
         api_key="deprecated" # Or remove field from model if possible, but keeping for compatibility
     )
-

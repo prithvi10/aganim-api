@@ -168,3 +168,77 @@ class StoreContext(Base):
     embedding = Column(Vector(1536).with_variant(TextType, "sqlite"), nullable=False)
     metadata_json = Column("metadata", JSON().with_variant(JSONB, "postgresql"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# -----------------------------------------------------------------------------
+# Agentic Architecture Tables
+# -----------------------------------------------------------------------------
+
+class Mission(Base):
+    """
+    Tracks long-running agent missions for a product.
+    
+    A mission represents a complete product optimization workflow
+    that may involve multiple agents. The state is persisted here
+    to support resumption, SSE streaming, and audit trails.
+    """
+    __tablename__ = "missions"
+
+    id = Column(String, primary_key=True)  # UUID
+    shop_id = Column(String, ForeignKey("shops.domain"), index=True, nullable=False)
+    product_id = Column(String, index=True, nullable=False)
+    
+    # Current mission status
+    # Values: PENDING, IN_PROGRESS, WAITING_APPROVAL, COMPLETED, ERROR
+    status = Column(String, nullable=False, default="PENDING")
+    
+    # Serialized MissionState (full snapshot for resumption)
+    current_state = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    
+    # Agent execution logs for debugging/audit
+    logs = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    
+    # Plan tier that was active when mission started (for routing)
+    plan_tier = Column(String, nullable=True)
+    
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class AgentCorrection(Base):
+    """
+    Stores user corrections to agent outputs for learning.
+    
+    When a user edits the AI-generated content, we store the diff
+    so agents can learn from these corrections in future runs.
+    The embedding enables semantic similarity search.
+    """
+    __tablename__ = "agent_corrections"
+
+    id = Column(String, primary_key=True)  # UUID
+    shop_id = Column(String, index=True, nullable=False)
+    
+    # Which agent produced the original output
+    agent_role = Column(String, nullable=False)  # "Copywriter", "PriceScout", etc.
+    
+    # The original AI-generated output
+    original_output = Column(Text, nullable=False)
+    
+    # What the user changed it to
+    user_correction = Column(Text, nullable=False)
+    
+    # Embedding for semantic similarity search
+    # Allows finding corrections relevant to similar products
+    embedding = Column(Vector(1536).with_variant(TextType, "sqlite"), nullable=True)
+    
+    # Context about when/why this correction was made
+    product_id = Column(String, index=True, nullable=True)
+    context_metadata = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

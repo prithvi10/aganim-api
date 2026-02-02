@@ -73,3 +73,31 @@ class BrandContextIngestRequest(BaseModel):
 class BrandContextFileExtractRequest(BaseModel):
     file_b64: str
     mime_type: str
+
+
+# ==============================================================================
+# Agentic Architecture API Models
+# ==============================================================================
+
+class MissionRequest(BaseModel):
+    """
+    Request to create a new agent mission for product optimization.
+    """
+    product_id: str
+    product_name: str
+    japanese_description: str
+    category: str = "General"
+    target_locale: str = "en"
+    tone_profile: Literal["professional", "luxury", "minimalist", "playful"] = "professional"
+    brand_soul_enabled: bool = False
+
+
+class CorrectionRequest(BaseModel):
+    """
+    Request to submit a user correction for agent learning.
+    """
+    agent_role: str  # "Copywriter", "PriceScout", "Compliance"
+    original_output: str
+    user_correction: str
+    product_id: str | None = None
+    context_metadata: dict[str, Any] = {}

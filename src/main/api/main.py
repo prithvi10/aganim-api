@@ -133,6 +133,102 @@ def _ensure_plan_columns_exist():
         conn.commit()
 
 
+def _ensure_agentic_tables_exist():
+    """
+    Create tables for the agentic architecture if they don't exist.
+    
+    Tables:
+    - missions: Tracks long-running agent missions
+    - agent_corrections: Stores user corrections for learning
+    """
+    dialect = engine.dialect.name
+    
+    # Missions table
+    if dialect == "sqlite":
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS missions (
+                    id TEXT PRIMARY KEY,
+                    shop_id TEXT NOT NULL,
+                    product_id TEXT NOT NULL,
+                    status TEXT DEFAULT 'PENDING',
+                    current_state TEXT,
+                    logs TEXT,
+                    plan_tier TEXT,
+                    error_message TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TEXT,
+                    FOREIGN KEY (shop_id) REFERENCES shops(domain)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS missions_shop_id_idx ON missions(shop_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS missions_product_id_idx ON missions(product_id)"))
+            
+            # Agent corrections table
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_corrections (
+                    id TEXT PRIMARY KEY,
+                    shop_id TEXT NOT NULL,
+                    agent_role TEXT NOT NULL,
+                    original_output TEXT NOT NULL,
+                    user_correction TEXT NOT NULL,
+                    embedding TEXT,
+                    product_id TEXT,
+                    context_metadata TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_shop_id_idx ON agent_corrections(shop_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_product_id_idx ON agent_corrections(product_id)"))
+            conn.commit()
+        return
+
+    # PostgreSQL
+    with engine.connect() as conn:
+        # Missions table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS missions (
+                id VARCHAR PRIMARY KEY,
+                shop_id VARCHAR NOT NULL REFERENCES shops(domain),
+                product_id VARCHAR NOT NULL,
+                status VARCHAR DEFAULT 'PENDING',
+                current_state JSONB,
+                logs JSONB,
+                plan_tier VARCHAR,
+                error_message TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                completed_at TIMESTAMPTZ
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS missions_shop_id_idx ON missions(shop_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS missions_product_id_idx ON missions(product_id)"))
+        
+        # Agent corrections table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS agent_corrections (
+                id VARCHAR PRIMARY KEY,
+                shop_id VARCHAR NOT NULL,
+                agent_role VARCHAR NOT NULL,
+                original_output TEXT NOT NULL,
+                user_correction TEXT NOT NULL,
+                embedding vector(1536),
+                product_id VARCHAR,
+                context_metadata JSONB,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_shop_id_idx ON agent_corrections(shop_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_product_id_idx ON agent_corrections(product_id)"))
+        # Embedding similarity index for learning
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS agent_corrections_embedding_idx 
+            ON agent_corrections USING ivfflat (embedding vector_cosine_ops)
+        """))
+        conn.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Create tables
@@ -140,6 +236,7 @@ async def lifespan(app: FastAPI):
     _ensure_plan_columns_exist()
     _ensure_shop_columns_exist()
     _ensure_pgvector_extension_and_indexes()
+    _ensure_agentic_tables_exist()
     yield
     # Shutdown: (Cleanup if needed)
 

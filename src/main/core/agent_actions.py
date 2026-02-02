@@ -10,9 +10,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from src.main.logging.logger import get_logger
-from src.main.service.open_ai_api_service import OpenAIService
+from src.main.services.openai_legacy_service import OpenAIService
 from src.main.utils.llm_parser import parse_llm_json
-from src.main.service.value_discovery_service import ValueDiscoveryService
+from src.main.services.value_discovery_service import ValueDiscoveryService
 
 logger = get_logger(__name__)
 openai_service = OpenAIService()
