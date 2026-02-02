@@ -109,7 +109,8 @@ def test_webhook_schedules_downgrade_end_of_cycle(db_session, db_engine):
             # Bypass signature check for this unit-ish test
             from unittest.mock import patch
 
-            with patch("src.main.api.controller.verify_webhook_signature", return_value=None):
+            # Patch in the webhooks module where verify_webhook_signature is used
+            with patch("src.main.api.shopify.webhooks.verify_webhook_signature", return_value=None):
                 r = client.post(
                     "/webhooks/subscription-activated",
                     json=payload,
@@ -142,4 +143,3 @@ def test_webhook_schedules_downgrade_end_of_cycle(db_session, db_engine):
             del app.dependency_overrides[get_db]
         except Exception:
             pass
-

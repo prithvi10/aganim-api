@@ -1,3 +1,12 @@
+"""
+OpenAI Legacy Service - Backward-compatible wrapper.
+
+This is the legacy OpenAI service from service/open_ai_api_service.py
+Kept for backward compatibility with existing code that uses OpenAIService directly.
+
+For new agentic code, prefer using LLMService from services/llm_service.py
+"""
+
 import os
 import json
 from openai import OpenAI
@@ -19,7 +28,7 @@ from src.main.config.prompts import BRAND_CONTEXT_FILE_EXTRACT_PROMPT
 from src.main.logging.logger import get_logger
 from src.main.db.db_transactions import record_successful_rewrite
 from src.main.db.db_transactions import increment_monthly_rewrites_used  # backwards-compat for tests/patches
-from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
+from src.main.services.fair_use_service import get_base_model_for_shop, get_effective_model, record_cost_from_usage
 
 logger = get_logger(__name__)
 

@@ -55,9 +55,9 @@ def test_webhook_subscription_success(webhook_payload, mock_plan):
     hmac_sig = generate_hmac(MOCK_SHOPIFY_SECRET, json_body)
     headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
 
-    # Mock dependencies
-    with patch("src.main.api.controller.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
-         patch("src.main.api.controller.onboard_user") as mock_onboard:
+    # Mock dependencies - patch in the webhooks module where they are used
+    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
+         patch("src.main.api.shopify.webhooks.onboard_user") as mock_onboard:
         
         response = client.post(
             "/webhooks/subscription-activated",
@@ -86,8 +86,8 @@ def test_webhook_subscription_success_promo_plan_name_maps_to_canonical_plan(web
     hmac_sig = generate_hmac(MOCK_SHOPIFY_SECRET, json_body)
     headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
 
-    with patch("src.main.api.controller.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
-         patch("src.main.api.controller.onboard_user") as mock_onboard:
+    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
+         patch("src.main.api.shopify.webhooks.onboard_user") as mock_onboard:
         response = client.post(
             "/webhooks/subscription-activated",
             content=json_body,
@@ -147,8 +147,8 @@ def test_webhook_plan_not_found(webhook_payload):
     hmac_sig = generate_hmac(MOCK_SHOPIFY_SECRET, json_body)
     headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
 
-    with patch("src.main.api.controller.get_plan_by_name", return_value=None) as mock_get_plan, \
-         patch("src.main.api.controller.onboard_user") as mock_onboard:
+    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=None) as mock_get_plan, \
+         patch("src.main.api.shopify.webhooks.onboard_user") as mock_onboard:
 
         response = client.post(
             "/webhooks/subscription-activated",
@@ -170,8 +170,8 @@ def test_webhook_user_already_exists(webhook_payload, mock_plan):
     # Simulate 409 Conflict from service
     from fastapi import HTTPException
     
-    with patch("src.main.api.controller.get_plan_by_name", return_value=mock_plan), \
-         patch("src.main.api.controller.onboard_user", side_effect=HTTPException(status_code=409, detail="Exists")):
+    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan), \
+         patch("src.main.api.shopify.webhooks.onboard_user", side_effect=HTTPException(status_code=409, detail="Exists")):
 
         response = client.post(
             "/webhooks/subscription-activated",
@@ -188,8 +188,8 @@ def test_webhook_unexpected_error(webhook_payload, mock_plan):
     hmac_sig = generate_hmac(MOCK_SHOPIFY_SECRET, json_body)
     headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
 
-    with patch("src.main.api.controller.get_plan_by_name", return_value=mock_plan), \
-         patch("src.main.api.controller.onboard_user", side_effect=Exception("Unexpected Crash")):
+    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan), \
+         patch("src.main.api.shopify.webhooks.onboard_user", side_effect=Exception("Unexpected Crash")):
 
         response = client.post(
             "/webhooks/subscription-activated",
@@ -198,4 +198,3 @@ def test_webhook_unexpected_error(webhook_payload, mock_plan):
         )
 
         assert response.status_code == 200
-

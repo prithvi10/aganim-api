@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 import json
 from src.main.db.db_models import User, Shop
 from src.main.api.models import RewriteRequest, BulkRewriteRequest
-from src.main.service.open_ai_api_service import OpenAIService
-from src.main.service import serp_service
+from src.main.services.openai_legacy_service import OpenAIService
+from src.main.services import serp_service
 from src.main.security.ratelimiter import InMemoryRateLimiter
 from src.main.config.configs import (
     LOCAL_RATE_LIMIT_CONFIG,
@@ -27,10 +27,10 @@ from src.main.utils.text_processor import detect_and_label_sections
 from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
 from src.main.logging.logger import get_logger
 from src.main.db.db_transactions import get_shop_access_token
-from src.main.service.shopify_service import save_product_content_with_locale
+from src.main.services.shopify_service import save_product_content_with_locale
 from src.main.api.validation import validate_rewrite_request
-from src.main.service.fair_use import get_base_model_for_shop, get_effective_model, record_cost_from_usage
-from src.main.service.brand_context_retrieval import get_brand_context
+from src.main.services.fair_use_service import get_base_model_for_shop, get_effective_model, record_cost_from_usage
+from src.main.services.rag_service import get_brand_context
 
 logger = get_logger(__name__)
 limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)

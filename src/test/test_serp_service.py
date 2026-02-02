@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.service import serp_service
+from src.main.services import serp_service
 
 
 @pytest.mark.asyncio
@@ -17,9 +17,9 @@ async def test_fetch_top_results_success():
         ]
     }
 
-    with patch("src.main.service.serp_service.SERP_API_KEY", "key"), \
-         patch("src.main.service.serp_service.SERP_API_URL", "https://serpapi.com/search"), \
-         patch("src.main.service.serp_service.httpx.AsyncClient") as MockClient:
+    with patch("src.main.services.serp_service.SERP_API_KEY", "key"), \
+         patch("src.main.services.serp_service.SERP_API_URL", "https://serpapi.com/search"), \
+         patch("src.main.services.serp_service.httpx.AsyncClient") as MockClient:
         mock_client = MockClient.return_value
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
@@ -36,8 +36,8 @@ async def test_fetch_top_results_success():
 
 @pytest.mark.asyncio
 async def test_fetch_top_results_no_api_key():
-    with patch("src.main.service.serp_service.SERP_API_KEY", ""), \
-         patch("src.main.service.serp_service.httpx.AsyncClient") as MockClient:
+    with patch("src.main.services.serp_service.SERP_API_KEY", ""), \
+         patch("src.main.services.serp_service.httpx.AsyncClient") as MockClient:
         results = await serp_service.fetch_top_results("matcha tea")
         assert results is None
         assert not MockClient.called
@@ -45,8 +45,8 @@ async def test_fetch_top_results_no_api_key():
 
 @pytest.mark.asyncio
 async def test_fetch_top_results_timeout_or_error_returns_none():
-    with patch("src.main.service.serp_service.SERP_API_KEY", "key"), \
-         patch("src.main.service.serp_service.httpx.AsyncClient") as MockClient:
+    with patch("src.main.services.serp_service.SERP_API_KEY", "key"), \
+         patch("src.main.services.serp_service.httpx.AsyncClient") as MockClient:
         mock_client = MockClient.return_value
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
@@ -61,9 +61,9 @@ async def test_fetch_top_results_non_200_returns_none():
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     mock_resp.text = "error"
-    with patch("src.main.service.serp_service.SERP_API_KEY", "key"), \
-         patch("src.main.service.serp_service.SERP_API_URL", "https://serpapi.com/search"), \
-         patch("src.main.service.serp_service.httpx.AsyncClient") as MockClient:
+    with patch("src.main.services.serp_service.SERP_API_KEY", "key"), \
+         patch("src.main.services.serp_service.SERP_API_URL", "https://serpapi.com/search"), \
+         patch("src.main.services.serp_service.httpx.AsyncClient") as MockClient:
         mock_client = MockClient.return_value
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None

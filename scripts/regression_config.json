@@ -1,0 +1,146 @@
+{
+  "version": "1.0.0",
+  "description": "Configuration for local regression test suite",
+  
+  "defaults": {
+    "timeout_seconds": 60,
+    "retry_count": 1,
+    "api_base_url": "http://localhost:8000",
+    "target_locale": "en"
+  },
+  
+  "modules": {
+    "agents": {
+      "enabled": true,
+      "description": "Agent output validation tests",
+      "tests": [
+        "copywriter_artisan_discovered_values",
+        "copywriter_generic_no_discovered_values",
+        "marketing_ctr_check",
+        "marketing_seo_length_constraints",
+        "compliance_fda_ftc_flags",
+        "compliance_status_update",
+        "price_scout_pricing_analysis"
+      ]
+    },
+    "seo": {
+      "enabled": true,
+      "description": "SEO feature validation tests",
+      "tests": [
+        "seo_title_length_constraint",
+        "seo_title_format",
+        "seo_description_length_constraint",
+        "seo_description_pst_formula",
+        "seo_alt_text_format",
+        "seo_alt_text_not_empty",
+        "ctr_score_range",
+        "ctr_check_structure",
+        "serp_insights_structure"
+      ]
+    },
+    "tables": {
+      "enabled": true,
+      "description": "Spec table generation tests",
+      "tests": [
+        "product_specifications_table_present",
+        "detailed_dimensions_table_present",
+        "table_html_structure",
+        "table_not_nested",
+        "unit_conversion_english_locale",
+        "no_unit_conversion_japanese_locale",
+        "dimension_extraction_from_japanese",
+        "spec_extraction_material",
+        "spec_extraction_care_instructions",
+        "table_generation_standard_tier",
+        "table_generation_basic_tier"
+      ]
+    },
+    "rag": {
+      "enabled": true,
+      "description": "RAG / Brand Soul tests",
+      "requires_openai": true,
+      "requires_live_server": true,
+      "tests": [
+        "brand_soul_fixture_structure",
+        "brand_soul_has_traceable_keywords",
+        "product_expected_keywords",
+        "multi_tenant_shop_ids_unique",
+        "multi_tenant_content_distinct",
+        "brand_context_prompt_injection_format",
+        "brand_heritage_context_block",
+        "live_brand_soul_ingestion",
+        "live_brand_context_status"
+      ]
+    },
+    "tiers": {
+      "enabled": true,
+      "description": "Tier-based feature validation tests",
+      "tests": [
+        "workflow_contains_all_agents",
+        "workflow_agent_count_same_all_tiers",
+        "all_agents_run_per_tier",
+        "pipeline_completes_all_tiers",
+        "pro_tier_adversarial_loop",
+        "all_tiers_produce_required_outputs"
+      ]
+    }
+  },
+  
+  "tiers": {
+    "Free": {
+      "agents": ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"],
+      "features": {
+        "streaming": false,
+        "multi_locale": false,
+        "serp_enrichment": true,
+        "adversarial_loop": false
+      }
+    },
+    "Basic": {
+      "agents": ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"],
+      "features": {
+        "streaming": false,
+        "multi_locale": false,
+        "serp_enrichment": true,
+        "adversarial_loop": false
+      }
+    },
+    "Standard": {
+      "agents": ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"],
+      "features": {
+        "streaming": false,
+        "multi_locale": true,
+        "serp_enrichment": true,
+        "adversarial_loop": false,
+        "spec_tables": true
+      }
+    },
+    "Pro": {
+      "agents": ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"],
+      "features": {
+        "streaming": true,
+        "multi_locale": true,
+        "serp_enrichment": true,
+        "adversarial_loop": true,
+        "spec_tables": true
+      }
+    }
+  },
+  
+  "seo_constraints": {
+    "title_max_length": 70,
+    "description_max_length": 160,
+    "alt_text_min_length": 10
+  },
+  
+  "compliance_patterns": {
+    "fda_keywords": ["cure", "treat", "heal", "miracle", "anti-aging", "prevent disease"],
+    "ftc_keywords": ["best", "#1", "guaranteed", "risk-free", "clinically proven"]
+  },
+  
+  "reports": {
+    "output_directory": "logs",
+    "json_filename_template": "regression_report_{timestamp}.json",
+    "md_filename_template": "regression_report_{timestamp}.md"
+  }
+}

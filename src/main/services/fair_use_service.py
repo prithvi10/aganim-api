@@ -1,3 +1,9 @@
+"""
+FairUseService - Usage tracking and cost management.
+
+Moved from service/fair_use.py to consolidate services.
+"""
+
 import os
 from datetime import datetime, timedelta, timezone, date
 import httpx
@@ -255,7 +261,7 @@ def _get_cycle_token_total(db: Session, shop_domain: str) -> int:
 
 
 def _usd_cost_from_tokens(output_tokens: int) -> float:
-    return float(output_tokens) * USD_PER_OUTPUT_TOKEN
+    return float(output_tokens) * _USD_PER_OUTPUT_TOKEN
 
 
 def is_fair_use_violated(db: Session, shop_domain: str) -> bool:

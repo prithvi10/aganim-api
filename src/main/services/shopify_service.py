@@ -1,3 +1,9 @@
+"""
+ShopifyService - Shopify API interactions.
+
+Moved from service/shopify_service.py to consolidate services.
+"""
+
 import httpx
 import os
 from src.main.logging.logger import get_logger
