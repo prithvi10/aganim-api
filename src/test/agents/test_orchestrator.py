@@ -815,3 +815,425 @@ async def test_execute_handles_exception(mock_services, mission_state):
         final_state = states[-1]
         assert final_state.status == "ERROR"
         assert "Workflow error" in final_state.error_message
+
+
+# =============================================================================
+# Tests: Step-by-Step Journey - execute_single_step
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_execute_single_step_runs_first_agent(mock_services, mission_state):
+    """Test that execute_single_step runs only the first agent."""
+    async def mock_pass_through(self, state):
+        state.add_log(f"{self.role_name}: Executed")
+        state.draft_content = "Test content"
+        return state
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        # Should have run first agent only
+        final_state = states[-1]
+        assert final_state.status == "AWAITING_APPROVAL"
+        assert "Copywriter" in "\n".join(final_state.logs)
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_sets_workflow_agents(mock_services, mission_state):
+    """Test that execute_single_step populates workflow_agents in state."""
+    async def mock_pass_through(self, state):
+        return state
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert len(final_state.workflow_agents) == 4
+        assert "CopywriterAgent" in final_state.workflow_agents
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_stores_agent_output(mock_services, mission_state):
+    """Test that execute_single_step stores agent output separately."""
+    async def mock_pass_through(self, state):
+        state.draft_content = "Generated content"
+        state.draft_title = "Generated title"
+        return state
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert "CopywriterAgent" in final_state.agent_outputs
+        assert final_state.agent_outputs["CopywriterAgent"]["draft_content"] == "Generated content"
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_with_regeneration_feedback(mock_services, mission_state):
+    """Test that execute_single_step injects regeneration feedback."""
+    received_feedback = [None]
+    
+    async def mock_check_feedback(self, state):
+        if "_regeneration_feedback" in state.raw_input:
+            received_feedback[0] = state.raw_input["_regeneration_feedback"]
+        return state
+    
+    with patch.object(CopywriterAgent, 'run', mock_check_feedback):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+        
+        mission_state.regeneration_feedback = "Make it more casual"
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        # Feedback should have been injected
+        assert received_feedback[0] == "Make it more casual"
+        # Feedback should be cleared after use
+        assert states[-1].regeneration_feedback is None
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_completes_at_end(mock_services, mission_state):
+    """Test that execute_single_step marks COMPLETED when at end of workflow."""
+    async def mock_pass_through(self, state):
+        return state
+    
+    with patch.object(ComplianceAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+        
+        # Set to last agent index
+        mission_state.current_agent_index = 4  # Beyond last
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert final_state.status == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_handles_error(mock_services, mission_state):
+    """Test that execute_single_step handles agent errors."""
+    async def mock_fail(self, state):
+        raise Exception("Agent crashed")
+    
+    with patch.object(CopywriterAgent, 'run', mock_fail):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert final_state.status == "ERROR"
+        assert "crashed" in final_state.error_message
+
+
+# =============================================================================
+# Tests: Step-by-Step Journey - advance_to_next_step
+# =============================================================================
+
+def test_advance_to_next_step_increments_index(mock_services, mission_state):
+    """Test that advance_to_next_step increments current_agent_index."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 0
+    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent"]
+    
+    result = mission.advance_to_next_step(mission_state)
+    
+    assert result.current_agent_index == 1
+    assert result.status == "PENDING"
+
+
+def test_advance_to_next_step_logs_next_agent(mock_services, mission_state):
+    """Test that advance_to_next_step logs the next agent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 0
+    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent"]
+    
+    result = mission.advance_to_next_step(mission_state)
+    
+    assert "MarketingAgent" in "\n".join(result.logs)
+
+
+def test_advance_to_next_step_completes_at_end(mock_services, mission_state):
+    """Test that advance_to_next_step marks COMPLETED at end."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 3  # Last agent
+    mission_state.workflow_agents = ["A", "B", "C", "D"]
+    
+    result = mission.advance_to_next_step(mission_state)
+    
+    assert result.current_agent_index == 4
+    assert result.status == "COMPLETED"
+
+
+# =============================================================================
+# Tests: Step-by-Step Journey - skip_current_step
+# =============================================================================
+
+def test_skip_current_step_records_skipped_agent(mock_services, mission_state):
+    """Test that skip_current_step records the skipped agent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 1
+    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent"]
+    
+    result = mission.skip_current_step(mission_state)
+    
+    assert "MarketingAgent" in result.skipped_agents
+    assert result.current_agent_index == 2
+
+
+def test_skip_current_step_logs_skip(mock_services, mission_state):
+    """Test that skip_current_step logs the skip action."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 0
+    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent"]
+    
+    result = mission.skip_current_step(mission_state)
+    
+    assert "Skipped" in "\n".join(result.logs)
+
+
+def test_skip_current_step_completes_at_end(mock_services, mission_state):
+    """Test that skip_current_step marks COMPLETED at end."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 3  # Last agent index (0-based)
+    # Use actual agent names that match the workflow
+    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"]
+    
+    result = mission.skip_current_step(mission_state)
+    
+    assert result.status == "COMPLETED"
+    assert "ComplianceAgent" in result.skipped_agents
+
+
+def test_skip_current_step_preserves_previous_skips(mock_services, mission_state):
+    """Test that skip_current_step preserves previously skipped agents."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 2  # PriceScoutAgent
+    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"]
+    mission_state.skipped_agents = ["CopywriterAgent"]  # Previously skipped
+    
+    result = mission.skip_current_step(mission_state)
+    
+    assert "CopywriterAgent" in result.skipped_agents  # Preserved
+    assert "PriceScoutAgent" in result.skipped_agents  # Newly skipped
+    assert len(result.skipped_agents) == 2
+
+
+# =============================================================================
+# Tests: Step-by-Step Journey - prepare_regeneration
+# =============================================================================
+
+def test_prepare_regeneration_sets_feedback(mock_services, mission_state):
+    """Test that prepare_regeneration sets regeneration_feedback."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 0
+    mission_state.workflow_agents = ["CopywriterAgent"]
+    
+    result = mission.prepare_regeneration(mission_state, feedback="Make it shorter")
+    
+    assert result.regeneration_feedback == "Make it shorter"
+    assert result.status == "PENDING"
+
+
+def test_prepare_regeneration_without_feedback(mock_services, mission_state):
+    """Test that prepare_regeneration works without feedback."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 0
+    mission_state.workflow_agents = ["CopywriterAgent"]
+    
+    result = mission.prepare_regeneration(mission_state)
+    
+    assert result.regeneration_feedback is None
+    assert result.status == "PENDING"
+
+
+def test_prepare_regeneration_logs_action(mock_services, mission_state):
+    """Test that prepare_regeneration logs the action."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.current_agent_index = 1
+    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent"]
+    
+    result = mission.prepare_regeneration(mission_state, feedback="test")
+    
+    assert "regenerate" in "\n".join(result.logs).lower()
+
+
+# =============================================================================
+# Tests: Step-by-Step Journey - _extract_agent_output
+# =============================================================================
+
+def test_extract_agent_output_copywriter(mock_services, mission_state):
+    """Test _extract_agent_output for CopywriterAgent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.draft_content = "Test content"
+    mission_state.draft_title = "Test title"
+    mission_state.discovered_values = [{"name": "quality", "value": "high"}]
+    
+    output = mission._extract_agent_output(mission_state, "CopywriterAgent")
+    
+    assert output["draft_content"] == "Test content"
+    assert output["draft_title"] == "Test title"
+    assert len(output["discovered_values"]) == 1
+
+
+def test_extract_agent_output_marketing(mock_services, mission_state):
+    """Test _extract_agent_output for MarketingAgent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.seo_title = "SEO Title"
+    mission_state.seo_description = "SEO Desc"
+    mission_state.ctr_check = {"score": 0.8}
+    mission_state.serp_insights = [{"title": "Competitor"}]
+    
+    output = mission._extract_agent_output(mission_state, "MarketingAgent")
+    
+    assert output["seo_title"] == "SEO Title"
+    assert output["seo_description"] == "SEO Desc"
+    assert output["ctr_check"]["score"] == 0.8
+
+
+def test_extract_agent_output_price_scout(mock_services, mission_state):
+    """Test _extract_agent_output for PriceScoutAgent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.pricing_analysis = {
+        "recommended_price": 29.99,
+        "confidence": 0.85,
+    }
+    
+    output = mission._extract_agent_output(mission_state, "PriceScoutAgent")
+    
+    assert output["pricing_analysis"]["recommended_price"] == 29.99
+
+
+def test_extract_agent_output_compliance(mock_services, mission_state):
+    """Test _extract_agent_output for ComplianceAgent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.compliance_flags = ["FDA violation", "Missing disclosure"]
+    
+    output = mission._extract_agent_output(mission_state, "ComplianceAgent")
+    
+    assert len(output["compliance_flags"]) == 2
+    assert "FDA violation" in output["compliance_flags"]
+
+
+def test_extract_agent_output_unknown_agent(mock_services, mission_state):
+    """Test _extract_agent_output for unknown agent returns empty dict."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    output = mission._extract_agent_output(mission_state, "UnknownAgent")
+    
+    assert output == {}

@@ -371,6 +371,212 @@ class MissionControl:
         agent = agent_class(self.shop_id, services=self.services)
         return await agent.run(state)
 
+    async def execute_single_step(
+        self,
+        state: MissionState,
+    ) -> AsyncGenerator[MissionState, None]:
+        """
+        Execute only the current agent in the workflow (step-by-step mode).
+        
+        This allows merchants to review each agent's output before proceeding.
+        After the agent completes, status is set to AWAITING_APPROVAL.
+        
+        Args:
+            state: Current mission state with current_agent_index set
+        
+        Yields:
+            MissionState updates during and after agent execution
+        """
+        # Store workflow agents in state for frontend display
+        if not state.workflow_agents:
+            state.workflow_agents = [a.__name__ for a in self.workflow]
+        
+        current_idx = state.current_agent_index
+        
+        # Check if workflow is complete
+        if current_idx >= len(self.workflow):
+            state.status = "COMPLETED"
+            state.add_log("MissionControl: All agents completed")
+            self._record_fair_use_costs(state)
+            yield state
+            return
+        
+        agent_class = self.workflow[current_idx]
+        agent_name = agent_class.__name__
+        
+        state.status = "IN_PROGRESS"
+        state.add_log(f"MissionControl: Step {current_idx + 1}/{len(self.workflow)} - Running {agent_name}...")
+        yield state
+        
+        try:
+            # Instantiate agent with services
+            agent = agent_class(self.shop_id, services=self.services)
+            
+            # Inject regeneration feedback if present
+            if state.regeneration_feedback:
+                state.raw_input["_regeneration_feedback"] = state.regeneration_feedback
+                state.add_log(f"MissionControl: Regenerating with feedback: {state.regeneration_feedback[:100]}...")
+                state.regeneration_feedback = None  # Clear after use
+            
+            # Run the agent
+            state = await agent.run(state)
+            
+            if state.status == "ERROR":
+                logger.error(
+                    "[MissionControl] Agent %s failed mission=%s shop=%s",
+                    agent_name,
+                    self.mission_id,
+                    self.shop_id,
+                )
+                yield state
+                return
+            
+            # Extract and store this agent's output
+            agent_output = self._extract_agent_output(state, agent_name)
+            state.agent_outputs[agent_name] = agent_output
+            
+            # Mark step complete - waiting for merchant decision
+            state.status = "AWAITING_APPROVAL"
+            state.add_log(f"MissionControl: {agent_name} completed - awaiting approval")
+            
+            logger.info(
+                "[MissionControl] Step completed mission=%s agent=%s index=%d/%d",
+                self.mission_id,
+                agent_name,
+                current_idx + 1,
+                len(self.workflow),
+            )
+            
+            yield state
+            
+        except Exception as e:
+            logger.exception(
+                "[MissionControl] Step failed mission=%s agent=%s",
+                self.mission_id,
+                agent_name,
+            )
+            state.set_error(f"{agent_name} failed: {str(e)}")
+            yield state
+
+    def _extract_agent_output(self, state: MissionState, agent_name: str) -> dict:
+        """
+        Extract the relevant output for a specific agent.
+        
+        This allows the frontend to display each agent's contribution clearly.
+        
+        Args:
+            state: Current mission state
+            agent_name: Name of the agent whose output to extract
+        
+        Returns:
+            Dict containing the agent's specific output fields
+        """
+        if agent_name == "CopywriterAgent":
+            return {
+                "draft_content": state.draft_content,
+                "draft_title": state.draft_title,
+                "discovered_values": state.discovered_values,
+            }
+        elif agent_name == "MarketingAgent":
+            return {
+                "seo_title": state.seo_title,
+                "seo_description": state.seo_description,
+                "seo_alt_text": state.seo_alt_text,
+                "seo_insights": state.seo_insights,
+                "seo_recommendations": state.seo_recommendations,
+                "ctr_check": state.ctr_check,
+                "serp_insights": state.serp_insights,
+                "social_hooks": state.social_hooks,
+                "seasonal_campaign": state.seasonal_campaign,
+            }
+        elif agent_name == "PriceScoutAgent":
+            return {
+                "pricing_analysis": state.pricing_analysis,
+            }
+        elif agent_name == "ComplianceAgent":
+            return {
+                "compliance_flags": state.compliance_flags,
+            }
+        else:
+            return {}
+
+    def advance_to_next_step(self, state: MissionState) -> MissionState:
+        """
+        Advance to the next agent in the workflow.
+        
+        Called when merchant clicks "Continue".
+        
+        Args:
+            state: Current mission state
+        
+        Returns:
+            Updated state with incremented index
+        """
+        state.current_agent_index += 1
+        state.status = "PENDING"  # Ready for next step
+        
+        if state.current_agent_index >= len(self.workflow):
+            state.status = "COMPLETED"
+            state.add_log("MissionControl: All agents completed")
+        else:
+            next_agent = self.workflow[state.current_agent_index].__name__
+            state.add_log(f"MissionControl: Advancing to {next_agent}")
+        
+        return state
+
+    def skip_current_step(self, state: MissionState) -> MissionState:
+        """
+        Skip the current agent in the workflow.
+        
+        Called when merchant clicks "Skip".
+        
+        Args:
+            state: Current mission state
+        
+        Returns:
+            Updated state with skipped agent recorded
+        """
+        current_idx = state.current_agent_index
+        if current_idx < len(self.workflow):
+            skipped_agent = self.workflow[current_idx].__name__
+            state.skipped_agents.append(skipped_agent)
+            state.add_log(f"MissionControl: Skipped {skipped_agent}")
+        
+        state.current_agent_index += 1
+        state.status = "PENDING"  # Ready for next step
+        
+        if state.current_agent_index >= len(self.workflow):
+            state.status = "COMPLETED"
+            state.add_log("MissionControl: All agents completed (some skipped)")
+        
+        return state
+
+    def prepare_regeneration(self, state: MissionState, feedback: str = None) -> MissionState:
+        """
+        Prepare state for regenerating the current agent.
+        
+        Called when merchant clicks "Regenerate".
+        
+        Args:
+            state: Current mission state
+            feedback: Optional merchant feedback for regeneration
+        
+        Returns:
+            Updated state ready for regeneration
+        """
+        current_idx = state.current_agent_index
+        if current_idx < len(self.workflow):
+            agent_name = self.workflow[current_idx].__name__
+            state.regeneration_feedback = feedback
+            state.status = "PENDING"  # Ready to re-run
+            
+            if feedback:
+                state.add_log(f"MissionControl: Preparing to regenerate {agent_name} with feedback")
+            else:
+                state.add_log(f"MissionControl: Preparing to regenerate {agent_name}")
+        
+        return state
+
     def get_workflow_info(self) -> dict:
         """
         Get information about the current workflow configuration.
