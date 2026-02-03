@@ -81,6 +81,9 @@ class MissionState:
     # Metadata
     target_locale: Optional[str] = None
     source_locale: Optional[str] = None
+    
+    # Token usage tracking for fair_use integration
+    accumulated_usage: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -120,6 +123,8 @@ class MissionState:
             "error_message": self.error_message,
             "target_locale": self.target_locale,
             "source_locale": self.source_locale,
+            # Usage tracking
+            "accumulated_usage": self.accumulated_usage,
         }
 
     @classmethod
@@ -165,6 +170,8 @@ class MissionState:
             error_message=data.get("error_message"),
             target_locale=data.get("target_locale"),
             source_locale=data.get("source_locale"),
+            # Usage tracking
+            accumulated_usage=data.get("accumulated_usage"),
         )
 
     def add_log(self, message: str) -> None:
