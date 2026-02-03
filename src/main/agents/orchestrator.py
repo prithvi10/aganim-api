@@ -6,6 +6,7 @@ This is the central coordinator that:
 - Executes agents in sequence
 - Handles the adversarial loop for compliance
 - Yields state updates for SSE streaming
+- Records token usage for fair_use cost tracking
 """
 
 from typing import List, Type, AsyncGenerator, Optional
@@ -19,6 +20,7 @@ from .marketing import MarketingAgent
 from .price_scout import PriceScoutAgent
 from .compliance import ComplianceAgent
 from src.main.services import ServiceRegistry
+from src.main.services.fair_use_service import record_cost_from_usage
 from src.main.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -89,6 +91,86 @@ class MissionControl:
             List of agent classes to execute in order
         """
         return self.WORKFLOWS.get(self.plan_tier, [CopywriterAgent])
+    
+    def _record_fair_use_costs(self, state: MissionState) -> None:
+        """
+        Record accumulated LLM costs to fair_use service.
+        
+        This is called after mission completion (success or error) to ensure
+        all LLM usage is tracked for cost management.
+        
+        Args:
+            state: The mission state (used to get db session and store usage info)
+        """
+        try:
+            # Get accumulated usage from LLMService
+            accumulated = self.services.llm.get_accumulated_usage()
+            
+            if accumulated.total_tokens == 0:
+                logger.debug("[MissionControl] No LLM usage to record for mission=%s", self.mission_id)
+                return
+            
+            # Store usage info in state for auditing
+            state.accumulated_usage = accumulated.to_dict()
+            
+            # Record costs to fair_use service if we have a db session
+            if state.db:
+                # Determine the primary model used (use the most capable one)
+                model_used = "gpt-4o"  # Default
+                if accumulated.models_used:
+                    # Prefer gpt-4o over gpt-4o-mini
+                    if "gpt-4o" in accumulated.models_used:
+                        model_used = "gpt-4o"
+                    else:
+                        model_used = accumulated.models_used[0]
+                
+                # Create usage dict compatible with fair_use_service
+                usage_dict = {
+                    "prompt_tokens": accumulated.prompt_tokens,
+                    "completion_tokens": accumulated.completion_tokens,
+                    "reasoning_tokens": accumulated.reasoning_tokens,
+                    "total_tokens": accumulated.total_tokens,
+                }
+                
+                monthly_cost = record_cost_from_usage(
+                    db=state.db,
+                    shop_domain=self.shop_id,
+                    usage=usage_dict,
+                    model_used=model_used,
+                )
+                
+                logger.info(
+                    "[MissionControl] Recorded fair_use costs mission=%s shop=%s "
+                    "total_tokens=%d calls=%d models=%s monthly_cost=%.4f",
+                    self.mission_id,
+                    self.shop_id,
+                    accumulated.total_tokens,
+                    accumulated.call_count,
+                    accumulated.models_used,
+                    monthly_cost,
+                )
+                
+                state.add_log(
+                    f"MissionControl: Recorded {accumulated.total_tokens} tokens "
+                    f"({accumulated.call_count} LLM calls)"
+                )
+            else:
+                logger.warning(
+                    "[MissionControl] No db session - skipping fair_use recording "
+                    "mission=%s tokens=%d",
+                    self.mission_id,
+                    accumulated.total_tokens,
+                )
+            
+            # Reset usage tracking for next mission
+            self.services.llm.reset_usage()
+            
+        except Exception as e:
+            logger.error(
+                "[MissionControl] Failed to record fair_use costs mission=%s error=%s",
+                self.mission_id,
+                str(e),
+            )
 
     async def execute(
         self,
@@ -146,6 +228,9 @@ class MissionControl:
                     state.status = "COMPLIANCE_REVIEW"
                 else:
                     state.status = "COMPLETED"
+            
+            # Record fair_use costs from accumulated LLM usage
+            self._record_fair_use_costs(state)
                     
             state.add_log("MissionControl: Workflow completed")
             logger.info(
@@ -163,6 +248,9 @@ class MissionControl:
                 self.shop_id,
             )
             state.set_error(f"Workflow error: {str(e)}")
+            
+            # Still record costs even on error (LLM calls were made)
+            self._record_fair_use_costs(state)
             yield state
 
     async def _handle_adversarial_loop(

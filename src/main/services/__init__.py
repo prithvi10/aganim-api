@@ -17,7 +17,7 @@ This module consolidates:
 """
 
 from .registry import ServiceRegistry
-from .llm_service import LLMService
+from .llm_service import LLMService, LLMUsage, AccumulatedUsage
 from .serp_service import SerpService, SerpResult, fetch_top_results
 from .rag_service import RAGService, get_brand_context
 
@@ -49,6 +49,8 @@ __all__ = [
     # Core agentic services
     "ServiceRegistry",
     "LLMService",
+    "LLMUsage",
+    "AccumulatedUsage",
     "SerpService",
     "SerpResult",
     "fetch_top_results",

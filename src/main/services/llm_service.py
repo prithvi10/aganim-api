@@ -2,10 +2,12 @@
 LLMService - Unified Gateway/Adapter for OpenAI API calls.
 
 Supports both legacy text generation and new structured outputs for agents.
+Tracks token usage for fair_use cost accounting.
 """
 
 import os
-from typing import Type, TypeVar, Optional
+from dataclasses import dataclass, field
+from typing import Type, TypeVar, Optional, Dict, Any
 from pydantic import BaseModel
 from openai import AsyncOpenAI, APIError
 import httpx
@@ -16,6 +18,65 @@ from src.main.config.configs import OPENAI_MODEL, OPENAI_TEMPERATURE, OPENAI_MAX
 logger = get_logger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass
+class LLMUsage:
+    """Token usage from an LLM call."""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    reasoning_tokens: int = 0
+    total_tokens: int = 0
+    model: str = ""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "total_tokens": self.total_tokens,
+            "model": self.model,
+        }
+
+
+@dataclass
+class AccumulatedUsage:
+    """Accumulated token usage across multiple LLM calls."""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    reasoning_tokens: int = 0
+    total_tokens: int = 0
+    call_count: int = 0
+    models_used: list = field(default_factory=list)
+    
+    def add(self, usage: LLMUsage) -> None:
+        """Add usage from a single LLM call."""
+        self.prompt_tokens += usage.prompt_tokens
+        self.completion_tokens += usage.completion_tokens
+        self.reasoning_tokens += usage.reasoning_tokens
+        self.total_tokens += usage.total_tokens
+        self.call_count += 1
+        if usage.model and usage.model not in self.models_used:
+            self.models_used.append(usage.model)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "total_tokens": self.total_tokens,
+            "call_count": self.call_count,
+            "models_used": self.models_used,
+        }
+    
+    def reset(self) -> None:
+        """Reset accumulated usage."""
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.reasoning_tokens = 0
+        self.total_tokens = 0
+        self.call_count = 0
+        self.models_used = []
 
 
 def _create_http_client() -> Optional[httpx.AsyncClient]:
@@ -46,10 +107,21 @@ class LLMService:
     Methods:
         generate_text() - Legacy wrapper for unstructured text (creative copywriting)
         generate_structured() - NEW method for Pydantic-enforced structured outputs
+    
+    Usage Tracking:
+        - last_usage: LLMUsage from the most recent call
+        - accumulated_usage: AccumulatedUsage across all calls since last reset
+        - get_accumulated_usage(): Get total usage for fair_use cost recording
+        - reset_usage(): Clear accumulated usage (call after recording costs)
     """
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        
+        # Usage tracking for fair_use integration
+        self.last_usage: Optional[LLMUsage] = None
+        self.accumulated_usage: AccumulatedUsage = AccumulatedUsage()
+        
         if self.api_key:
             # Create HTTP client with corporate SSL support (Netskope, etc.)
             http_client = _create_http_client()
@@ -65,6 +137,38 @@ class LLMService:
         """Raise if client is not configured."""
         if not self.client:
             raise RuntimeError("LLMService: OPENAI_API_KEY not configured")
+    
+    def _track_usage(self, usage: Any, model: str) -> LLMUsage:
+        """Extract and track token usage from OpenAI response."""
+        llm_usage = LLMUsage(model=model)
+        
+        if usage:
+            # Handle both dict-like and object-like usage objects
+            if isinstance(usage, dict):
+                llm_usage.prompt_tokens = int(usage.get("prompt_tokens", 0))
+                llm_usage.completion_tokens = int(usage.get("completion_tokens", 0))
+                llm_usage.reasoning_tokens = int(usage.get("reasoning_tokens", 0))
+                llm_usage.total_tokens = int(usage.get("total_tokens", 0))
+            else:
+                llm_usage.prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+                llm_usage.completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+                llm_usage.reasoning_tokens = int(getattr(usage, "reasoning_tokens", 0) or 0)
+                llm_usage.total_tokens = int(getattr(usage, "total_tokens", 0) or 0)
+        
+        # Store last usage and accumulate
+        self.last_usage = llm_usage
+        self.accumulated_usage.add(llm_usage)
+        
+        return llm_usage
+    
+    def get_accumulated_usage(self) -> AccumulatedUsage:
+        """Get accumulated usage for fair_use cost recording."""
+        return self.accumulated_usage
+    
+    def reset_usage(self) -> None:
+        """Reset accumulated usage (call after recording costs)."""
+        self.accumulated_usage.reset()
+        self.last_usage = None
 
     async def generate_text(
         self,
@@ -109,15 +213,17 @@ class LLMService:
 
         try:
             response = await self.client.chat.completions.create(**kwargs)
-            usage = response.usage
             
-            if usage:
-                logger.info(
-                    "[LLM] Text Gen | Model: %s | In: %s | Out: %s",
-                    model,
-                    usage.prompt_tokens,
-                    usage.completion_tokens,
-                )
+            # Track usage for fair_use integration
+            llm_usage = self._track_usage(response.usage, model)
+            
+            logger.info(
+                "[LLM] Text Gen | Model: %s | In: %s | Out: %s | Total Accumulated: %s",
+                model,
+                llm_usage.prompt_tokens,
+                llm_usage.completion_tokens,
+                self.accumulated_usage.total_tokens,
+            )
             
             content = response.choices[0].message.content
             return content or ""
@@ -173,15 +279,17 @@ class LLMService:
                 temperature=temperature,
             )
             
-            usage = response.usage
-            if usage:
-                logger.info(
-                    "[LLM] Structured | Model: %s | Type: %s | In: %s | Out: %s",
-                    model,
-                    response_format.__name__,
-                    usage.prompt_tokens,
-                    usage.completion_tokens,
-                )
+            # Track usage for fair_use integration
+            llm_usage = self._track_usage(response.usage, model)
+            
+            logger.info(
+                "[LLM] Structured | Model: %s | Type: %s | In: %s | Out: %s | Total Accumulated: %s",
+                model,
+                response_format.__name__,
+                llm_usage.prompt_tokens,
+                llm_usage.completion_tokens,
+                self.accumulated_usage.total_tokens,
+            )
             
             # Returns the actual Pydantic object, not a dict/string
             parsed = response.choices[0].message.parsed
@@ -238,15 +346,17 @@ class LLMService:
 
         try:
             response = await self.client.chat.completions.create(**kwargs)
-            usage = response.usage
             
-            if usage:
-                logger.info(
-                    "[LLM] JSON Gen | Model: %s | In: %s | Out: %s",
-                    model,
-                    usage.prompt_tokens,
-                    usage.completion_tokens,
-                )
+            # Track usage for fair_use integration
+            llm_usage = self._track_usage(response.usage, model)
+            
+            logger.info(
+                "[LLM] JSON Gen | Model: %s | In: %s | Out: %s | Total Accumulated: %s",
+                model,
+                llm_usage.prompt_tokens,
+                llm_usage.completion_tokens,
+                self.accumulated_usage.total_tokens,
+            )
             
             return response.choices[0].message.content or "{}"
             
@@ -255,6 +365,8 @@ class LLMService:
             logger.debug("[LLM] response_format unsupported; falling back")
             del kwargs["response_format"]
             response = await self.client.chat.completions.create(**kwargs)
+            # Track usage for fallback too
+            self._track_usage(response.usage, model)
             return response.choices[0].message.content or "{}"
         except Exception as e:
             logger.error("[LLM] JSON Generation Failed: %s", e)
