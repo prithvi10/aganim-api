@@ -82,6 +82,9 @@ class BrandContextFileExtractRequest(BaseModel):
 class MissionRequest(BaseModel):
     """
     Request to create a new agent mission for product optimization.
+    
+    For ad-hoc agent execution, specify requested_agents with the agent names
+    to run only those agents instead of the full tier-based workflow.
     """
     product_id: str
     product_name: str
@@ -90,6 +93,9 @@ class MissionRequest(BaseModel):
     target_locale: str = "en"
     tone_profile: Literal["professional", "luxury", "minimalist", "playful"] = "professional"
     brand_soul_enabled: bool = False
+    # Ad-hoc agent selection: specify agent names to run only those agents
+    # e.g., ["CopywriterAgent"], ["MarketingAgent"], ["PriceScoutAgent", "ComplianceAgent"]
+    requested_agents: list[str] | None = None
 
 
 class CorrectionRequest(BaseModel):

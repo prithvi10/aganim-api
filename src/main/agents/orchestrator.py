@@ -3,6 +3,7 @@ MissionControl - Orchestrator for the multi-agent workflow.
 
 This is the central coordinator that:
 - Routes missions based on plan tier
+- Supports ad-hoc agent execution (run specific agents only)
 - Executes agents in sequence
 - Handles the adversarial loop for compliance
 - Yields state updates for SSE streaming
@@ -24,6 +25,14 @@ from src.main.services.fair_use_service import record_cost_from_usage
 from src.main.logging.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Agent name to class mapping for ad-hoc agent selection
+AGENT_MAP = {
+    "CopywriterAgent": CopywriterAgent,
+    "MarketingAgent": MarketingAgent,
+    "PriceScoutAgent": PriceScoutAgent,
+    "ComplianceAgent": ComplianceAgent,
+}
 
 
 class MissionControl:
@@ -68,6 +77,7 @@ class MissionControl:
         plan_tier: str,
         shop_id: str,
         services: ServiceRegistry,
+        requested_agents: Optional[List[str]] = None,
     ):
         """
         Initialize MissionControl.
@@ -76,20 +86,50 @@ class MissionControl:
             plan_tier: User's subscription tier (Free, Basic, Standard, Pro)
             shop_id: Shop domain identifier
             services: ServiceRegistry with injected services
+            requested_agents: Optional list of agent names for ad-hoc execution
+                              e.g., ["CopywriterAgent"], ["MarketingAgent", "ComplianceAgent"]
+                              If provided, only these agents will run instead of the tier workflow.
         """
         self.plan_tier = plan_tier
         self.shop_id = shop_id
         self.services = services
+        self.requested_agents = requested_agents
         self.workflow = self._build_workflow()
         self.mission_id = uuid.uuid4().hex
 
     def _build_workflow(self) -> List[Type[BaseAgent]]:
         """
-        Build the agent workflow based on plan tier.
+        Build the agent workflow based on plan tier or ad-hoc agent selection.
+        
+        If requested_agents is provided, only those agents will be included.
+        Otherwise, uses the tier-based workflow configuration.
         
         Returns:
             List of agent classes to execute in order
         """
+        # Ad-hoc mode: use only the requested agents
+        if self.requested_agents:
+            workflow = []
+            for agent_name in self.requested_agents:
+                if agent_name in AGENT_MAP:
+                    workflow.append(AGENT_MAP[agent_name])
+                else:
+                    logger.warning(
+                        "[MissionControl] Unknown agent requested: %s (skipped)",
+                        agent_name
+                    )
+            if workflow:
+                logger.info(
+                    "[MissionControl] Ad-hoc mode: running agents %s",
+                    [a.__name__ for a in workflow]
+                )
+                return workflow
+            # Fallback to tier workflow if no valid agents specified
+            logger.warning(
+                "[MissionControl] No valid agents in requested_agents, falling back to tier workflow"
+            )
+        
+        # Default: tier-based workflow
         return self.WORKFLOWS.get(self.plan_tier, [CopywriterAgent])
     
     def _record_fair_use_costs(self, state: MissionState) -> None:
@@ -342,9 +382,11 @@ class MissionControl:
             "mission_id": self.mission_id,
             "plan_tier": self.plan_tier,
             "shop_id": self.shop_id,
-            "agents": [a.role_name for a in self.workflow],
+            "agents": [a.__name__ for a in self.workflow],
             "agent_count": len(self.workflow),
             "max_adversarial_iterations": self.MAX_ADVERSARIAL_ITERATIONS,
+            "is_adhoc": self.requested_agents is not None,
+            "requested_agents": self.requested_agents,
         }
 
 
@@ -358,6 +400,7 @@ async def run_mission(
     plan_tier: str = "Basic",
     db=None,
     target_locale: str = "en",
+    requested_agents: Optional[List[str]] = None,
 ) -> AsyncGenerator[MissionState, None]:
     """
     Convenience function to create and run a mission.
@@ -368,6 +411,8 @@ async def run_mission(
         plan_tier: User's subscription tier
         db: Optional database session
         target_locale: Target language/locale
+        requested_agents: Optional list of agent names for ad-hoc execution
+                          e.g., ["CopywriterAgent"], ["MarketingAgent"]
     
     Yields:
         MissionState updates as agents complete
@@ -388,6 +433,7 @@ async def run_mission(
         plan_tier=plan_tier,
         shop_id=shop_id,
         services=services,
+        requested_agents=requested_agents,
     )
     
     # Execute and yield updates

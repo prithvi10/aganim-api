@@ -7,7 +7,7 @@ Tests workflow building, sequential execution, adversarial loops, and state stre
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.agents.orchestrator import MissionControl, run_mission
+from src.main.agents.orchestrator import MissionControl, run_mission, AGENT_MAP
 from src.main.agents.state import MissionState
 from src.main.agents.copywriter import CopywriterAgent
 from src.main.agents.marketing import MarketingAgent
@@ -127,6 +127,226 @@ def test_build_workflow_unknown_tier_defaults(mock_services):
     
     # Unknown tier should default to just Copywriter
     assert mission.workflow == [CopywriterAgent]
+
+
+# =============================================================================
+# Tests: AGENT_MAP Configuration
+# =============================================================================
+
+def test_agent_map_contains_all_agents():
+    """Test that AGENT_MAP contains all expected agent classes."""
+    assert "CopywriterAgent" in AGENT_MAP
+    assert "MarketingAgent" in AGENT_MAP
+    assert "PriceScoutAgent" in AGENT_MAP
+    assert "ComplianceAgent" in AGENT_MAP
+    assert len(AGENT_MAP) == 4
+
+
+def test_agent_map_maps_to_correct_classes():
+    """Test that AGENT_MAP maps names to correct agent classes."""
+    assert AGENT_MAP["CopywriterAgent"] == CopywriterAgent
+    assert AGENT_MAP["MarketingAgent"] == MarketingAgent
+    assert AGENT_MAP["PriceScoutAgent"] == PriceScoutAgent
+    assert AGENT_MAP["ComplianceAgent"] == ComplianceAgent
+
+
+# =============================================================================
+# Tests: Ad-hoc Agent Selection
+# =============================================================================
+
+def test_adhoc_single_agent_copywriter(mock_services):
+    """Test ad-hoc mode with single CopywriterAgent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["CopywriterAgent"],
+    )
+    
+    assert len(mission.workflow) == 1
+    assert CopywriterAgent in mission.workflow
+
+
+def test_adhoc_single_agent_marketing(mock_services):
+    """Test ad-hoc mode with single MarketingAgent."""
+    mission = MissionControl(
+        plan_tier="Free",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["MarketingAgent"],
+    )
+    
+    assert len(mission.workflow) == 1
+    assert MarketingAgent in mission.workflow
+
+
+def test_adhoc_single_agent_price_scout(mock_services):
+    """Test ad-hoc mode with single PriceScoutAgent."""
+    mission = MissionControl(
+        plan_tier="Basic",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["PriceScoutAgent"],
+    )
+    
+    assert len(mission.workflow) == 1
+    assert PriceScoutAgent in mission.workflow
+
+
+def test_adhoc_single_agent_compliance(mock_services):
+    """Test ad-hoc mode with single ComplianceAgent."""
+    mission = MissionControl(
+        plan_tier="Pro",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["ComplianceAgent"],
+    )
+    
+    assert len(mission.workflow) == 1
+    assert ComplianceAgent in mission.workflow
+
+
+def test_adhoc_multiple_agents(mock_services):
+    """Test ad-hoc mode with multiple agents."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["MarketingAgent", "ComplianceAgent"],
+    )
+    
+    assert len(mission.workflow) == 2
+    assert MarketingAgent in mission.workflow
+    assert ComplianceAgent in mission.workflow
+
+
+def test_adhoc_all_agents(mock_services):
+    """Test ad-hoc mode with all agents."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"],
+    )
+    
+    assert len(mission.workflow) == 4
+
+
+def test_adhoc_preserves_order(mock_services):
+    """Test that ad-hoc mode preserves agent order."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["ComplianceAgent", "CopywriterAgent"],
+    )
+    
+    # Should preserve order: Compliance first, then Copywriter
+    assert mission.workflow[0] == ComplianceAgent
+    assert mission.workflow[1] == CopywriterAgent
+
+
+def test_adhoc_unknown_agent_skipped(mock_services):
+    """Test that unknown agent names are skipped."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["CopywriterAgent", "UnknownAgent", "MarketingAgent"],
+    )
+    
+    # UnknownAgent should be skipped
+    assert len(mission.workflow) == 2
+    assert CopywriterAgent in mission.workflow
+    assert MarketingAgent in mission.workflow
+
+
+def test_adhoc_all_unknown_falls_back_to_tier(mock_services):
+    """Test that if all requested agents are unknown, fall back to tier workflow."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["UnknownAgent1", "UnknownAgent2"],
+    )
+    
+    # Should fall back to Standard tier workflow (all 4 agents)
+    assert len(mission.workflow) == 4
+
+
+def test_adhoc_empty_list_uses_tier_workflow(mock_services):
+    """Test that empty requested_agents list uses tier workflow."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=[],
+    )
+    
+    # Empty list should trigger fallback to tier workflow
+    assert len(mission.workflow) == 4
+
+
+def test_adhoc_none_uses_tier_workflow(mock_services):
+    """Test that None requested_agents uses tier workflow."""
+    mission = MissionControl(
+        plan_tier="Pro",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=None,
+    )
+    
+    # None should use tier-based workflow
+    assert len(mission.workflow) == 4
+
+
+def test_adhoc_overrides_tier_workflow(mock_services):
+    """Test that ad-hoc mode completely overrides tier workflow."""
+    # Free tier normally gets all 4 agents
+    mission = MissionControl(
+        plan_tier="Free",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["ComplianceAgent"],
+    )
+    
+    # Ad-hoc should override to just one agent
+    assert len(mission.workflow) == 1
+    assert mission.workflow == [ComplianceAgent]
+
+
+# =============================================================================
+# Tests: Workflow Info with Ad-hoc
+# =============================================================================
+
+def test_get_workflow_info_adhoc(mock_services):
+    """Test get_workflow_info includes ad-hoc information."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["CopywriterAgent"],
+    )
+    
+    info = mission.get_workflow_info()
+    
+    assert info["is_adhoc"] is True
+    assert info["requested_agents"] == ["CopywriterAgent"]
+    assert info["agent_count"] == 1
+
+
+def test_get_workflow_info_not_adhoc(mock_services):
+    """Test get_workflow_info when not in ad-hoc mode."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    info = mission.get_workflow_info()
+    
+    assert info["is_adhoc"] is False
+    assert info["requested_agents"] is None
 
 
 # =============================================================================
@@ -439,6 +659,135 @@ async def test_run_mission_convenience_function():
         
         # Should have at least one state
         assert len(states) >= 1
+
+
+@pytest.mark.asyncio
+async def test_run_mission_with_requested_agents():
+    """Test the run_mission convenience function with ad-hoc agents."""
+    with patch('src.main.agents.orchestrator.ServiceRegistry') as MockRegistry, \
+         patch.object(MissionControl, '__init__', return_value=None) as mock_init, \
+         patch.object(MissionControl, 'execute') as mock_execute:
+        
+        # Mock execute to return async generator
+        async def mock_gen():
+            state = MissionState(
+                product_id="test",
+                shop_id="test-shop",
+                plan_tier="Basic",
+                raw_input={},
+            )
+            state.status = "COMPLETED"
+            yield state
+        
+        mock_execute.return_value = mock_gen()
+        MockRegistry.create_default.return_value = MagicMock()
+        
+        states = []
+        async for state in run_mission(
+            shop_id="test-shop.myshopify.com",
+            product_data={"title": "Test", "description": "Test"},
+            plan_tier="Basic",
+            requested_agents=["MarketingAgent"],
+        ):
+            states.append(state)
+        
+        # Verify MissionControl was called with requested_agents
+        mock_init.assert_called_once()
+        call_kwargs = mock_init.call_args.kwargs
+        assert call_kwargs.get("requested_agents") == ["MarketingAgent"]
+
+
+# =============================================================================
+# Tests: Ad-hoc Execution
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_adhoc_execute_runs_only_requested_agents(mock_services, mission_state):
+    """Test that ad-hoc mode only runs the requested agents."""
+    async def mock_pass_through(self, state):
+        state.add_log(f"{self.role_name}: Executed")
+        return state
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through), \
+         patch.object(MarketingAgent, 'run', mock_pass_through), \
+         patch.object(PriceScoutAgent, 'run', mock_pass_through), \
+         patch.object(ComplianceAgent, 'run', mock_pass_through):
+        
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            requested_agents=["ComplianceAgent"],
+        )
+        
+        states = []
+        async for state in mission.execute(mission_state):
+            states.append(state)
+        
+        # Check that only ComplianceAgent ran
+        all_logs = "\n".join(["\n".join(s.logs) for s in states])
+        assert "Compliance" in all_logs
+        # Copywriter and others should not have run
+        assert "Copywriter: Executed" not in all_logs
+        assert "Marketing: Executed" not in all_logs
+        assert "PriceScout: Executed" not in all_logs
+
+
+@pytest.mark.asyncio
+async def test_adhoc_execute_runs_multiple_requested_agents(mock_services, mission_state):
+    """Test that ad-hoc mode runs multiple requested agents."""
+    async def mock_pass_through(self, state):
+        state.add_log(f"{self.role_name}: Executed")
+        return state
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through), \
+         patch.object(MarketingAgent, 'run', mock_pass_through), \
+         patch.object(PriceScoutAgent, 'run', mock_pass_through), \
+         patch.object(ComplianceAgent, 'run', mock_pass_through):
+        
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            requested_agents=["MarketingAgent", "PriceScoutAgent"],
+        )
+        
+        states = []
+        async for state in mission.execute(mission_state):
+            states.append(state)
+        
+        # Check that both requested agents ran
+        all_logs = "\n".join(["\n".join(s.logs) for s in states])
+        assert "Marketing" in all_logs
+        assert "PriceScout" in all_logs
+
+
+@pytest.mark.asyncio
+async def test_adhoc_no_adversarial_loop_without_compliance(mock_services, mission_state):
+    """Test that adversarial loop doesn't trigger without ComplianceAgent."""
+    mission_state.plan_tier = "Pro"
+    
+    async def mock_pass_through(self, state):
+        return state
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through), \
+         patch.object(MarketingAgent, 'run', mock_pass_through):
+        
+        # Ad-hoc without ComplianceAgent
+        mission = MissionControl(
+            plan_tier="Pro",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            requested_agents=["CopywriterAgent", "MarketingAgent"],
+        )
+        
+        states = []
+        async for state in mission.execute(mission_state):
+            states.append(state)
+        
+        # No adversarial loop should trigger
+        all_logs = "\n".join(["\n".join(s.logs) for s in states])
+        assert "Adversarial" not in all_logs
 
 
 # =============================================================================

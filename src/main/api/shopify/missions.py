@@ -69,6 +69,10 @@ async def create_mission(
     
     mission_id = uuid.uuid4().hex
     
+    # Determine if this is an ad-hoc run with specific agents
+    requested_agents = mission_req.requested_agents
+    is_adhoc = requested_agents is not None and len(requested_agents) > 0
+    
     initial_state = {
         "product_id": mission_req.product_id,
         "shop_id": shop,
@@ -87,6 +91,9 @@ async def create_mission(
         "target_locale": mission_req.target_locale,
         "status": "PENDING",
         "logs": [],
+        # Ad-hoc agent selection
+        "requested_agents": requested_agents,
+        "is_adhoc": is_adhoc,
     }
     
     mission = Mission(
@@ -103,14 +110,16 @@ async def create_mission(
     db.commit()
     
     logger.info(
-        "[Mission] created rid=%s shop=%s mission_id=%s product_id=%s plan=%s",
-        rid, shop, mission_id, mission_req.product_id, plan_tier,
+        "[Mission] created rid=%s shop=%s mission_id=%s product_id=%s plan=%s adhoc=%s agents=%s",
+        rid, shop, mission_id, mission_req.product_id, plan_tier, is_adhoc, requested_agents,
     )
     
     return {
         "status": "created",
         "mission_id": mission_id,
         "stream_url": f"/api/missions/{mission_id}/stream",
+        "is_adhoc": is_adhoc,
+        "requested_agents": requested_agents,
     }
 
 
@@ -160,10 +169,14 @@ async def stream_mission(
         services = ServiceRegistry.create_default()
         plan_tier = mission.plan_tier or "Basic"
         
+        # Check for ad-hoc agent selection
+        requested_agents = initial_state_dict.get("requested_agents")
+        
         mission_control = MissionControl(
             plan_tier=plan_tier,
             shop_id=shop,
             services=services,
+            requested_agents=requested_agents,
         )
         
         try:
