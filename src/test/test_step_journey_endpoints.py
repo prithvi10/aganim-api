@@ -508,7 +508,8 @@ def test_run_step_rejects_if_already_in_progress(client, sample_mission):
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    response = client.post(f"/api/missions/{sample_mission.id}/run-step")
+    # run-step is GET because EventSource only supports GET
+    response = client.get(f"/api/missions/{sample_mission.id}/run-step")
     
     assert response.status_code == 409
     assert "already" in response.json()["detail"].lower()
@@ -529,7 +530,8 @@ def test_run_step_rejects_completed_mission(client, sample_mission):
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    response = client.post(f"/api/missions/{sample_mission.id}/run-step")
+    # run-step is GET because EventSource only supports GET
+    response = client.get(f"/api/missions/{sample_mission.id}/run-step")
     
     assert response.status_code == 400
     assert "completed" in response.json()["detail"].lower()
@@ -548,7 +550,8 @@ def test_run_step_rejects_error_mission(client, sample_mission):
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    response = client.post(f"/api/missions/{sample_mission.id}/run-step")
+    # run-step is GET because EventSource only supports GET
+    response = client.get(f"/api/missions/{sample_mission.id}/run-step")
     
     assert response.status_code == 400
     assert "error" in response.json()["detail"].lower()

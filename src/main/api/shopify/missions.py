@@ -431,7 +431,7 @@ async def get_mission_status(
     )
 
 
-@router.post("/api/missions/{mission_id}/run-step")
+@router.get("/api/missions/{mission_id}/run-step")
 async def run_step(
     mission_id: str,
     request: Request,
@@ -440,6 +440,8 @@ async def run_step(
 ):
     """
     Run the current agent in the step-by-step workflow via SSE.
+    
+    NOTE: This is a GET endpoint because EventSource only supports GET requests.
     
     This endpoint runs only the current agent, then streams its output.
     After completion, the status will be AWAITING_APPROVAL for the merchant
