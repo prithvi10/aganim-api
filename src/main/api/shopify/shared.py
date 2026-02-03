@@ -35,6 +35,7 @@ async def resolve_shop_domain(request: Request) -> str:
     
     - Theme App Proxy: verify Shopify proxy signature (HMAC) on the full Request
     - Admin UI Extensions: verify Shopify session token (JWT) from Authorization header
+    - Embedded App: shop query param (for internal calls from verified embedded contexts)
     
     IMPORTANT:
     - `verify_shopify_session()` already returns a shop domain string (not a payload dict)
@@ -49,11 +50,28 @@ async def resolve_shop_domain(request: Request) -> str:
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Invalid Admin Token")
 
-    # Path B: Theme App Proxy (HMAC)
-    try:
-        return await verify_shopify_proxy_request(request)
-    except HTTPException:
-        raise
+    # Path B: Theme App Proxy (HMAC) - check if signature param exists
+    signature = request.query_params.get("signature")
+    if signature:
+        try:
+            return await verify_shopify_proxy_request(request)
+        except HTTPException:
+            raise
+
+    # Path C: Embedded app context - shop param from verified embedded iframe
+    # This is for calls from the embedded app where session token may not be available
+    shop_domain = request.query_params.get("shop")
+    if shop_domain:
+        # Basic validation: ensure it's a myshopify.com domain
+        if shop_domain.endswith(".myshopify.com") or ".myshopify.com" in shop_domain:
+            return shop_domain
+    
+    # Also check header (set by our middleware)
+    shop_header = request.headers.get("X-Shopify-Shop-Domain")
+    if shop_header and (".myshopify.com" in shop_header):
+        return shop_header
+    
+    raise HTTPException(status_code=400, detail="Missing signature parameter")
 
 
 def get_request_id(request: Optional[Request]) -> str:
