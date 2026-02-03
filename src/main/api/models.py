@@ -107,3 +107,52 @@ class CorrectionRequest(BaseModel):
     user_correction: str
     product_id: str | None = None
     context_metadata: dict[str, Any] = {}
+
+
+# ==============================================================================
+# Step-by-Step Journey API Models
+# ==============================================================================
+
+class RegenerateRequest(BaseModel):
+    """
+    Request to regenerate the current agent's output with optional feedback.
+    """
+    feedback: str | None = None
+
+
+class StepResponse(BaseModel):
+    """
+    Response for step-by-step journey endpoints.
+    """
+    mission_id: str
+    current_agent: str
+    current_agent_index: int
+    total_agents: int
+    status: str
+    agent_output: dict[str, Any] | None = None
+    can_continue: bool
+    can_skip: bool
+    is_final: bool
+    workflow_agents: list[str] = []
+    skipped_agents: list[str] = []
+
+
+class MissionStatusResponse(BaseModel):
+    """
+    Response for getting mission status.
+    """
+    mission_id: str
+    shop_id: str
+    product_id: str
+    status: str
+    plan_tier: str
+    current_agent_index: int
+    total_agents: int
+    current_agent: str | None = None
+    workflow_agents: list[str] = []
+    skipped_agents: list[str] = []
+    agent_outputs: dict[str, Any] = {}
+    logs: list[str] = []
+    error_message: str | None = None
+    created_at: str | None = None
+    completed_at: str | None = None

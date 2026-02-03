@@ -172,6 +172,148 @@ class TestMissionState:
         assert result["seo_description"] == "SEO Description"
         assert result["ctr_check"]["score"] == 0.75
 
+    # =========================================================================
+    # Tests: Step-by-Step Journey Fields
+    # =========================================================================
+
+    def test_step_journey_default_values(self):
+        """Test step journey fields have correct defaults."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        
+        assert state.current_agent_index == 0
+        assert state.skipped_agents == []
+        assert state.agent_outputs == {}
+        assert state.regeneration_feedback is None
+        assert state.workflow_agents == []
+
+    def test_step_journey_fields_to_dict(self):
+        """Test step journey fields are serialized correctly."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        
+        state.current_agent_index = 2
+        state.skipped_agents = ["MarketingAgent"]
+        state.agent_outputs = {"CopywriterAgent": {"draft_title": "Test"}}
+        state.regeneration_feedback = "Make it shorter"
+        state.workflow_agents = ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent"]
+        
+        result = state.to_dict()
+        
+        assert result["current_agent_index"] == 2
+        assert result["skipped_agents"] == ["MarketingAgent"]
+        assert result["agent_outputs"]["CopywriterAgent"]["draft_title"] == "Test"
+        assert result["regeneration_feedback"] == "Make it shorter"
+        assert len(result["workflow_agents"]) == 3
+
+    def test_step_journey_fields_from_dict(self):
+        """Test step journey fields are deserialized correctly."""
+        data = {
+            "product_id": "test",
+            "shop_id": "test-shop",
+            "plan_tier": "Standard",
+            "raw_input": {},
+            "current_agent_index": 3,
+            "skipped_agents": ["CopywriterAgent", "PriceScoutAgent"],
+            "agent_outputs": {
+                "MarketingAgent": {"seo_title": "Test SEO"}
+            },
+            "regeneration_feedback": "More formal tone",
+            "workflow_agents": ["A", "B", "C", "D"],
+        }
+        
+        state = MissionState.from_dict(data)
+        
+        assert state.current_agent_index == 3
+        assert len(state.skipped_agents) == 2
+        assert "CopywriterAgent" in state.skipped_agents
+        assert state.agent_outputs["MarketingAgent"]["seo_title"] == "Test SEO"
+        assert state.regeneration_feedback == "More formal tone"
+        assert len(state.workflow_agents) == 4
+
+    def test_step_journey_roundtrip(self):
+        """Test step journey fields survive roundtrip serialization."""
+        original = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        
+        original.current_agent_index = 2
+        original.skipped_agents = ["Agent1"]
+        original.agent_outputs = {"Agent0": {"output": "data"}}
+        original.regeneration_feedback = "feedback"
+        original.workflow_agents = ["Agent0", "Agent1", "Agent2"]
+        
+        data = original.to_dict()
+        restored = MissionState.from_dict(data)
+        
+        assert restored.current_agent_index == original.current_agent_index
+        assert restored.skipped_agents == original.skipped_agents
+        assert restored.agent_outputs == original.agent_outputs
+        assert restored.regeneration_feedback == original.regeneration_feedback
+        assert restored.workflow_agents == original.workflow_agents
+
+    def test_awaiting_approval_status(self):
+        """Test AWAITING_APPROVAL status is valid."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        
+        state.status = "AWAITING_APPROVAL"
+        
+        result = state.to_dict()
+        assert result["status"] == "AWAITING_APPROVAL"
+        
+        restored = MissionState.from_dict(result)
+        assert restored.status == "AWAITING_APPROVAL"
+
+    def test_multiple_agent_outputs(self):
+        """Test storing outputs from multiple agents."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        
+        state.agent_outputs = {
+            "CopywriterAgent": {
+                "draft_content": "Content 1",
+                "draft_title": "Title 1",
+            },
+            "MarketingAgent": {
+                "seo_title": "SEO Title",
+                "ctr_check": {"score": 0.85},
+            },
+            "PriceScoutAgent": {
+                "pricing_analysis": {"recommended_price": 29.99},
+            },
+            "ComplianceAgent": {
+                "compliance_flags": [],
+            },
+        }
+        
+        result = state.to_dict()
+        
+        assert len(result["agent_outputs"]) == 4
+        assert result["agent_outputs"]["CopywriterAgent"]["draft_title"] == "Title 1"
+        assert result["agent_outputs"]["MarketingAgent"]["ctr_check"]["score"] == 0.85
+        assert result["agent_outputs"]["PriceScoutAgent"]["pricing_analysis"]["recommended_price"] == 29.99
+        assert result["agent_outputs"]["ComplianceAgent"]["compliance_flags"] == []
+
 
 # =============================================================================
 # Tests: AgentContext

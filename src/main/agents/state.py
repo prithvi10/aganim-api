@@ -68,10 +68,10 @@ class MissionState:
     status: str = "PENDING"
     # Valid statuses:
     # - PENDING: Not started
-    # - IN_PROGRESS: Agents are working
+    # - IN_PROGRESS: Agent is currently working
+    # - AWAITING_APPROVAL: Agent completed, waiting for merchant decision (Continue/Regenerate/Skip)
     # - DRAFT_READY: Content generated, awaiting review
     # - COMPLIANCE_REVIEW: Compliance issues found
-    # - WAITING_APPROVAL: Needs user approval
     # - COMPLETED: Mission finished successfully
     # - ERROR: Something went wrong
     
@@ -84,6 +84,13 @@ class MissionState:
     
     # Token usage tracking for fair_use integration
     accumulated_usage: Optional[Dict[str, Any]] = None
+    
+    # Step-by-step journey tracking
+    current_agent_index: int = 0               # Index of the current/next agent to run
+    skipped_agents: List[str] = field(default_factory=list)  # Agents skipped by merchant
+    agent_outputs: Dict[str, Any] = field(default_factory=dict)  # Each agent's output stored separately
+    regeneration_feedback: Optional[str] = None  # Merchant feedback for regeneration
+    workflow_agents: List[str] = field(default_factory=list)  # List of agent names in workflow order
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -125,6 +132,12 @@ class MissionState:
             "source_locale": self.source_locale,
             # Usage tracking
             "accumulated_usage": self.accumulated_usage,
+            # Step-by-step journey tracking
+            "current_agent_index": self.current_agent_index,
+            "skipped_agents": self.skipped_agents,
+            "agent_outputs": self.agent_outputs,
+            "regeneration_feedback": self.regeneration_feedback,
+            "workflow_agents": self.workflow_agents,
         }
 
     @classmethod
@@ -172,6 +185,12 @@ class MissionState:
             source_locale=data.get("source_locale"),
             # Usage tracking
             accumulated_usage=data.get("accumulated_usage"),
+            # Step-by-step journey tracking
+            current_agent_index=data.get("current_agent_index", 0),
+            skipped_agents=data.get("skipped_agents", []),
+            agent_outputs=data.get("agent_outputs", {}),
+            regeneration_feedback=data.get("regeneration_feedback"),
+            workflow_agents=data.get("workflow_agents", []),
         )
 
     def add_log(self, message: str) -> None:
