@@ -58,13 +58,14 @@ class MarketingAgent(BaseAgent):
     - SEO recommendations (competitive edge, buyer intent)
     - CTR/PST formula validation
     - SERP competitor analysis
-    - Social hooks generation (on-demand)
+    - Social hooks/caption generation (automatically in pipeline)
     
     Uses:
     - SerpService for competitor data (Perception) - NO LLM
     - LLM for SEO generation (Action) - 1 LLM call
     - LLM for SEO recommendations (Action) - 1 LLM call
     - Deterministic CTR check - NO LLM
+    - LLM for social hooks (Action) - 1 LLM call
     """
     
     role_name = "Marketing"
@@ -144,6 +145,7 @@ class MarketingAgent(BaseAgent):
         1. Generate SEO metadata (1 LLM call)
         2. Generate SEO recommendations (1 LLM call)
         3. Run CTR/PST check (deterministic)
+        4. Generate social hooks/captions (1 LLM call)
         """
         actions = []
         
@@ -270,6 +272,51 @@ class MarketingAgent(BaseAgent):
                 )
             )
             logger.error("[Marketing] CTR check failed: %s", e)
+        
+        # -----------------------------------------------------------------
+        # Step 4: Generate social hooks/captions (1 LLM call)
+        # -----------------------------------------------------------------
+        try:
+            # Get product tags if available
+            product_tags = state.raw_input.get("tags", [])
+            if isinstance(product_tags, str):
+                product_tags = [t.strip() for t in product_tags.split(",") if t.strip()]
+            
+            hooks_result = await self.generate_social_hooks(
+                product_title=title,
+                category=category,
+                tags=product_tags,
+                focus="Instagram Reels",
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=f"Generated {len(hooks_result.get('hooks', []))} social hooks",
+                    input_params={"step": "social_hooks"},
+                )
+            )
+            
+            # Store hooks in state
+            state.social_hooks = hooks_result.get("hooks", [])
+            
+            logger.info(
+                "[Marketing] Social hooks generated count=%d product=%s",
+                len(state.social_hooks or []),
+                state.product_id,
+            )
+            
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"step": "social_hooks"},
+                )
+            )
+            logger.error("[Marketing] Social hooks generation failed: %s", e)
+            # Non-critical - continue without social hooks
+            state.social_hooks = []
         
         return actions, state
 
@@ -444,7 +491,7 @@ class MarketingAgent(BaseAgent):
         }
 
     # -------------------------------------------------------------------------
-    # On-demand: Generate Social Hooks
+    # Generate Social Hooks (called in pipeline and can be called on-demand)
     # -------------------------------------------------------------------------
     async def generate_social_hooks(
         self,
@@ -454,14 +501,15 @@ class MarketingAgent(BaseAgent):
         focus: str = "Instagram Reels",
     ) -> Dict[str, Any]:
         """
-        Generate social media hooks for a product.
+        Generate social media hooks/captions for a product.
         
-        This is called on-demand, not as part of the main pipeline.
+        This is called automatically in the agent pipeline (Step 4) and
+        can also be called on-demand for standalone caption generation.
         
         Args:
             product_title: Product title
             category: Product category
-            tags: Product tags
+            tags: Product tags (optional)
             focus: Content format focus (default: Instagram Reels)
         
         Returns:

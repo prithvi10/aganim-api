@@ -78,6 +78,7 @@ class MissionControl:
         shop_id: str,
         services: ServiceRegistry,
         requested_agents: Optional[List[str]] = None,
+        mission_id: Optional[str] = None,
     ):
         """
         Initialize MissionControl.
@@ -89,13 +90,14 @@ class MissionControl:
             requested_agents: Optional list of agent names for ad-hoc execution
                               e.g., ["CopywriterAgent"], ["MarketingAgent", "ComplianceAgent"]
                               If provided, only these agents will run instead of the tier workflow.
+            mission_id: Optional mission ID from the database. If not provided, a new one is generated.
         """
         self.plan_tier = plan_tier
         self.shop_id = shop_id
         self.services = services
         self.requested_agents = requested_agents
         self.workflow = self._build_workflow()
-        self.mission_id = uuid.uuid4().hex
+        self.mission_id = mission_id or uuid.uuid4().hex
 
     def _build_workflow(self) -> List[Type[BaseAgent]]:
         """
