@@ -17,9 +17,10 @@ from datetime import datetime
 from .base import BaseAgent
 from .state import MissionState
 from .copywriter import CopywriterAgent
+from .seo import SEOAgent
 from .marketing import MarketingAgent
 from .price_scout import PriceScoutAgent
-from .compliance import ComplianceAgent
+from .compliance import ComplianceAgent  # Kept for reference but disabled
 from src.main.services import ServiceRegistry
 from src.main.services.fair_use_service import record_cost_from_usage
 from src.main.logging.logger import get_logger
@@ -27,11 +28,13 @@ from src.main.logging.logger import get_logger
 logger = get_logger(__name__)
 
 # Agent name to class mapping for ad-hoc agent selection
+# NOTE: ComplianceAgent is disabled until further notice
 AGENT_MAP = {
     "CopywriterAgent": CopywriterAgent,
+    "SEOAgent": SEOAgent,
     "MarketingAgent": MarketingAgent,
     "PriceScoutAgent": PriceScoutAgent,
-    "ComplianceAgent": ComplianceAgent,
+    # "ComplianceAgent": ComplianceAgent,  # DISABLED
 }
 
 
@@ -61,16 +64,17 @@ class MissionControl:
 
     # Agent workflow configurations per plan tier
     # NOTE: All tiers get full agent pipeline - usage limited by product count, not features
-    # MarketingAgent handles SEO for all tiers
+    # Workflow: Copywriter → SEO → Marketing → PriceScout
+    # ComplianceAgent is DISABLED until further notice
     WORKFLOWS = {
-        "Free": [CopywriterAgent, MarketingAgent, PriceScoutAgent, ComplianceAgent],
-        "Basic": [CopywriterAgent, MarketingAgent, PriceScoutAgent, ComplianceAgent],
-        "Standard": [CopywriterAgent, MarketingAgent, PriceScoutAgent, ComplianceAgent],
-        "Pro": [CopywriterAgent, MarketingAgent, PriceScoutAgent, ComplianceAgent],
+        "Free": [CopywriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Basic": [CopywriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Standard": [CopywriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Pro": [CopywriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
     }
     
-    # Maximum adversarial iterations for compliance
-    MAX_ADVERSARIAL_ITERATIONS = 3
+    # Maximum adversarial iterations for compliance (DISABLED)
+    MAX_ADVERSARIAL_ITERATIONS = 0  # Disabled
 
     def __init__(
         self,
@@ -244,13 +248,15 @@ class MissionControl:
                 state.add_log(f"MissionControl: Running {agent.role_name}...")
                 state = await agent.run(state)
                 
-                # Adversarial loop for Pro tier with compliance issues
-                if (
-                    self.plan_tier == "Pro"
-                    and agent.role_name == "Compliance"
-                    and state.compliance_flags
-                ):
-                    state = await self._handle_adversarial_loop(state)
+                # Adversarial loop for Pro tier with compliance issues (DISABLED)
+                # NOTE: ComplianceAgent is currently disabled, so this code path won't execute
+                # if (
+                #     self.plan_tier == "Pro"
+                #     and agent.role_name == "Compliance"
+                #     and state.compliance_flags
+                # ):
+                #     state = await self._handle_adversarial_loop(state)
+                pass  # Placeholder for disabled compliance adversarial loop
                 
                 # Yield state update after each agent
                 yield state
@@ -479,15 +485,17 @@ class MissionControl:
                 "draft_title": state.draft_title,
                 "discovered_values": state.discovered_values,
             }
-        elif agent_name == "MarketingAgent":
+        elif agent_name == "SEOAgent":
             return {
                 "seo_title": state.seo_title,
                 "seo_description": state.seo_description,
                 "seo_alt_text": state.seo_alt_text,
                 "seo_insights": state.seo_insights,
-                "seo_recommendations": state.seo_recommendations,
                 "ctr_check": state.ctr_check,
                 "serp_insights": state.serp_insights,
+            }
+        elif agent_name == "MarketingAgent":
+            return {
                 "social_hooks": state.social_hooks,
                 "seasonal_campaign": state.seasonal_campaign,
             }
@@ -496,6 +504,7 @@ class MissionControl:
                 "pricing_analysis": state.pricing_analysis,
             }
         elif agent_name == "ComplianceAgent":
+            # DISABLED - kept for reference
             return {
                 "compliance_flags": state.compliance_flags,
             }

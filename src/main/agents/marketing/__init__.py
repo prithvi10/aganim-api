@@ -1,30 +1,21 @@
 """
 Marketing Agent Package
 
-Exports the MarketingAgent and related schemas for SEO, CTR checking,
-SERP competitor insights, and social media marketing.
+Exports the MarketingAgent and related schemas for social media marketing.
+
+Note: SEO functionality has been moved to the dedicated SEOAgent package.
 """
 
 from .agent import MarketingAgent
 from .schemas import (
     MarketingOutput,
-    SEOInsights,
-    SEORecommendations,
-    CompetitiveEdge,
-    BuyerIntent,
-    CTRCheck,
-    SerpCompetitor,
     SocialHook,
+    SeasonalCampaign,
 )
 
 __all__ = [
     "MarketingAgent",
     "MarketingOutput",
-    "SEOInsights",
-    "SEORecommendations",
-    "CompetitiveEdge",
-    "BuyerIntent",
-    "CTRCheck",
-    "SerpCompetitor",
     "SocialHook",
+    "SeasonalCampaign",
 ]

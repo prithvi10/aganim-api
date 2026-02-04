@@ -2,6 +2,8 @@
 Integration tests for tier-based agent coverage.
 
 Confirms that all agents run for each subscription tier.
+Note: ComplianceAgent is currently disabled. Workflow has 4 agents:
+Copywriter, SEO, Marketing, PriceScout.
 """
 
 import pytest
@@ -10,10 +12,9 @@ from unittest.mock import AsyncMock, MagicMock
 from src.main.agents.orchestrator import MissionControl
 from src.main.agents.state import MissionState
 from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.compliance import ComplianceAgent
-from src.main.agents.compliance.schemas import ComplianceCheck
 from src.main.agents.price_scout.schemas import PricingAnalysis
 
 
@@ -46,13 +47,6 @@ def mock_services():
                 price_position="competitive",
                 confidence=0.85,
                 reasoning="Test reasoning",
-            )
-        elif response_format == ComplianceCheck:
-            return ComplianceCheck(
-                has_violations=False,
-                flags=[],
-                severity="none",
-                suggestions=[],
             )
         return MagicMock()
     
@@ -125,11 +119,11 @@ async def test_free_tier_runs_all_agents(mock_services, product_data):
     
     logs_text = "\n".join(all_logs)
     
-    # Verify all agents ran
+    # Verify all agents ran (ComplianceAgent is disabled)
     assert "Running Copywriter" in logs_text, "Copywriter should run for Free tier"
+    assert "Running SEO" in logs_text, "SEO should run for Free tier"
     assert "Running Marketing" in logs_text, "Marketing should run for Free tier"
     assert "Running PriceScout" in logs_text, "PriceScout should run for Free tier"
-    assert "Running Compliance" in logs_text, "Compliance should run for Free tier"
 
 
 @pytest.mark.asyncio
@@ -142,9 +136,9 @@ async def test_free_tier_workflow_contains_all_agents(mock_services):
     )
     
     assert CopywriterAgent in mission.workflow
+    assert SEOAgent in mission.workflow
     assert MarketingAgent in mission.workflow
     assert PriceScoutAgent in mission.workflow
-    assert ComplianceAgent in mission.workflow
     assert len(mission.workflow) == 4
 
 
@@ -170,9 +164,9 @@ async def test_basic_tier_runs_all_agents(mock_services, product_data):
     logs_text = "\n".join(all_logs)
     
     assert "Running Copywriter" in logs_text
+    assert "Running SEO" in logs_text
     assert "Running Marketing" in logs_text
     assert "Running PriceScout" in logs_text
-    assert "Running Compliance" in logs_text
 
 
 @pytest.mark.asyncio
@@ -209,9 +203,9 @@ async def test_standard_tier_runs_all_agents(mock_services, product_data):
     logs_text = "\n".join(all_logs)
     
     assert "Running Copywriter" in logs_text
+    assert "Running SEO" in logs_text
     assert "Running Marketing" in logs_text
     assert "Running PriceScout" in logs_text
-    assert "Running Compliance" in logs_text
 
 
 @pytest.mark.asyncio
@@ -248,9 +242,9 @@ async def test_pro_tier_runs_all_agents(mock_services, product_data):
     logs_text = "\n".join(all_logs)
     
     assert "Running Copywriter" in logs_text
+    assert "Running SEO" in logs_text
     assert "Running Marketing" in logs_text
     assert "Running PriceScout" in logs_text
-    assert "Running Compliance" in logs_text
 
 
 @pytest.mark.asyncio
@@ -263,58 +257,6 @@ async def test_pro_tier_workflow_contains_all_agents(mock_services):
     )
     
     assert len(mission.workflow) == 4
-
-
-@pytest.mark.asyncio
-async def test_pro_tier_supports_adversarial_loop(mock_services, product_data):
-    """Test that PRO tier supports adversarial loop on compliance violations."""
-    state = create_mission_state(product_data, "Pro")
-    
-    # Make compliance fail first time
-    call_count = [0]
-    async def mock_structured(*args, **kwargs):
-        response_format = kwargs.get('response_format')
-        if response_format == PricingAnalysis:
-            return PricingAnalysis(
-                competitor_avg_price=50.0,
-                recommended_price=55.0,
-                price_position="competitive",
-                confidence=0.85,
-                reasoning="Test",
-            )
-        elif response_format == ComplianceCheck:
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return ComplianceCheck(
-                    has_violations=True,
-                    flags=["Test violation"],
-                    severity="medium",
-                    suggestions=[],
-                )
-            return ComplianceCheck(
-                has_violations=False,
-                flags=[],
-                severity="none",
-                suggestions=[],
-            )
-        return MagicMock()
-    
-    mock_services.llm.generate_structured = AsyncMock(side_effect=mock_structured)
-    
-    mission = MissionControl(
-        plan_tier="Pro",
-        shop_id="test-shop.myshopify.com",
-        services=mock_services,
-    )
-    
-    all_logs = []
-    async for s in mission.execute(state):
-        all_logs.extend(s.logs)
-    
-    logs_text = "\n".join(all_logs)
-    
-    # Pro tier should trigger adversarial loop
-    assert "Adversarial" in logs_text
 
 
 # =============================================================================
@@ -353,5 +295,5 @@ async def test_all_tiers_complete_successfully(mock_services, product_data):
         async for s in mission.execute(state):
             final_state = s
         
-        assert final_state.status in ["COMPLETED", "COMPLIANCE_REVIEW"], \
+        assert final_state.status == "COMPLETED", \
             f"{tier} tier should complete successfully"

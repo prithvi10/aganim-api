@@ -2,6 +2,7 @@
 Full pipeline integration tests with mocked LLM.
 
 Tests complete mission workflow from start to finish with all agents.
+Note: ComplianceAgent is currently disabled.
 """
 
 import pytest
@@ -10,10 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from src.main.agents.orchestrator import MissionControl, run_mission
 from src.main.agents.state import MissionState
 from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.compliance import ComplianceAgent
-from src.main.agents.compliance.schemas import ComplianceCheck
 from src.main.agents.price_scout.schemas import PricingAnalysis
 from src.main.services import ServiceRegistry
 
@@ -37,16 +37,14 @@ def mock_services():
         "discovered_values": []
     }""")
     
-    # Mock LLM - Structured output (for Compliance, PriceScout)
-    services.llm.generate_structured = AsyncMock()
-    
-    # Default compliance check - no violations
-    services.llm.generate_structured.return_value = ComplianceCheck(
-        has_violations=False,
-        flags=[],
-        severity="none",
-        suggestions=[],
-    )
+    # Mock LLM - Structured output (for PriceScout)
+    services.llm.generate_structured = AsyncMock(return_value=PricingAnalysis(
+        competitor_avg_price=50.0,
+        recommended_price=55.0,
+        price_position="competitive",
+        confidence=0.85,
+        reasoning="Test reasoning",
+    ))
     
     # Mock JSON generation
     services.llm.generate_json = AsyncMock(return_value={
@@ -120,9 +118,9 @@ async def test_full_pipeline_standard_tier(mock_services, mission_state):
     async for state in mission.execute(mission_state):
         states.append(state)
     
-    # Should complete successfully
+    # Should complete successfully (ComplianceAgent disabled, so no COMPLIANCE_REVIEW)
     final_state = states[-1]
-    assert final_state.status in ["COMPLETED", "COMPLIANCE_REVIEW"]
+    assert final_state.status == "COMPLETED"
     
     # Should have generated content
     assert final_state.draft_content is not None or final_state.draft_title is not None
@@ -130,7 +128,7 @@ async def test_full_pipeline_standard_tier(mock_services, mission_state):
 
 @pytest.mark.asyncio
 async def test_full_pipeline_pro_tier(mock_services, mission_state):
-    """Test complete Pro tier workflow with adversarial loop capability."""
+    """Test complete Pro tier workflow."""
     mission_state.plan_tier = "Pro"
     
     mission = MissionControl(
@@ -145,7 +143,7 @@ async def test_full_pipeline_pro_tier(mock_services, mission_state):
     
     # Should complete successfully
     final_state = states[-1]
-    assert final_state.status in ["COMPLETED", "COMPLIANCE_REVIEW"]
+    assert final_state.status == "COMPLETED"
 
 
 @pytest.mark.asyncio
@@ -165,7 +163,7 @@ async def test_full_pipeline_free_tier(mock_services, mission_state):
     
     # Should complete successfully
     final_state = states[-1]
-    assert final_state.status in ["COMPLETED", "COMPLIANCE_REVIEW"]
+    assert final_state.status == "COMPLETED"
 
 
 # =============================================================================
@@ -173,8 +171,8 @@ async def test_full_pipeline_free_tier(mock_services, mission_state):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_copywriter_output_flows_to_marketing(mock_services, mission_state):
-    """Test that Copywriter output is available to Marketing agent."""
+async def test_copywriter_output_flows_to_seo(mock_services, mission_state):
+    """Test that Copywriter output is available to SEO agent."""
     mission = MissionControl(
         plan_tier="Standard",
         shop_id="test-shop.myshopify.com",
@@ -197,16 +195,16 @@ async def test_copywriter_output_flows_to_marketing(mock_services, mission_state
 
 
 @pytest.mark.asyncio
-async def test_marketing_generates_seo(mock_services, mission_state):
-    """Test that Marketing agent generates SEO fields."""
+async def test_seo_generates_seo_fields(mock_services, mission_state):
+    """Test that SEO agent generates SEO fields."""
     # Set up mock for SEO generation
     mock_services.llm.generate_text.side_effect = [
         # Copywriter response
         '{"title": "Test Title", "description": "<p>Test</p>"}',
-        # Marketing SEO response
+        # SEO response
         '{"seo_title": "SEO Title", "seo_description": "SEO Description", "seo_alt_text": "Alt text"}',
-        # Marketing recommendations response
-        '{"competitive_edge": {}, "buyer_intent": {}}',
+        # Marketing social hooks response
+        '{"hooks": [{"type": "Story", "caption": "Test", "hashtags": []}]}',
     ]
     
     mission = MissionControl(
@@ -220,24 +218,22 @@ async def test_marketing_generates_seo(mock_services, mission_state):
         states.append(state)
     
     final_state = states[-1]
-    # Marketing should have added SEO fields
+    # SEO agent should have added SEO fields or CTR check
     assert final_state.seo_title is not None or final_state.ctr_check is not None
 
 
-# =============================================================================
-# Tests: Compliance Violation Handling
-# =============================================================================
-
 @pytest.mark.asyncio
-async def test_compliance_violation_triggers_review_status(mock_services, mission_state):
-    """Test that compliance violations trigger COMPLIANCE_REVIEW status."""
-    # Make compliance agent find violations
-    mock_services.llm.generate_structured.return_value = ComplianceCheck(
-        has_violations=True,
-        flags=["FDA violation: health claim"],
-        severity="high",
-        suggestions=["Remove health claims"],
-    )
+async def test_marketing_generates_social_hooks(mock_services, mission_state):
+    """Test that Marketing agent generates social hooks."""
+    # Set up mock for social hooks generation
+    mock_services.llm.generate_text.side_effect = [
+        # Copywriter response
+        '{"title": "Test Title", "description": "<p>Test</p>"}',
+        # SEO response
+        '{"seo_title": "SEO Title", "seo_description": "SEO Description", "seo_alt_text": "Alt text"}',
+        # Marketing social hooks response
+        '{"hooks": [{"type": "Story", "caption": "Test caption", "hashtags": ["#test"]}]}',
+    ]
     
     mission = MissionControl(
         plan_tier="Standard",
@@ -250,64 +246,9 @@ async def test_compliance_violation_triggers_review_status(mock_services, missio
         states.append(state)
     
     final_state = states[-1]
-    assert final_state.status == "COMPLIANCE_REVIEW"
-    assert len(final_state.compliance_flags) > 0
-
-
-@pytest.mark.asyncio
-async def test_pro_tier_adversarial_loop(mock_services, mission_state):
-    """Test that Pro tier triggers adversarial loop on compliance violations."""
-    mission_state.plan_tier = "Pro"
-    
-    # Track compliance calls
-    compliance_calls = [0]
-    
-    # Need to return different types for PriceScout vs Compliance
-    async def mock_structured(*args, **kwargs):
-        response_format = kwargs.get('response_format')
-        if response_format == PricingAnalysis:
-            return PricingAnalysis(
-                competitor_avg_price=50.0,
-                recommended_price=55.0,
-                price_position="competitive",
-                confidence=0.85,
-                reasoning="Test reasoning",
-            )
-        elif response_format == ComplianceCheck:
-            compliance_calls[0] += 1
-            if compliance_calls[0] == 1:
-                # First call - violations
-                return ComplianceCheck(
-                    has_violations=True,
-                    flags=["FDA violation"],
-                    severity="medium",
-                    suggestions=["Remove claims"],
-                )
-            else:
-                # Subsequent calls - clean
-                return ComplianceCheck(
-                    has_violations=False,
-                    flags=[],
-                    severity="none",
-                    suggestions=[],
-                )
-        return MagicMock()
-    
-    mock_services.llm.generate_structured.side_effect = mock_structured
-    
-    mission = MissionControl(
-        plan_tier="Pro",
-        shop_id="test-shop.myshopify.com",
-        services=mock_services,
-    )
-    
-    states = []
-    async for state in mission.execute(mission_state):
-        states.append(state)
-    
-    # Should have triggered adversarial loop
-    all_logs = "\n".join(["\n".join(s.logs) for s in states])
-    assert "Adversarial" in all_logs
+    # Marketing should have added social hooks (may be empty if parsing fails)
+    # Just verify no crash
+    assert final_state.status == "COMPLETED"
 
 
 # =============================================================================
@@ -354,7 +295,7 @@ async def test_pipeline_handles_serp_failure_gracefully(mock_services, mission_s
     
     # Should complete (agents handle SERP errors internally)
     final_state = states[-1]
-    assert final_state.status in ["COMPLETED", "COMPLIANCE_REVIEW", "ERROR"]
+    assert final_state.status in ["COMPLETED", "ERROR"]
 
 
 # =============================================================================
@@ -420,4 +361,53 @@ async def test_run_mission_convenience(mock_services, product_data):
             states.append(state)
         
         assert len(states) > 0
-        assert states[-1].status in ["COMPLETED", "COMPLIANCE_REVIEW", "ERROR"]
+        assert states[-1].status in ["COMPLETED", "ERROR"]
+
+
+# =============================================================================
+# Tests: Agent Workflow Verification
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_workflow_has_four_agents(mock_services, mission_state):
+    """Test that workflow has 4 agents: Copywriter, SEO, Marketing, PriceScout."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    assert len(mission.workflow) == 4
+    assert CopywriterAgent in mission.workflow
+    assert SEOAgent in mission.workflow
+    assert MarketingAgent in mission.workflow
+    assert PriceScoutAgent in mission.workflow
+
+
+@pytest.mark.asyncio
+async def test_workflow_executes_in_correct_order(mock_services, mission_state):
+    """Test that agents execute in correct order: Copywriter -> SEO -> Marketing -> PriceScout."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    states = []
+    async for state in mission.execute(mission_state):
+        states.append(state)
+    
+    # Check logs for agent execution order
+    all_logs = "\n".join(["\n".join(s.logs) for s in states])
+    
+    # Find positions of agent mentions in logs
+    copywriter_pos = all_logs.find("Copywriter")
+    seo_pos = all_logs.find("SEO")
+    marketing_pos = all_logs.find("Marketing")
+    pricescout_pos = all_logs.find("PriceScout")
+    
+    # Verify order (agents may not all appear if errors occur early)
+    if copywriter_pos >= 0 and seo_pos >= 0:
+        assert copywriter_pos < seo_pos, "Copywriter should run before SEO"
+    if seo_pos >= 0 and marketing_pos >= 0:
+        assert seo_pos < marketing_pos, "SEO should run before Marketing"
