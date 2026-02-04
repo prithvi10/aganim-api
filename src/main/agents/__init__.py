@@ -21,7 +21,12 @@ Directory Structure:
     │   ├── prompts.py
     │   └── schemas.py
     │
-    ├── marketing/           # Marketing Agent (SEO + CTR + SERP + social hooks)
+    ├── seo/                  # SEO Agent (SEO metadata + CTR + SERP)
+    │   ├── agent.py
+    │   ├── prompts.py
+    │   └── schemas.py
+    │
+    ├── marketing/           # Marketing Agent (social hooks only)
     │   ├── agent.py
     │   ├── prompts.py
     │   ├── schemas.py
@@ -32,7 +37,7 @@ Directory Structure:
     │   ├── prompts.py
     │   └── schemas.py
     │
-    └── compliance/          # Compliance Agent (regulatory checks)
+    └── compliance/          # Compliance Agent (regulatory checks) - DISABLED
         ├── agent.py
         ├── prompts.py
         ├── patterns.py
@@ -48,17 +53,15 @@ from .orchestrator import MissionControl, run_mission
 
 # Agent submodules (each is self-contained)
 from .copywriter import CopywriterAgent, CopywriterOutput
+from .seo import SEOAgent, SEOInsights, CTRCheck, SerpCompetitor, SEOOutput
 from .marketing import (
     MarketingAgent,
     MarketingOutput,
-    SEOInsights,
-    SEORecommendations,
-    CTRCheck,
-    SerpCompetitor,
     SocialHook,
+    SeasonalCampaign,
 )
 from .price_scout import PriceScoutAgent, PricingAnalysis
-from .compliance import ComplianceAgent, ComplianceCheck
+from .compliance import ComplianceAgent, ComplianceCheck  # Kept for reference but disabled in workflows
 
 __all__ = [
     # Shared
@@ -73,13 +76,15 @@ __all__ = [
     # Agents
     "CopywriterAgent",
     "CopywriterOutput",
-    "MarketingAgent",
-    "MarketingOutput",
+    "SEOAgent",
+    "SEOOutput",
     "SEOInsights",
-    "SEORecommendations",
     "CTRCheck",
     "SerpCompetitor",
+    "MarketingAgent",
+    "MarketingOutput",
     "SocialHook",
+    "SeasonalCampaign",
     "PriceScoutAgent",
     "PricingAnalysis",
     "ComplianceAgent",

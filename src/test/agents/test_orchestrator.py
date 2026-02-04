@@ -1,7 +1,8 @@
 """
 Unit and integration tests for MissionControl orchestrator.
 
-Tests workflow building, sequential execution, adversarial loops, and state streaming.
+Tests workflow building, sequential execution, and state streaming.
+Note: ComplianceAgent is currently disabled, adversarial loop tests are skipped.
 """
 
 import pytest
@@ -10,9 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from src.main.agents.orchestrator import MissionControl, run_mission, AGENT_MAP
 from src.main.agents.state import MissionState
 from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.compliance import ComplianceAgent
 from src.main.services import ServiceRegistry
 
 
@@ -66,18 +67,19 @@ def mission_state():
 # =============================================================================
 
 def test_build_workflow_free_tier(mock_services):
-    """Test that Free tier gets full agent workflow."""
+    """Test that Free tier gets full agent workflow (4 agents, no Compliance)."""
     mission = MissionControl(
         plan_tier="Free",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
     )
     
-    # Free tier should have all agents (full pipeline available to all)
+    # Free tier should have 4 agents (Copywriter, SEO, Marketing, PriceScout)
+    assert len(mission.workflow) == 4
     assert CopywriterAgent in mission.workflow
+    assert SEOAgent in mission.workflow
     assert MarketingAgent in mission.workflow
     assert PriceScoutAgent in mission.workflow
-    assert ComplianceAgent in mission.workflow
 
 
 def test_build_workflow_basic_tier(mock_services):
@@ -88,9 +90,10 @@ def test_build_workflow_basic_tier(mock_services):
         services=mock_services,
     )
     
-    # Basic tier should have all agents
+    # Basic tier should have 4 agents
+    assert len(mission.workflow) == 4
     assert CopywriterAgent in mission.workflow
-    assert MarketingAgent in mission.workflow
+    assert SEOAgent in mission.workflow
 
 
 def test_build_workflow_standard_tier(mock_services):
@@ -101,7 +104,7 @@ def test_build_workflow_standard_tier(mock_services):
         services=mock_services,
     )
     
-    # Standard tier should have all agents
+    # Standard tier should have 4 agents
     assert len(mission.workflow) == 4
 
 
@@ -113,7 +116,7 @@ def test_build_workflow_pro_tier(mock_services):
         services=mock_services,
     )
     
-    # Pro tier should have all agents
+    # Pro tier should have 4 agents
     assert len(mission.workflow) == 4
 
 
@@ -133,21 +136,23 @@ def test_build_workflow_unknown_tier_defaults(mock_services):
 # Tests: AGENT_MAP Configuration
 # =============================================================================
 
-def test_agent_map_contains_all_agents():
-    """Test that AGENT_MAP contains all expected agent classes."""
+def test_agent_map_contains_expected_agents():
+    """Test that AGENT_MAP contains expected agent classes (no Compliance)."""
     assert "CopywriterAgent" in AGENT_MAP
+    assert "SEOAgent" in AGENT_MAP
     assert "MarketingAgent" in AGENT_MAP
     assert "PriceScoutAgent" in AGENT_MAP
-    assert "ComplianceAgent" in AGENT_MAP
+    # ComplianceAgent should NOT be in AGENT_MAP (disabled)
+    # Note: depending on implementation, it may be commented out or removed
     assert len(AGENT_MAP) == 4
 
 
 def test_agent_map_maps_to_correct_classes():
     """Test that AGENT_MAP maps names to correct agent classes."""
     assert AGENT_MAP["CopywriterAgent"] == CopywriterAgent
+    assert AGENT_MAP["SEOAgent"] == SEOAgent
     assert AGENT_MAP["MarketingAgent"] == MarketingAgent
     assert AGENT_MAP["PriceScoutAgent"] == PriceScoutAgent
-    assert AGENT_MAP["ComplianceAgent"] == ComplianceAgent
 
 
 # =============================================================================
@@ -165,6 +170,19 @@ def test_adhoc_single_agent_copywriter(mock_services):
     
     assert len(mission.workflow) == 1
     assert CopywriterAgent in mission.workflow
+
+
+def test_adhoc_single_agent_seo(mock_services):
+    """Test ad-hoc mode with single SEOAgent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["SEOAgent"],
+    )
+    
+    assert len(mission.workflow) == 1
+    assert SEOAgent in mission.workflow
 
 
 def test_adhoc_single_agent_marketing(mock_services):
@@ -193,31 +211,18 @@ def test_adhoc_single_agent_price_scout(mock_services):
     assert PriceScoutAgent in mission.workflow
 
 
-def test_adhoc_single_agent_compliance(mock_services):
-    """Test ad-hoc mode with single ComplianceAgent."""
-    mission = MissionControl(
-        plan_tier="Pro",
-        shop_id="test-shop.myshopify.com",
-        services=mock_services,
-        requested_agents=["ComplianceAgent"],
-    )
-    
-    assert len(mission.workflow) == 1
-    assert ComplianceAgent in mission.workflow
-
-
 def test_adhoc_multiple_agents(mock_services):
     """Test ad-hoc mode with multiple agents."""
     mission = MissionControl(
         plan_tier="Standard",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
-        requested_agents=["MarketingAgent", "ComplianceAgent"],
+        requested_agents=["MarketingAgent", "PriceScoutAgent"],
     )
     
     assert len(mission.workflow) == 2
     assert MarketingAgent in mission.workflow
-    assert ComplianceAgent in mission.workflow
+    assert PriceScoutAgent in mission.workflow
 
 
 def test_adhoc_all_agents(mock_services):
@@ -226,7 +231,7 @@ def test_adhoc_all_agents(mock_services):
         plan_tier="Standard",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
-        requested_agents=["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"],
+        requested_agents=["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"],
     )
     
     assert len(mission.workflow) == 4
@@ -238,11 +243,11 @@ def test_adhoc_preserves_order(mock_services):
         plan_tier="Standard",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
-        requested_agents=["ComplianceAgent", "CopywriterAgent"],
+        requested_agents=["PriceScoutAgent", "CopywriterAgent"],
     )
     
-    # Should preserve order: Compliance first, then Copywriter
-    assert mission.workflow[0] == ComplianceAgent
+    # Should preserve order: PriceScout first, then Copywriter
+    assert mission.workflow[0] == PriceScoutAgent
     assert mission.workflow[1] == CopywriterAgent
 
 
@@ -270,7 +275,7 @@ def test_adhoc_all_unknown_falls_back_to_tier(mock_services):
         requested_agents=["UnknownAgent1", "UnknownAgent2"],
     )
     
-    # Should fall back to Standard tier workflow (all 4 agents)
+    # Should fall back to Standard tier workflow (4 agents)
     assert len(mission.workflow) == 4
 
 
@@ -302,17 +307,17 @@ def test_adhoc_none_uses_tier_workflow(mock_services):
 
 def test_adhoc_overrides_tier_workflow(mock_services):
     """Test that ad-hoc mode completely overrides tier workflow."""
-    # Free tier normally gets all 4 agents
+    # Free tier normally gets 4 agents
     mission = MissionControl(
         plan_tier="Free",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
-        requested_agents=["ComplianceAgent"],
+        requested_agents=["SEOAgent"],
     )
     
     # Ad-hoc should override to just one agent
     assert len(mission.workflow) == 1
-    assert mission.workflow == [ComplianceAgent]
+    assert mission.workflow == [SEOAgent]
 
 
 # =============================================================================
@@ -370,8 +375,8 @@ async def test_execute_runs_all_agents(mock_services, mission_state):
     # At minimum: 1 initial + N agents + 1 final = N+2
     assert len(states) >= 2
     
-    # Final state should be COMPLETED or COMPLIANCE_REVIEW
-    assert states[-1].status in ["COMPLETED", "COMPLIANCE_REVIEW"]
+    # Final state should be COMPLETED
+    assert states[-1].status == "COMPLETED"
 
 
 @pytest.mark.asyncio
@@ -389,7 +394,7 @@ async def test_execute_yields_state_after_each_agent(mock_services, mission_stat
     
     # Check that logs show each agent running
     all_logs = "\n".join(["\n".join(s.logs) for s in states])
-    assert "Copywriter" in all_logs or "Marketing" in all_logs
+    assert "Copywriter" in all_logs or "SEO" in all_logs or "Marketing" in all_logs
 
 
 @pytest.mark.asyncio
@@ -415,140 +420,6 @@ async def test_execute_stops_on_error(mock_services, mission_state):
         # Should have stopped after error
         final_state = states[-1]
         assert final_state.status == "ERROR"
-
-
-# =============================================================================
-# Tests: Adversarial Loop
-# =============================================================================
-
-@pytest.mark.asyncio
-async def test_adversarial_loop_triggers_on_compliance_flags(mock_services, mission_state):
-    """Test that adversarial loop triggers when compliance flags are present."""
-    mission_state.plan_tier = "Pro"
-    
-    # Make compliance agent return flags first time
-    call_count = [0]
-    
-    async def mock_compliance_run(self, state):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            state.compliance_flags = ["FDA violation"]
-            state.status = "COMPLIANCE_REVIEW"
-        else:
-            state.compliance_flags = []
-        return state
-    
-    with patch.object(ComplianceAgent, 'run', mock_compliance_run), \
-         patch.object(CopywriterAgent, 'run', new_callable=AsyncMock) as mock_copy, \
-         patch.object(MarketingAgent, 'run', new_callable=AsyncMock) as mock_market, \
-         patch.object(PriceScoutAgent, 'run', new_callable=AsyncMock) as mock_price:
-        
-        # Set up mocks to pass through state
-        mock_copy.return_value = mission_state
-        mock_copy.side_effect = lambda s: s
-        mock_market.return_value = mission_state
-        mock_market.side_effect = lambda s: s
-        mock_price.return_value = mission_state
-        mock_price.side_effect = lambda s: s
-        
-        mission = MissionControl(
-            plan_tier="Pro",
-            shop_id="test-shop.myshopify.com",
-            services=mock_services,
-        )
-        
-        states = []
-        async for state in mission.execute(mission_state):
-            states.append(state)
-        
-        # Should have triggered adversarial loop
-        all_logs = "\n".join(["\n".join(s.logs) for s in states])
-        assert "Adversarial" in all_logs
-
-
-@pytest.mark.asyncio
-async def test_adversarial_loop_limits_iterations(mock_services, mission_state):
-    """Test that adversarial loop is limited to MAX_ADVERSARIAL_ITERATIONS."""
-    mission_state.plan_tier = "Pro"
-    
-    # Track iterations
-    iteration_count = [0]
-    
-    # Make compliance always fail
-    async def mock_compliance_run(self, state):
-        state.compliance_flags = ["Persistent violation"]
-        state.status = "COMPLIANCE_REVIEW"
-        return state
-    
-    async def mock_copywriter_run(self, state):
-        iteration_count[0] += 1
-        return state
-    
-    async def mock_pass_through(self, state):
-        return state
-    
-    with patch.object(ComplianceAgent, 'run', mock_compliance_run), \
-         patch.object(CopywriterAgent, 'run', mock_copywriter_run), \
-         patch.object(MarketingAgent, 'run', mock_pass_through), \
-         patch.object(PriceScoutAgent, 'run', mock_pass_through):
-        
-        mission = MissionControl(
-            plan_tier="Pro",
-            shop_id="test-shop.myshopify.com",
-            services=mock_services,
-        )
-        
-        states = []
-        async for state in mission.execute(mission_state):
-            states.append(state)
-        
-        # Copywriter runs once normally + MAX_ADVERSARIAL_ITERATIONS times in loop
-        expected_max = 1 + MissionControl.MAX_ADVERSARIAL_ITERATIONS
-        assert iteration_count[0] <= expected_max
-
-
-@pytest.mark.asyncio
-async def test_adversarial_loop_passes_compliance_feedback(mock_services, mission_state):
-    """Test that compliance feedback is passed to copywriter in adversarial loop."""
-    mission_state.plan_tier = "Pro"
-    call_count = [0]
-    
-    async def mock_compliance_run(self, state):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            state.compliance_flags = ["Remove health claims"]
-        else:
-            state.compliance_flags = []
-        return state
-    
-    received_feedback = [None]
-    
-    async def mock_copywriter_run(self, state):
-        # Check if compliance feedback was added
-        if "compliance_feedback" in state.raw_input:
-            received_feedback[0] = state.raw_input["compliance_feedback"]
-        return state
-    
-    async def mock_pass_through(self, state):
-        return state
-    
-    with patch.object(ComplianceAgent, 'run', mock_compliance_run), \
-         patch.object(CopywriterAgent, 'run', mock_copywriter_run), \
-         patch.object(MarketingAgent, 'run', mock_pass_through), \
-         patch.object(PriceScoutAgent, 'run', mock_pass_through):
-        
-        mission = MissionControl(
-            plan_tier="Pro",
-            shop_id="test-shop.myshopify.com",
-            services=mock_services,
-        )
-        
-        async for _ in mission.execute(mission_state):
-            pass
-        
-        # Should have received compliance feedback
-        assert received_feedback[0] is not None
-        assert "health claims" in received_feedback[0]
 
 
 # =============================================================================
@@ -602,9 +473,9 @@ async def test_execute_streams_status_updates(mock_services, mission_state):
         return state
     
     with patch.object(CopywriterAgent, 'run', mock_pass_through), \
+         patch.object(SEOAgent, 'run', mock_pass_through), \
          patch.object(MarketingAgent, 'run', mock_pass_through), \
-         patch.object(PriceScoutAgent, 'run', mock_pass_through), \
-         patch.object(ComplianceAgent, 'run', mock_pass_through):
+         patch.object(PriceScoutAgent, 'run', mock_pass_through):
         
         mission = MissionControl(
             plan_tier="Basic",
@@ -687,14 +558,14 @@ async def test_run_mission_with_requested_agents():
             shop_id="test-shop.myshopify.com",
             product_data={"title": "Test", "description": "Test"},
             plan_tier="Basic",
-            requested_agents=["MarketingAgent"],
+            requested_agents=["SEOAgent"],
         ):
             states.append(state)
         
         # Verify MissionControl was called with requested_agents
         mock_init.assert_called_once()
         call_kwargs = mock_init.call_args.kwargs
-        assert call_kwargs.get("requested_agents") == ["MarketingAgent"]
+        assert call_kwargs.get("requested_agents") == ["SEOAgent"]
 
 
 # =============================================================================
@@ -709,24 +580,24 @@ async def test_adhoc_execute_runs_only_requested_agents(mock_services, mission_s
         return state
     
     with patch.object(CopywriterAgent, 'run', mock_pass_through), \
+         patch.object(SEOAgent, 'run', mock_pass_through), \
          patch.object(MarketingAgent, 'run', mock_pass_through), \
-         patch.object(PriceScoutAgent, 'run', mock_pass_through), \
-         patch.object(ComplianceAgent, 'run', mock_pass_through):
+         patch.object(PriceScoutAgent, 'run', mock_pass_through):
         
         mission = MissionControl(
             plan_tier="Standard",
             shop_id="test-shop.myshopify.com",
             services=mock_services,
-            requested_agents=["ComplianceAgent"],
+            requested_agents=["SEOAgent"],
         )
         
         states = []
         async for state in mission.execute(mission_state):
             states.append(state)
         
-        # Check that only ComplianceAgent ran
+        # Check that only SEOAgent ran
         all_logs = "\n".join(["\n".join(s.logs) for s in states])
-        assert "Compliance" in all_logs
+        assert "SEO" in all_logs
         # Copywriter and others should not have run
         assert "Copywriter: Executed" not in all_logs
         assert "Marketing: Executed" not in all_logs
@@ -741,15 +612,15 @@ async def test_adhoc_execute_runs_multiple_requested_agents(mock_services, missi
         return state
     
     with patch.object(CopywriterAgent, 'run', mock_pass_through), \
+         patch.object(SEOAgent, 'run', mock_pass_through), \
          patch.object(MarketingAgent, 'run', mock_pass_through), \
-         patch.object(PriceScoutAgent, 'run', mock_pass_through), \
-         patch.object(ComplianceAgent, 'run', mock_pass_through):
+         patch.object(PriceScoutAgent, 'run', mock_pass_through):
         
         mission = MissionControl(
             plan_tier="Standard",
             shop_id="test-shop.myshopify.com",
             services=mock_services,
-            requested_agents=["MarketingAgent", "PriceScoutAgent"],
+            requested_agents=["SEOAgent", "PriceScoutAgent"],
         )
         
         states = []
@@ -758,36 +629,8 @@ async def test_adhoc_execute_runs_multiple_requested_agents(mock_services, missi
         
         # Check that both requested agents ran
         all_logs = "\n".join(["\n".join(s.logs) for s in states])
-        assert "Marketing" in all_logs
+        assert "SEO" in all_logs
         assert "PriceScout" in all_logs
-
-
-@pytest.mark.asyncio
-async def test_adhoc_no_adversarial_loop_without_compliance(mock_services, mission_state):
-    """Test that adversarial loop doesn't trigger without ComplianceAgent."""
-    mission_state.plan_tier = "Pro"
-    
-    async def mock_pass_through(self, state):
-        return state
-    
-    with patch.object(CopywriterAgent, 'run', mock_pass_through), \
-         patch.object(MarketingAgent, 'run', mock_pass_through):
-        
-        # Ad-hoc without ComplianceAgent
-        mission = MissionControl(
-            plan_tier="Pro",
-            shop_id="test-shop.myshopify.com",
-            services=mock_services,
-            requested_agents=["CopywriterAgent", "MarketingAgent"],
-        )
-        
-        states = []
-        async for state in mission.execute(mission_state):
-            states.append(state)
-        
-        # No adversarial loop should trigger
-        all_logs = "\n".join(["\n".join(s.logs) for s in states])
-        assert "Adversarial" not in all_logs
 
 
 # =============================================================================
@@ -927,7 +770,7 @@ async def test_execute_single_step_completes_at_end(mock_services, mission_state
     async def mock_pass_through(self, state):
         return state
     
-    with patch.object(ComplianceAgent, 'run', mock_pass_through):
+    with patch.object(PriceScoutAgent, 'run', mock_pass_through):
         mission = MissionControl(
             plan_tier="Standard",
             shop_id="test-shop.myshopify.com",
@@ -980,7 +823,7 @@ def test_advance_to_next_step_increments_index(mock_services, mission_state):
     )
     
     mission_state.current_agent_index = 0
-    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent"]
+    mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
     result = mission.advance_to_next_step(mission_state)
     
@@ -997,11 +840,11 @@ def test_advance_to_next_step_logs_next_agent(mock_services, mission_state):
     )
     
     mission_state.current_agent_index = 0
-    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent"]
+    mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
     result = mission.advance_to_next_step(mission_state)
     
-    assert "MarketingAgent" in "\n".join(result.logs)
+    assert "SEOAgent" in "\n".join(result.logs)
 
 
 def test_advance_to_next_step_completes_at_end(mock_services, mission_state):
@@ -1013,7 +856,7 @@ def test_advance_to_next_step_completes_at_end(mock_services, mission_state):
     )
     
     mission_state.current_agent_index = 3  # Last agent
-    mission_state.workflow_agents = ["A", "B", "C", "D"]
+    mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
     result = mission.advance_to_next_step(mission_state)
     
@@ -1034,11 +877,11 @@ def test_skip_current_step_records_skipped_agent(mock_services, mission_state):
     )
     
     mission_state.current_agent_index = 1
-    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent"]
+    mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
     result = mission.skip_current_step(mission_state)
     
-    assert "MarketingAgent" in result.skipped_agents
+    assert "SEOAgent" in result.skipped_agents
     assert result.current_agent_index == 2
 
 
@@ -1051,7 +894,7 @@ def test_skip_current_step_logs_skip(mock_services, mission_state):
     )
     
     mission_state.current_agent_index = 0
-    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent"]
+    mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
     result = mission.skip_current_step(mission_state)
     
@@ -1067,13 +910,12 @@ def test_skip_current_step_completes_at_end(mock_services, mission_state):
     )
     
     mission_state.current_agent_index = 3  # Last agent index (0-based)
-    # Use actual agent names that match the workflow
-    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"]
+    mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
     result = mission.skip_current_step(mission_state)
     
     assert result.status == "COMPLETED"
-    assert "ComplianceAgent" in result.skipped_agents
+    assert "PriceScoutAgent" in result.skipped_agents
 
 
 def test_skip_current_step_preserves_previous_skips(mock_services, mission_state):
@@ -1084,14 +926,14 @@ def test_skip_current_step_preserves_previous_skips(mock_services, mission_state
         services=mock_services,
     )
     
-    mission_state.current_agent_index = 2  # PriceScoutAgent
-    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"]
+    mission_state.current_agent_index = 2  # MarketingAgent
+    mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     mission_state.skipped_agents = ["CopywriterAgent"]  # Previously skipped
     
     result = mission.skip_current_step(mission_state)
     
     assert "CopywriterAgent" in result.skipped_agents  # Preserved
-    assert "PriceScoutAgent" in result.skipped_agents  # Newly skipped
+    assert "MarketingAgent" in result.skipped_agents  # Newly skipped
     assert len(result.skipped_agents) == 2
 
 
@@ -1142,7 +984,7 @@ def test_prepare_regeneration_logs_action(mock_services, mission_state):
     )
     
     mission_state.current_agent_index = 1
-    mission_state.workflow_agents = ["CopywriterAgent", "MarketingAgent"]
+    mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent"]
     
     result = mission.prepare_regeneration(mission_state, feedback="test")
     
@@ -1172,8 +1014,8 @@ def test_extract_agent_output_copywriter(mock_services, mission_state):
     assert len(output["discovered_values"]) == 1
 
 
-def test_extract_agent_output_marketing(mock_services, mission_state):
-    """Test _extract_agent_output for MarketingAgent."""
+def test_extract_agent_output_seo(mock_services, mission_state):
+    """Test _extract_agent_output for SEOAgent."""
     mission = MissionControl(
         plan_tier="Standard",
         shop_id="test-shop.myshopify.com",
@@ -1182,14 +1024,33 @@ def test_extract_agent_output_marketing(mock_services, mission_state):
     
     mission_state.seo_title = "SEO Title"
     mission_state.seo_description = "SEO Desc"
+    mission_state.seo_alt_text = "Alt text"
     mission_state.ctr_check = {"score": 0.8}
     mission_state.serp_insights = [{"title": "Competitor"}]
     
-    output = mission._extract_agent_output(mission_state, "MarketingAgent")
+    output = mission._extract_agent_output(mission_state, "SEOAgent")
     
     assert output["seo_title"] == "SEO Title"
     assert output["seo_description"] == "SEO Desc"
+    assert output["seo_alt_text"] == "Alt text"
     assert output["ctr_check"]["score"] == 0.8
+
+
+def test_extract_agent_output_marketing(mock_services, mission_state):
+    """Test _extract_agent_output for MarketingAgent."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    mission_state.social_hooks = [{"type": "Aesthetic", "caption": "Test"}]
+    mission_state.seasonal_campaign = {"holiday": "Christmas"}
+    
+    output = mission._extract_agent_output(mission_state, "MarketingAgent")
+    
+    assert len(output["social_hooks"]) == 1
+    assert output["seasonal_campaign"]["holiday"] == "Christmas"
 
 
 def test_extract_agent_output_price_scout(mock_services, mission_state):
@@ -1208,22 +1069,6 @@ def test_extract_agent_output_price_scout(mock_services, mission_state):
     output = mission._extract_agent_output(mission_state, "PriceScoutAgent")
     
     assert output["pricing_analysis"]["recommended_price"] == 29.99
-
-
-def test_extract_agent_output_compliance(mock_services, mission_state):
-    """Test _extract_agent_output for ComplianceAgent."""
-    mission = MissionControl(
-        plan_tier="Standard",
-        shop_id="test-shop.myshopify.com",
-        services=mock_services,
-    )
-    
-    mission_state.compliance_flags = ["FDA violation", "Missing disclosure"]
-    
-    output = mission._extract_agent_output(mission_state, "ComplianceAgent")
-    
-    assert len(output["compliance_flags"]) == 2
-    assert "FDA violation" in output["compliance_flags"]
 
 
 def test_extract_agent_output_unknown_agent(mock_services, mission_state):

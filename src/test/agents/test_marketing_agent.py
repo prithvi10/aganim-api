@@ -1,7 +1,7 @@
 """
 Unit tests for MarketingAgent.
 
-Tests SEO generation, recommendations, CTR check, SERP insights, and social hooks.
+Tests social hooks and seasonal campaign generation (SEO moved to SEOAgent).
 """
 
 import pytest
@@ -10,13 +10,6 @@ from datetime import date, timedelta
 
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.marketing.schemas import (
-    MarketingOutput,
-    SEOInsights,
-    SEORecommendations,
-    CompetitiveEdge,
-    BuyerIntent,
-    CTRCheck,
-    SerpCompetitor,
     SocialHook,
     SeasonalCampaign,
 )
@@ -39,26 +32,17 @@ def mock_services():
     """Create mock ServiceRegistry for testing."""
     services = MagicMock()
     
-    # Mock LLM responses - generate_text returns JSON string
-    services.llm.generate_text = AsyncMock(return_value='{"seo_title": "Test SEO Title", "seo_description": "Meta description with CTA", "seo_alt_text": "Product image alt text", "seo_insights": {"lsi_keywords_used": ["keyword1", "keyword2"], "search_intent": "transactional", "competitive_edge": "Unique selling point"}}')
+    # Mock LLM responses for social hooks
+    services.llm.generate_text = AsyncMock(return_value='{"hooks": [{"type": "Aesthetic", "caption": "Beautiful art!", "hashtags": ["kyoto", "ceramics"], "overlay": "Art"}]}')
     services.llm.generate_structured = AsyncMock()
     services.llm.generate_json = AsyncMock(return_value={
-        "seo_title": "Test SEO Title for Product",
-        "seo_description": "Meta description with CTA",
-        "seo_alt_text": "Product image alt text",
+        "hooks": [
+            {"type": "Aesthetic", "caption": "Beautiful ceramic bowl!", "hashtags": ["kyoto", "ceramics"], "copy_text": "Check out this beauty!"}
+        ]
     })
     
-    # Mock SERP results as objects with attributes
-    mock_serp_results = []
-    for i in range(3):
-        r = MagicMock()
-        r.title = f"Competitor {i+1} Product"
-        r.snippet = f"Product snippet {i+1}"
-        r.link = f"https://comp{i+1}.com"
-        r.position = i + 1
-        mock_serp_results.append(r)
-    
-    services.serp.search = AsyncMock(return_value=mock_serp_results)
+    # Mock SERP (not used by Marketing anymore, but kept for interface)
+    services.serp.search = AsyncMock(return_value=[])
     services.rag.get_brand_context = AsyncMock(return_value=[])
     return services
 
@@ -84,177 +68,13 @@ def mission_state():
 
 
 # =============================================================================
-# Tests: Perception Phase (SERP Data Fetching)
-# =============================================================================
-
-@pytest.mark.asyncio
-async def test_perceive_fetches_serp_data(mock_services, mission_state):
-    """Test that perception fetches SERP competitor data."""
-    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
-    
-    context = await agent.perceive(mission_state)
-    
-    # Should have called SERP service
-    mock_services.serp.search.assert_called_once()
-    
-    # Should have SERP data in context
-    assert hasattr(context, 'serp_results')
-    assert len(context.serp_results) == 3
-
-
-@pytest.mark.asyncio
-async def test_perceive_handles_serp_error(mock_services, mission_state):
-    """Test that perception handles SERP errors gracefully."""
-    mock_services.serp.search = AsyncMock(side_effect=Exception("SERP error"))
-    
-    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
-    context = await agent.perceive(mission_state)
-    
-    # Should have empty SERP results on error
-    assert hasattr(context, 'serp_results')
-    assert context.serp_results == []
-
-
-@pytest.mark.asyncio
-async def test_perceive_includes_draft_content(mock_services, mission_state):
-    """Test that perception includes draft content from state."""
-    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
-    
-    context = await agent.perceive(mission_state)
-    
-    # Should have draft content available
-    assert mission_state.draft_content is not None
-    assert "ceramic bowl" in mission_state.draft_content.lower()
-
-
-# =============================================================================
-# Tests: SEO Generation
-# =============================================================================
-
-@pytest.mark.asyncio
-async def test_generates_seo_fields(mock_services, mission_state):
-    """Test that agent generates SEO fields."""
-    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
-    
-    result = await agent.run(mission_state)
-    
-    # Should have SEO title
-    assert result.seo_title == "Test SEO Title"
-    assert result.seo_description == "Meta description with CTA"
-    assert result.seo_alt_text == "Product image alt text"
-
-
-@pytest.mark.asyncio
-async def test_seo_title_clamping():
-    """Test that SEO title is clamped to <= 70 characters."""
-    agent = MarketingAgent("test-shop.myshopify.com", MagicMock())
-    
-    long_title = "A" * 100
-    result = agent._clamp_length(long_title, 70)
-    
-    assert len(result) <= 70
-
-
-@pytest.mark.asyncio
-async def test_seo_description_clamping():
-    """Test that SEO description is clamped to <= 160 characters."""
-    agent = MarketingAgent("test-shop.myshopify.com", MagicMock())
-    
-    long_desc = "B" * 200
-    result = agent._clamp_length(long_desc, 160)
-    
-    assert len(result) <= 160
-
-
-# =============================================================================
-# Tests: CTR/PST Check (Deterministic, No LLM)
-# =============================================================================
-
-def test_ctr_pst_check_detects_pain():
-    """Test that CTR check detects pain indicators."""
-    agent = MarketingAgent("test-shop", MagicMock())
-    
-    result = agent._check_ctr_pst(
-        description="Struggling to find the perfect gift?",
-        seo_description="",
-    )
-    
-    assert result["pain_present"] is True
-
-
-def test_ctr_pst_check_detects_solution():
-    """Test that CTR check detects solution indicators."""
-    agent = MarketingAgent("test-shop", MagicMock())
-    
-    result = agent._check_ctr_pst(
-        description="Premium quality ceramic bowl with authentic traditional craftsmanship.",
-        seo_description="",
-    )
-    
-    assert result["solution_present"] is True
-
-
-def test_ctr_pst_check_detects_trust():
-    """Test that CTR check detects trust indicators."""
-    agent = MarketingAgent("test-shop", MagicMock())
-    
-    result = agent._check_ctr_pst(
-        description="Handcrafted in Kyoto, Japan. Free shipping worldwide.",
-        seo_description="",
-    )
-    
-    assert result["trust_present"] is True
-
-
-def test_ctr_pst_check_returns_score():
-    """Test that CTR check returns a score between 0 and 1."""
-    agent = MarketingAgent("test-shop", MagicMock())
-    
-    result = agent._check_ctr_pst(
-        description="Product.",
-        seo_description="",
-    )
-    
-    assert 0.0 <= result["score"] <= 1.0
-    assert isinstance(result["suggestions"], list)
-
-
-def test_ctr_pst_check_full_score():
-    """Test that CTR check gives full score when all elements present."""
-    agent = MarketingAgent("test-shop", MagicMock())
-    
-    result = agent._check_ctr_pst(
-        description="Struggling to find the perfect gift? This ceramic bowl is perfect for you. Made in Kyoto, Japan.",
-        seo_description="",
-    )
-    
-    # Should have high score with all elements
-    assert result["score"] >= 0.66
-
-
-# =============================================================================
-# Tests: SERP Competitor Insights
-# =============================================================================
-
-@pytest.mark.asyncio
-async def test_stores_serp_insights_in_state(mock_services, mission_state):
-    """Test that agent stores SERP insights in state."""
-    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
-    
-    result = await agent.run(mission_state)
-    
-    # Should have SERP insights stored
-    assert result.serp_insights is not None
-
-
-# =============================================================================
-# Tests: Social Hooks (On-Demand Method)
+# Tests: Social Hooks Generation
 # =============================================================================
 
 @pytest.mark.asyncio
 async def test_generate_social_hooks_method(mock_services):
     """Test that generate_social_hooks method works."""
-    mock_services.llm.generate_text = AsyncMock(return_value='{"hooks": [{"type": "Aesthetic", "caption": "Beautiful art!", "hashtags": ["kyoto", "ceramics"], "overlay": "Art"}]}')
+    mock_services.llm.generate_text = AsyncMock(return_value='{"hooks": [{"type": "Aesthetic", "caption": "Beautiful art!", "hashtags": ["kyoto", "ceramics"], "overlay": "Art", "copy_text": "Check out this!"}]}')
     
     agent = MarketingAgent("test-shop.myshopify.com", mock_services)
     
@@ -266,6 +86,42 @@ async def test_generate_social_hooks_method(mock_services):
     
     assert "hooks" in result
     assert len(result["hooks"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_run_generates_social_hooks(mock_services, mission_state):
+    """Test that running the agent generates social hooks."""
+    mock_services.llm.generate_text = AsyncMock(return_value='{"hooks": [{"type": "Story", "caption": "Behind every bowl...", "hashtags": ["artisan"], "copy_text": "A story of tradition"}]}')
+    
+    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+    
+    result = await agent.run(mission_state)
+    
+    # Social hooks should be generated
+    assert result.social_hooks is not None
+
+
+@pytest.mark.asyncio  
+async def test_social_hooks_have_required_fields(mock_services, mission_state):
+    """Test that social hooks have all required fields."""
+    hook_data = {
+        "hooks": [{
+            "type": "Aesthetic",
+            "caption": "Beautiful ceramic art from Kyoto",
+            "hashtags": ["kyoto", "ceramic", "artisan"],
+            "copy_text": "Discover the beauty of Kyoto ceramics"
+        }]
+    }
+    mock_services.llm.generate_text = AsyncMock(return_value=str(hook_data).replace("'", '"'))
+    
+    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+    
+    result = await agent.run(mission_state)
+    
+    if result.social_hooks:
+        for hook in result.social_hooks:
+            assert "type" in hook or hook.get("type") is not None
+            assert "caption" in hook or hook.get("caption") is not None
 
 
 # =============================================================================
@@ -360,73 +216,6 @@ async def test_handles_missing_draft_content(mock_services, mission_state):
 # Tests: Schema Validation
 # =============================================================================
 
-def test_marketing_output_schema():
-    """Test MarketingOutput Pydantic schema."""
-    output = MarketingOutput(
-        seo_title="Test Title",
-        seo_description="Test description",
-        seo_alt_text="Test alt",
-    )
-    
-    assert output.seo_title == "Test Title"
-    assert output.seo_description == "Test description"
-
-
-def test_seo_insights_schema():
-    """Test SEOInsights Pydantic schema."""
-    insights = SEOInsights(
-        lsi_keywords_used=["keyword1", "keyword2"],
-        search_intent="transactional",
-        competitive_edge="Unique detail",
-    )
-    
-    assert len(insights.lsi_keywords_used) == 2
-    assert insights.search_intent == "transactional"
-
-
-def test_seo_recommendations_schema():
-    """Test SEORecommendations Pydantic schema."""
-    recs = SEORecommendations(
-        competitive_edge=CompetitiveEdge(
-            headline="Unique",
-            copy_text="Test edge",
-        ),
-        buyer_intent=BuyerIntent(
-            strategy=["strategy1", "strategy2"],
-        ),
-    )
-    
-    assert recs.competitive_edge.copy_text == "Test edge"
-    assert len(recs.buyer_intent.strategy) == 2
-
-
-def test_ctr_check_schema():
-    """Test CTRCheck Pydantic schema."""
-    check = CTRCheck(
-        pain_present=True,
-        solution_present=True,
-        trust_present=False,
-        score=0.67,
-        suggestions=["Add trust cue"],
-    )
-    
-    assert check.pain_present is True
-    assert check.score == 0.67
-
-
-def test_serp_competitor_schema():
-    """Test SerpCompetitor Pydantic schema."""
-    comp = SerpCompetitor(
-        title="Competitor Product",
-        snippet="Product snippet",
-        link="https://example.com",
-        position=1,
-    )
-    
-    assert comp.position == 1
-    assert comp.link == "https://example.com"
-
-
 def test_social_hook_schema():
     """Test SocialHook Pydantic schema."""
     hook = SocialHook(
@@ -452,3 +241,21 @@ def test_seasonal_campaign_schema():
     
     assert campaign.holiday_name == "Christmas"
     assert campaign.days_until == 30
+
+
+# =============================================================================
+# Tests: Agent Properties
+# =============================================================================
+
+def test_agent_role_name(mock_services):
+    """Test that agent has correct role name."""
+    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+    
+    assert agent.role_name == "Marketing"
+
+
+def test_agent_default_tool(mock_services):
+    """Test that agent has correct default tool."""
+    agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+    
+    assert agent.default_tool == "llm.generate_text"

@@ -2,6 +2,7 @@
 Integration tests for agent response format handling.
 
 Confirms that response formats are accurately handled for each agent.
+Note: ComplianceAgent is currently disabled. SEO is handled by SEOAgent.
 """
 
 import pytest
@@ -9,10 +10,9 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.compliance import ComplianceAgent
-from src.main.agents.compliance.schemas import ComplianceCheck
 from src.main.agents.price_scout.schemas import PricingAnalysis
 from src.main.agents.state import MissionState
 
@@ -144,11 +144,11 @@ class TestCopywriterResponseFormats:
 
 
 # =============================================================================
-# Tests: MarketingAgent Response Format Handling
+# Tests: SEOAgent Response Format Handling
 # =============================================================================
 
-class TestMarketingResponseFormats:
-    """Tests for MarketingAgent response format handling."""
+class TestSEOResponseFormats:
+    """Tests for SEOAgent response format handling."""
 
     @pytest.mark.asyncio
     async def test_handles_valid_seo_json(self, mock_services, mission_state):
@@ -161,7 +161,7 @@ class TestMarketingResponseFormats:
             "seo_alt_text": "Alt text here",
         }))
         
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        agent = SEOAgent("test-shop.myshopify.com", mock_services)
         result = await agent.run(mission_state)
         
         assert result.seo_title == "SEO Title Here"
@@ -179,7 +179,7 @@ class TestMarketingResponseFormats:
             "seo_alt_text": "Alt",
         }))
         
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        agent = SEOAgent("test-shop.myshopify.com", mock_services)
         result = await agent.run(mission_state)
         
         assert len(result.seo_title) <= 70
@@ -196,7 +196,7 @@ class TestMarketingResponseFormats:
             "seo_alt_text": "Alt",
         }))
         
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        agent = SEOAgent("test-shop.myshopify.com", mock_services)
         result = await agent.run(mission_state)
         
         assert len(result.seo_description) <= 160
@@ -208,7 +208,7 @@ class TestMarketingResponseFormats:
         
         mock_services.llm.generate_text = AsyncMock(return_value="Not JSON")
         
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        agent = SEOAgent("test-shop.myshopify.com", mock_services)
         result = await agent.run(mission_state)
         
         # Should handle gracefully
@@ -221,7 +221,7 @@ class TestMarketingResponseFormats:
         
         mock_services.llm.generate_text = AsyncMock(return_value="{}")
         
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        agent = SEOAgent("test-shop.myshopify.com", mock_services)
         result = await agent.run(mission_state)
         
         # CTR check should have required fields
@@ -230,6 +230,44 @@ class TestMarketingResponseFormats:
         assert "solution_present" in result.ctr_check
         assert "trust_present" in result.ctr_check
         assert 0.0 <= result.ctr_check["score"] <= 1.0
+
+
+# =============================================================================
+# Tests: MarketingAgent Response Format Handling
+# =============================================================================
+
+class TestMarketingResponseFormats:
+    """Tests for MarketingAgent response format handling (social hooks only)."""
+
+    @pytest.mark.asyncio
+    async def test_handles_valid_hooks_json(self, mock_services, mission_state):
+        """Test handling of valid social hooks JSON response."""
+        mission_state.draft_content = "<p>Test</p>"
+        
+        mock_services.llm.generate_text = AsyncMock(return_value=json.dumps({
+            "hooks": [
+                {"type": "Story", "caption": "Test caption", "hashtags": ["#test"]}
+            ]
+        }))
+        
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        result = await agent.run(mission_state)
+        
+        # Should handle gracefully
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_handles_malformed_hooks_json(self, mock_services, mission_state):
+        """Test handling of malformed hooks JSON."""
+        mission_state.draft_content = "<p>Test</p>"
+        
+        mock_services.llm.generate_text = AsyncMock(return_value="Not JSON")
+        
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        result = await agent.run(mission_state)
+        
+        # Should handle gracefully
+        assert result is not None
 
 
 # =============================================================================
@@ -291,103 +329,3 @@ class TestPriceScoutResponseFormats:
         
         confidence = result.pricing_analysis["confidence"]
         assert 0.0 <= confidence <= 1.0
-
-
-# =============================================================================
-# Tests: ComplianceAgent Response Format Handling
-# =============================================================================
-
-class TestComplianceResponseFormats:
-    """Tests for ComplianceAgent response format handling."""
-
-    @pytest.mark.asyncio
-    async def test_handles_valid_compliance_check(self, mock_services, mission_state):
-        """Test handling of valid ComplianceCheck structured output."""
-        mission_state.draft_content = "Test content"
-        
-        mock_services.llm.generate_structured = AsyncMock(return_value=ComplianceCheck(
-            has_violations=True,
-            flags=["FDA violation: health claim"],
-            severity="high",
-            suggestions=["Remove health claim"],
-        ))
-        
-        agent = ComplianceAgent("test-shop.myshopify.com", mock_services)
-        result = await agent.run(mission_state)
-        
-        assert len(result.compliance_flags) > 0
-        assert result.status == "COMPLIANCE_REVIEW"
-
-    @pytest.mark.asyncio
-    async def test_handles_clean_compliance_check(self, mock_services, mission_state):
-        """Test handling of clean ComplianceCheck."""
-        mission_state.draft_content = "Clean content"
-        
-        mock_services.llm.generate_structured = AsyncMock(return_value=ComplianceCheck(
-            has_violations=False,
-            flags=[],
-            severity="none",
-            suggestions=[],
-        ))
-        
-        agent = ComplianceAgent("test-shop.myshopify.com", mock_services)
-        result = await agent.run(mission_state)
-        
-        assert len(result.compliance_flags) == 0
-
-    @pytest.mark.asyncio
-    async def test_combines_regex_and_llm_flags(self, mock_services, mission_state):
-        """Test that regex and LLM flags are combined."""
-        # Content with regex-detectable violation
-        mission_state.draft_content = "This product cures diseases!"
-        
-        mock_services.llm.generate_structured = AsyncMock(return_value=ComplianceCheck(
-            has_violations=True,
-            flags=["LLM detected issue"],
-            severity="medium",
-            suggestions=[],
-        ))
-        
-        agent = ComplianceAgent("test-shop.myshopify.com", mock_services)
-        result = await agent.run(mission_state)
-        
-        # Should have flags from both regex and LLM
-        assert len(result.compliance_flags) >= 1
-
-    @pytest.mark.asyncio
-    async def test_deduplicates_flags(self, mock_services, mission_state):
-        """Test that duplicate flags are deduplicated."""
-        mission_state.draft_content = "cure cure cure"
-        
-        # LLM returns same flag
-        mock_services.llm.generate_structured = AsyncMock(return_value=ComplianceCheck(
-            has_violations=True,
-            flags=["Duplicate flag"],
-            severity="medium",
-            suggestions=[],
-        ))
-        
-        agent = ComplianceAgent("test-shop.myshopify.com", mock_services)
-        result = await agent.run(mission_state)
-        
-        # Flags should be unique
-        assert len(result.compliance_flags) == len(set(result.compliance_flags))
-
-    @pytest.mark.asyncio
-    async def test_severity_levels(self, mock_services, mission_state):
-        """Test that severity levels are properly handled."""
-        mission_state.draft_content = "Test content"
-        
-        for severity in ["none", "low", "medium", "high"]:
-            mock_services.llm.generate_structured = AsyncMock(return_value=ComplianceCheck(
-                has_violations=severity != "none",
-                flags=["Test"] if severity != "none" else [],
-                severity=severity,
-                suggestions=[],
-            ))
-            
-            agent = ComplianceAgent("test-shop.myshopify.com", mock_services)
-            result = await agent.run(mission_state)
-            
-            # Should handle all severity levels
-            assert result is not None

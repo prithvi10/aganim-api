@@ -3,6 +3,7 @@ Integration tests for SERP API timeout handling.
 
 Confirms that agents handle SERP API timeouts gracefully and produce
 valid output even when SERP data is unavailable.
+Note: ComplianceAgent is currently disabled. SEO is handled by SEOAgent.
 """
 
 import pytest
@@ -11,10 +12,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 from src.main.agents.orchestrator import MissionControl
 from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.compliance import ComplianceAgent
-from src.main.agents.compliance.schemas import ComplianceCheck
 from src.main.agents.price_scout.schemas import PricingAnalysis
 from src.main.agents.state import MissionState
 
@@ -47,13 +47,6 @@ def mock_services_with_serp_timeout():
                 price_position="unknown",
                 confidence=0.0,
                 reasoning="No competitor data available",
-            )
-        elif response_format == ComplianceCheck:
-            return ComplianceCheck(
-                has_violations=False,
-                flags=[],
-                severity="none",
-                suggestions=[],
             )
         return MagicMock()
     
@@ -94,13 +87,6 @@ def mock_services_with_serp_error():
                 confidence=0.0,
                 reasoning="No competitor data",
             )
-        elif response_format == ComplianceCheck:
-            return ComplianceCheck(
-                has_violations=False,
-                flags=[],
-                severity="none",
-                suggestions=[],
-            )
         return MagicMock()
     
     services.llm.generate_structured = AsyncMock(side_effect=mock_structured)
@@ -136,11 +122,65 @@ def mission_state():
 
 
 # =============================================================================
+# Tests: SEOAgent SERP Timeout Handling
+# =============================================================================
+
+class TestSEOAgentSerpTimeout:
+    """Tests for SEOAgent SERP timeout handling."""
+
+    @pytest.mark.asyncio
+    async def test_seo_completes_on_serp_timeout(self, mock_services_with_serp_timeout, mission_state):
+        """Test that SEOAgent completes even with SERP timeout."""
+        mission_state.draft_content = "<p>Test content</p>"
+        
+        agent = SEOAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
+        result = await agent.run(mission_state)
+        
+        # Should complete without crashing
+        assert result is not None
+        assert result.status != "ERROR"
+
+    @pytest.mark.asyncio
+    async def test_seo_generated_without_serp(self, mock_services_with_serp_timeout, mission_state):
+        """Test that SEO is still generated without SERP data."""
+        mission_state.draft_content = "<p>Test content</p>"
+        
+        agent = SEOAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
+        result = await agent.run(mission_state)
+        
+        # SEO should still be generated (using LLM without competitor context)
+        assert result.seo_title is not None or result.ctr_check is not None
+
+    @pytest.mark.asyncio
+    async def test_ctr_check_works_without_serp(self, mock_services_with_serp_timeout, mission_state):
+        """Test that CTR check works without SERP data."""
+        mission_state.draft_content = "<p>Test content with benefits</p>"
+        
+        agent = SEOAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
+        result = await agent.run(mission_state)
+        
+        # CTR check is deterministic, should work
+        assert result.ctr_check is not None
+        assert "score" in result.ctr_check
+
+    @pytest.mark.asyncio
+    async def test_serp_insights_empty_on_timeout(self, mock_services_with_serp_timeout, mission_state):
+        """Test that SERP insights are empty on timeout."""
+        mission_state.draft_content = "<p>Test content</p>"
+        
+        agent = SEOAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
+        result = await agent.run(mission_state)
+        
+        # SERP insights should be empty list
+        assert result.serp_insights == [] or result.serp_insights is None
+
+
+# =============================================================================
 # Tests: MarketingAgent SERP Timeout Handling
 # =============================================================================
 
 class TestMarketingAgentSerpTimeout:
-    """Tests for MarketingAgent SERP timeout handling."""
+    """Tests for MarketingAgent SERP timeout handling (social hooks only)."""
 
     @pytest.mark.asyncio
     async def test_marketing_completes_on_serp_timeout(self, mock_services_with_serp_timeout, mission_state):
@@ -153,41 +193,6 @@ class TestMarketingAgentSerpTimeout:
         # Should complete without crashing
         assert result is not None
         assert result.status != "ERROR"
-
-    @pytest.mark.asyncio
-    async def test_marketing_seo_generated_without_serp(self, mock_services_with_serp_timeout, mission_state):
-        """Test that SEO is still generated without SERP data."""
-        mission_state.draft_content = "<p>Test content</p>"
-        
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
-        result = await agent.run(mission_state)
-        
-        # SEO should still be generated (using LLM without competitor context)
-        # Note: seo_title may be empty string if LLM fails to parse
-        assert result.seo_description is not None or result.ctr_check is not None
-
-    @pytest.mark.asyncio
-    async def test_marketing_ctr_check_works_without_serp(self, mock_services_with_serp_timeout, mission_state):
-        """Test that CTR check works without SERP data."""
-        mission_state.draft_content = "<p>Test content with benefits</p>"
-        
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
-        result = await agent.run(mission_state)
-        
-        # CTR check is deterministic, should work
-        assert result.ctr_check is not None
-        assert "score" in result.ctr_check
-
-    @pytest.mark.asyncio
-    async def test_marketing_serp_insights_empty_on_timeout(self, mock_services_with_serp_timeout, mission_state):
-        """Test that SERP insights are empty on timeout."""
-        mission_state.draft_content = "<p>Test content</p>"
-        
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
-        result = await agent.run(mission_state)
-        
-        # SERP insights should be empty list
-        assert result.serp_insights == [] or result.serp_insights is None
 
 
 # =============================================================================
@@ -267,7 +272,7 @@ class TestFullPipelineSerpTimeout:
             final_state = state
         
         # Should complete successfully
-        assert final_state.status in ["COMPLETED", "COMPLIANCE_REVIEW"]
+        assert final_state.status == "COMPLETED"
 
     @pytest.mark.asyncio
     async def test_pipeline_all_agents_run_with_serp_timeout(self, mock_services_with_serp_timeout, mission_state):
@@ -284,11 +289,11 @@ class TestFullPipelineSerpTimeout:
         
         logs_text = "\n".join(all_logs)
         
-        # All agents should have run
+        # All agents should have run (ComplianceAgent is disabled)
         assert "Copywriter" in logs_text
+        assert "SEO" in logs_text
         assert "Marketing" in logs_text
         assert "PriceScout" in logs_text
-        assert "Compliance" in logs_text
 
     @pytest.mark.asyncio
     async def test_pipeline_draft_content_generated_with_serp_timeout(self, mock_services_with_serp_timeout, mission_state):
@@ -315,11 +320,11 @@ class TestSerpConnectionError:
     """Tests for SERP connection error handling."""
 
     @pytest.mark.asyncio
-    async def test_marketing_handles_connection_error(self, mock_services_with_serp_error, mission_state):
-        """Test that MarketingAgent handles connection error."""
+    async def test_seo_handles_connection_error(self, mock_services_with_serp_error, mission_state):
+        """Test that SEOAgent handles connection error."""
         mission_state.draft_content = "<p>Test</p>"
         
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services_with_serp_error)
+        agent = SEOAgent("test-shop.myshopify.com", mock_services_with_serp_error)
         result = await agent.run(mission_state)
         
         # Should complete without crashing
@@ -350,7 +355,7 @@ class TestSerpConnectionError:
             final_state = state
         
         # Should complete successfully
-        assert final_state.status in ["COMPLETED", "COMPLIANCE_REVIEW"]
+        assert final_state.status == "COMPLETED"
 
 
 # =============================================================================
@@ -361,11 +366,11 @@ class TestOutputStructureWithSerpFailure:
     """Tests for output structure validation when SERP fails."""
 
     @pytest.mark.asyncio
-    async def test_marketing_output_structure_on_serp_failure(self, mock_services_with_serp_timeout, mission_state):
-        """Test MarketingAgent output structure when SERP fails."""
+    async def test_seo_output_structure_on_serp_failure(self, mock_services_with_serp_timeout, mission_state):
+        """Test SEOAgent output structure when SERP fails."""
         mission_state.draft_content = "<p>Test</p>"
         
-        agent = MarketingAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
+        agent = SEOAgent("test-shop.myshopify.com", mock_services_with_serp_timeout)
         result = await agent.run(mission_state)
         
         # Required fields should exist (even if empty)

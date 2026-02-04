@@ -1,7 +1,7 @@
 """
 SEO Feature Tests (Real API Calls)
 
-Validates SEO outputs using REAL LLM APIs.
+Validates SEO outputs using REAL LLM APIs via the SEOAgent.
 Tests title, description, alt-text, CTR scoring, and SERP insights.
 
 Required Environment Variables:
@@ -42,7 +42,7 @@ class TestResult:
 
 class SEOFeatureTests:
     """
-    Tests for SEO feature validation using REAL LLM APIs.
+    Tests for SEO feature validation using REAL LLM APIs via SEOAgent.
     
     Validates:
     - SEO title format and length (<=70 chars)
@@ -92,7 +92,7 @@ class SEOFeatureTests:
         return self._services
 
     # =========================================================================
-    # SEO Title Tests (Real LLM)
+    # SEO Title Tests (Real LLM via SEOAgent)
     # =========================================================================
 
     def test_seo_title_generation_and_length(self) -> None:
@@ -101,10 +101,10 @@ class SEOFeatureTests:
             self._add_result("seo/title", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
+        from src.main.agents.seo import SEOAgent
         from src.main.agents.state import MissionState
         
-        self._log("\n  🔥 Testing SEO title generation (REAL LLM)")
+        self._log("\n  🔥 Testing SEO title generation (REAL LLM via SEOAgent)")
         
         services = self._get_real_services()
         
@@ -123,7 +123,7 @@ class SEOFeatureTests:
         )
         
         try:
-            agent = MarketingAgent("test-shop.myshopify.com", services)
+            agent = SEOAgent("test-shop.myshopify.com", services)
             result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
             seo_title = result_state.seo_title or ""
@@ -162,7 +162,7 @@ class SEOFeatureTests:
             self._add_result("seo/title_generated", False, f"Error: {e}")
 
     # =========================================================================
-    # SEO Description Tests (Real LLM)
+    # SEO Description Tests (Real LLM via SEOAgent)
     # =========================================================================
 
     def test_seo_description_generation_and_length(self) -> None:
@@ -171,10 +171,10 @@ class SEOFeatureTests:
             self._add_result("seo/description", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
+        from src.main.agents.seo import SEOAgent
         from src.main.agents.state import MissionState
         
-        self._log("\n  🔥 Testing SEO description generation (REAL LLM)")
+        self._log("\n  🔥 Testing SEO description generation (REAL LLM via SEOAgent)")
         
         services = self._get_real_services()
         
@@ -192,7 +192,7 @@ class SEOFeatureTests:
         )
         
         try:
-            agent = MarketingAgent("test-shop.myshopify.com", services)
+            agent = SEOAgent("test-shop.myshopify.com", services)
             result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
             seo_desc = result_state.seo_description or ""
@@ -231,7 +231,7 @@ class SEOFeatureTests:
             self._add_result("seo/description_generated", False, f"Error: {e}")
 
     # =========================================================================
-    # Alt-Text Tests (Real LLM)
+    # Alt-Text Tests (Real LLM via SEOAgent)
     # =========================================================================
 
     def test_seo_alt_text_generation(self) -> None:
@@ -240,10 +240,10 @@ class SEOFeatureTests:
             self._add_result("seo/alt_text", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
+        from src.main.agents.seo import SEOAgent
         from src.main.agents.state import MissionState
         
-        self._log("\n  🔥 Testing SEO alt-text generation (REAL LLM)")
+        self._log("\n  🔥 Testing SEO alt-text generation (REAL LLM via SEOAgent)")
         
         services = self._get_real_services()
         
@@ -261,7 +261,7 @@ class SEOFeatureTests:
         )
         
         try:
-            agent = MarketingAgent("test-shop.myshopify.com", services)
+            agent = SEOAgent("test-shop.myshopify.com", services)
             result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
             alt_text = result_state.seo_alt_text or ""
@@ -284,7 +284,7 @@ class SEOFeatureTests:
             self._add_result("seo/alt_text_generated", False, f"Error: {e}")
 
     # =========================================================================
-    # CTR Check Tests (Deterministic + Real LLM)
+    # CTR Check Tests (Deterministic via SEOAgent)
     # =========================================================================
 
     def test_ctr_check_high_score_content(self) -> None:
@@ -293,10 +293,10 @@ class SEOFeatureTests:
             self._add_result("seo/ctr_high", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
+        from src.main.agents.seo import SEOAgent
         from src.main.agents.state import MissionState
         
-        self._log("\n  🔥 Testing CTR check on PST content (REAL agent)")
+        self._log("\n  🔥 Testing CTR check on PST content (via SEOAgent)")
         
         services = self._get_real_services()
         
@@ -319,7 +319,7 @@ class SEOFeatureTests:
         )
         
         try:
-            agent = MarketingAgent("test-shop.myshopify.com", services)
+            agent = SEOAgent("test-shop.myshopify.com", services)
             result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
             ctr = result_state.ctr_check
@@ -355,10 +355,10 @@ class SEOFeatureTests:
             self._add_result("seo/ctr_low", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
+        from src.main.agents.seo import SEOAgent
         from src.main.agents.state import MissionState
         
-        self._log("\n  🔥 Testing CTR check on minimal content (REAL agent)")
+        self._log("\n  🔥 Testing CTR check on minimal content (via SEOAgent)")
         
         services = self._get_real_services()
         
@@ -379,7 +379,7 @@ class SEOFeatureTests:
         )
         
         try:
-            agent = MarketingAgent("test-shop.myshopify.com", services)
+            agent = SEOAgent("test-shop.myshopify.com", services)
             result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
             ctr = result_state.ctr_check
@@ -407,7 +407,7 @@ class SEOFeatureTests:
             self._add_result("seo/ctr_low_score", False, f"Error: {e}")
 
     # =========================================================================
-    # SERP Insights Tests (Real SERP API)
+    # SERP Insights Tests (Real SERP API via SEOAgent)
     # =========================================================================
 
     def test_serp_insights_retrieval(self) -> None:
@@ -421,10 +421,10 @@ class SEOFeatureTests:
             self._add_result("seo/serp_insights", True, "Skipped (no SERP_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
+        from src.main.agents.seo import SEOAgent
         from src.main.agents.state import MissionState
         
-        self._log("\n  🔥 Testing SERP insights retrieval (REAL SERP API)")
+        self._log("\n  🔥 Testing SERP insights retrieval (REAL SERP API via SEOAgent)")
         
         services = self._get_real_services()
         
@@ -442,7 +442,7 @@ class SEOFeatureTests:
         )
         
         try:
-            agent = MarketingAgent("test-shop.myshopify.com", services)
+            agent = SEOAgent("test-shop.myshopify.com", services)
             result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
             serp = result_state.serp_insights
@@ -469,7 +469,7 @@ class SEOFeatureTests:
 
     def run_all(self) -> list[TestResult]:
         """Run all SEO feature tests with REAL APIs."""
-        self._log("\n📊 SEO Feature Tests (REAL API CALLS)")
+        self._log("\n📊 SEO Feature Tests (REAL API CALLS via SEOAgent)")
         self._log("=" * 50)
         self._log("⚠️  These tests make REAL API calls to OpenAI and SERP")
         
@@ -486,7 +486,7 @@ class SEOFeatureTests:
         self.test_seo_alt_text_generation()
         
         # CTR tests
-        self._log("\n📈 CTR Check Tests (REAL agent)")
+        self._log("\n📈 CTR Check Tests (via SEOAgent)")
         self.test_ctr_check_high_score_content()
         self.test_ctr_check_low_score_content()
         

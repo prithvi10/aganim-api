@@ -4,6 +4,8 @@ Agent Output Tests (Real API Calls)
 Validates that each agent returns required outputs using REAL LLM and SERP APIs.
 Uses carefully crafted Japanese descriptions to trigger specific agent features.
 
+Note: ComplianceAgent is currently disabled.
+
 Required Environment Variables:
 - OPENAI_API_KEY: OpenAI API key
 - SERP_API_KEY: (optional) SERP API key for competitor analysis
@@ -46,9 +48,11 @@ class AgentOutputTests:
     
     Each test uses fixtures designed to trigger specific agent features:
     - CopywriterAgent: Japanese artisan items for discovered_values
-    - MarketingAgent: PST-optimized content for CTR scoring
+    - SEOAgent: SEO title, description, alt-text, CTR check
+    - MarketingAgent: Social hooks and seasonal campaigns
     - PriceScoutAgent: Common products for competitor analysis
-    - ComplianceAgent: FDA/FTC violation content for flag detection
+    
+    Note: ComplianceAgent is currently disabled.
     """
 
     def __init__(self, fixtures_path: str | None = None, skip_expensive: bool = False):
@@ -235,41 +239,37 @@ class AgentOutputTests:
                 )
 
     # =========================================================================
-    # MarketingAgent Tests (Real LLM)
+    # SEOAgent Tests (Real LLM)
     # =========================================================================
 
-    def test_marketing_seo_generation(self) -> None:
-        """Test that MarketingAgent generates SEO using REAL LLM."""
+    def test_seo_generation(self) -> None:
+        """Test that SEOAgent generates SEO using REAL LLM."""
         if not self._check_env():
-            self._add_result("marketing/seo", True, "Skipped (no OPENAI_API_KEY)")
+            self._add_result("seo/generation", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
+        from src.main.agents.seo import SEOAgent
         from src.main.agents.state import MissionState
         
-        # Test with first marketing fixture
-        fixture = self.fixtures.get("marketing_fixtures", [{}])[0]
-        fixture_id = fixture.get("id", "default")
-        
-        self._log(f"\n  🔥 Testing MarketingAgent SEO (REAL LLM): {fixture_id}")
+        self._log(f"\n  🔥 Testing SEOAgent SEO generation (REAL LLM)")
         
         services = self._get_real_services()
         
         state = MissionState(
-            product_id=f"test-{fixture_id}",
+            product_id="test-seo-gen",
             shop_id="test-shop.myshopify.com",
             plan_tier="Standard",
             raw_input={
-                "title": fixture.get("product_name", "Test Product"),
-                "category": fixture.get("category", "Tableware"),
+                "title": "Kyoto Artisan Matcha Bowl",
+                "category": "Tableware",
             },
             target_locale="en",
-            draft_content=fixture.get("draft_content", "<p>Test content</p>"),
-            draft_title=fixture.get("product_name", "Test Product"),
+            draft_content="<p>Handcrafted matcha bowl by Kyoto artisans. Perfect for tea ceremony.</p>",
+            draft_title="Kyoto Artisan Matcha Bowl",
         )
         
         try:
-            agent = MarketingAgent("test-shop.myshopify.com", services)
+            agent = SEOAgent("test-shop.myshopify.com", services)
             result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
             has_seo_title = result_state.seo_title is not None and len(result_state.seo_title) > 0
@@ -282,7 +282,7 @@ class AgentOutputTests:
             
             if has_seo_title and has_seo_desc:
                 self._add_result(
-                    f"marketing/{fixture_id}/seo_generation",
+                    "seo/seo_generation",
                     True,
                     f"SEO generated: title={title_len}chars, desc={desc_len}chars, alt={has_alt_text}",
                     {
@@ -293,7 +293,7 @@ class AgentOutputTests:
                 )
             else:
                 self._add_result(
-                    f"marketing/{fixture_id}/seo_generation",
+                    "seo/seo_generation",
                     False,
                     f"Missing SEO: title={has_seo_title}, desc={has_seo_desc}"
                 )
@@ -302,35 +302,31 @@ class AgentOutputTests:
             if has_ctr:
                 ctr = result_state.ctr_check
                 self._add_result(
-                    f"marketing/{fixture_id}/ctr_check",
+                    "seo/ctr_check",
                     True,
                     f"CTR score={ctr.get('score', 0):.2f}",
                     {"ctr_check": ctr}
                 )
             else:
                 self._add_result(
-                    f"marketing/{fixture_id}/ctr_check",
+                    "seo/ctr_check",
                     False,
                     "No CTR check generated"
                 )
                 
         except Exception as e:
-            self._add_result(
-                f"marketing/{fixture_id}/seo_generation",
-                False,
-                f"Error: {e}"
-            )
+            self._add_result("seo/seo_generation", False, f"Error: {e}")
 
-    def test_marketing_seo_length_constraints(self) -> None:
+    def test_seo_length_constraints(self) -> None:
         """Test that SEO outputs meet length constraints."""
         if not self._check_env():
-            self._add_result("marketing/seo_length", True, "Skipped (no OPENAI_API_KEY)")
+            self._add_result("seo/length", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
+        from src.main.agents.seo import SEOAgent
         from src.main.agents.state import MissionState
         
-        self._log(f"\n  🔥 Testing MarketingAgent SEO length constraints (REAL LLM)")
+        self._log(f"\n  🔥 Testing SEOAgent SEO length constraints (REAL LLM)")
         
         services = self._get_real_services()
         
@@ -345,7 +341,7 @@ class AgentOutputTests:
         )
         
         try:
-            agent = MarketingAgent("test-shop.myshopify.com", services)
+            agent = SEOAgent("test-shop.myshopify.com", services)
             result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
             title_len = len(result_state.seo_title or "")
@@ -356,129 +352,71 @@ class AgentOutputTests:
             
             if title_ok and desc_ok:
                 self._add_result(
-                    "marketing/seo_length_constraints",
+                    "seo/seo_length_constraints",
                     True,
                     f"Constraints met: title={title_len}/70, desc={desc_len}/160"
                 )
             else:
                 self._add_result(
-                    "marketing/seo_length_constraints",
+                    "seo/seo_length_constraints",
                     False,
                     f"Constraints violated: title={title_len}/70 ({title_ok}), desc={desc_len}/160 ({desc_ok})"
                 )
         except Exception as e:
-            self._add_result("marketing/seo_length_constraints", False, f"Error: {e}")
+            self._add_result("seo/seo_length_constraints", False, f"Error: {e}")
 
     # =========================================================================
-    # ComplianceAgent Tests (Real LLM)
+    # MarketingAgent Tests (Real LLM - Social Hooks Only)
     # =========================================================================
 
-    def test_compliance_fda_ftc_detection(self) -> None:
-        """Test that compliance agent detects FDA/FTC violations using REAL LLM."""
+    def test_marketing_social_hooks(self) -> None:
+        """Test that MarketingAgent generates social hooks using REAL LLM."""
         if not self._check_env():
-            self._add_result("compliance/fda_ftc", True, "Skipped (no OPENAI_API_KEY)")
+            self._add_result("marketing/social_hooks", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.compliance import ComplianceAgent
+        from src.main.agents.marketing import MarketingAgent
         from src.main.agents.state import MissionState
         
-        # Test with violation fixture
-        violation_fixtures = [f for f in self.fixtures.get("compliance_fixtures", [])
-                            if f.get("expect_flags")][:2]
+        self._log(f"\n  🔥 Testing MarketingAgent social hooks (REAL LLM)")
         
         services = self._get_real_services()
         
-        for fixture in violation_fixtures:
-            fixture_id = fixture.get("id", "unknown")
-            self._log(f"\n  🔥 Testing ComplianceAgent (REAL LLM) violation: {fixture_id}")
+        state = MissionState(
+            product_id="test-social-hooks",
+            shop_id="test-shop.myshopify.com",
+            plan_tier="Standard",
+            raw_input={
+                "title": "Kyoto Artisan Matcha Bowl",
+                "category": "Tableware",
+            },
+            target_locale="en",
+            draft_content="<p>Handcrafted matcha bowl by Kyoto artisans. Perfect for tea ceremony.</p>",
+            draft_title="Kyoto Artisan Matcha Bowl",
+        )
+        
+        try:
+            agent = MarketingAgent("test-shop.myshopify.com", services)
+            result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
             
-            state = MissionState(
-                product_id=f"test-{fixture_id}",
-                shop_id="test-shop.myshopify.com",
-                plan_tier="Standard",
-                raw_input={"title": "Test Product", "category": "Health"},
-                target_locale="en",
-                draft_content=fixture.get("draft_content", ""),
-            )
+            has_social_hooks = result_state.social_hooks is not None and len(result_state.social_hooks) > 0
             
-            try:
-                agent = ComplianceAgent("test-shop.myshopify.com", services)
-                result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
-                
-                has_flags = len(result_state.compliance_flags) > 0
-                
-                if has_flags:
-                    self._add_result(
-                        f"compliance/{fixture_id}/violation_detected",
-                        True,
-                        f"Detected {len(result_state.compliance_flags)} violations",
-                        {"flags": result_state.compliance_flags}
-                    )
-                else:
-                    self._add_result(
-                        f"compliance/{fixture_id}/violation_detected",
-                        False,
-                        "Expected violations but none detected"
-                    )
-            except Exception as e:
+            if has_social_hooks:
                 self._add_result(
-                    f"compliance/{fixture_id}/violation_detected",
-                    False,
-                    f"Error: {e}"
+                    "marketing/social_hooks",
+                    True,
+                    f"Generated {len(result_state.social_hooks)} social hooks",
+                    {"social_hooks": result_state.social_hooks}
                 )
-
-    def test_compliance_clean_content_passes(self) -> None:
-        """Test that clean content passes compliance using REAL LLM."""
-        if not self._check_env():
-            self._add_result("compliance/clean", True, "Skipped (no OPENAI_API_KEY)")
-            return
-        
-        from src.main.agents.compliance import ComplianceAgent
-        from src.main.agents.state import MissionState
-        
-        # Test with clean fixture
-        clean_fixtures = [f for f in self.fixtures.get("compliance_fixtures", [])
-                        if not f.get("expect_flags")][:1]
-        
-        services = self._get_real_services()
-        
-        for fixture in clean_fixtures:
-            fixture_id = fixture.get("id", "unknown")
-            self._log(f"\n  🔥 Testing ComplianceAgent (REAL LLM) clean: {fixture_id}")
-            
-            state = MissionState(
-                product_id=f"test-{fixture_id}",
-                shop_id="test-shop.myshopify.com",
-                plan_tier="Standard",
-                raw_input={"title": "Test Product", "category": "Tableware"},
-                target_locale="en",
-                draft_content=fixture.get("draft_content", ""),
-            )
-            
-            try:
-                agent = ComplianceAgent("test-shop.myshopify.com", services)
-                result_state = asyncio.get_event_loop().run_until_complete(agent.run(state))
-                
-                has_flags = len(result_state.compliance_flags) > 0
-                
-                if not has_flags:
-                    self._add_result(
-                        f"compliance/{fixture_id}/clean_passed",
-                        True,
-                        "Clean content passed compliance"
-                    )
-                else:
-                    self._add_result(
-                        f"compliance/{fixture_id}/clean_passed",
-                        False,
-                        f"Unexpected flags on clean content: {result_state.compliance_flags}"
-                    )
-            except Exception as e:
+            else:
                 self._add_result(
-                    f"compliance/{fixture_id}/clean_passed",
+                    "marketing/social_hooks",
                     False,
-                    f"Error: {e}"
+                    "No social hooks generated"
                 )
+                
+        except Exception as e:
+            self._add_result("marketing/social_hooks", False, f"Error: {e}")
 
     # =========================================================================
     # PriceScoutAgent Tests (Real SERP API)
@@ -560,21 +498,21 @@ class AgentOutputTests:
         self._log("\n📦 Agent Output Tests (REAL API CALLS)")
         self._log("=" * 50)
         self._log("⚠️  These tests make REAL API calls to OpenAI and SERP")
+        self._log("ℹ️  ComplianceAgent is currently disabled")
         
         # CopywriterAgent tests
         self._log("\n🖊️  CopywriterAgent Tests (REAL LLM)")
         self.test_copywriter_artisan_discovered_values()
         self.test_copywriter_generic_minimal_values()
         
-        # MarketingAgent tests
-        self._log("\n📊 MarketingAgent Tests (REAL LLM)")
-        self.test_marketing_seo_generation()
-        self.test_marketing_seo_length_constraints()
+        # SEOAgent tests
+        self._log("\n🔍 SEOAgent Tests (REAL LLM)")
+        self.test_seo_generation()
+        self.test_seo_length_constraints()
         
-        # ComplianceAgent tests
-        self._log("\n🛡️  ComplianceAgent Tests (REAL LLM)")
-        self.test_compliance_fda_ftc_detection()
-        self.test_compliance_clean_content_passes()
+        # MarketingAgent tests (social hooks only)
+        self._log("\n📊 MarketingAgent Tests (REAL LLM - Social Hooks)")
+        self.test_marketing_social_hooks()
         
         # PriceScoutAgent tests
         self._log("\n💰 PriceScoutAgent Tests (REAL SERP)")
