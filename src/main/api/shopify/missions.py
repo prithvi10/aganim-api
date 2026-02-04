@@ -274,6 +274,7 @@ async def stream_mission(
                 shop_id=shop,
                 services=services,
                 requested_agents=requested_agents,
+                mission_id=mission_id,  # Pass DB mission_id to ensure consistent logging
             )
             
             # Send initial heartbeat
@@ -502,6 +503,7 @@ async def run_step(
                 shop_id=shop,
                 services=services,
                 requested_agents=requested_agents,
+                mission_id=mission_id,  # Pass DB mission_id for consistent logging
             )
             # Execute single step and yield events
             async for updated_state in mission_control.execute_single_step(state):
@@ -627,6 +629,7 @@ async def continue_step(
         shop_id=shop,
         services=services,
         requested_agents=requested_agents,
+        mission_id=mission_id,  # Pass DB mission_id for consistent logging
     )
     
     state = mission_control.advance_to_next_step(state)
@@ -717,6 +720,7 @@ async def regenerate_step(
         shop_id=shop,
         services=services,
         requested_agents=requested_agents,
+        mission_id=mission_id,  # Pass DB mission_id for consistent logging
     )
     
     state = mission_control.prepare_regeneration(state, feedback=regen_req.feedback)
@@ -791,6 +795,7 @@ async def skip_step(
         shop_id=shop,
         services=services,
         requested_agents=requested_agents,
+        mission_id=mission_id,  # Pass DB mission_id for consistent logging
     )
     
     # Record which agent was skipped
