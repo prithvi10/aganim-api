@@ -642,6 +642,112 @@ async def continue_step(
     if state.status == "COMPLETED":
         from datetime import datetime, timezone
         mission.completed_at = datetime.now(timezone.utc)
+        
+        # === Save to Shopify on completion ===
+        from src.main.db.db_transactions import get_shop_access_token
+        from src.main.services.shopify_service import save_product_content_with_locale, save_product_metafields
+        import json
+        
+        access_token = get_shop_access_token(db, shop)
+        product_id = state.product_id
+        
+        # Save product title and description
+        if access_token and product_id and (state.draft_title or state.draft_content):
+            try:
+                # Get locales from state
+                raw_input = state.raw_input or {}
+                primary_locale = raw_input.get("primary_locale", "en")
+                target_locale = state.target_locale or "en"
+                
+                title_to_save = state.draft_title or raw_input.get("product_name", "")
+                desc_to_save = state.draft_content or ""
+                
+                if title_to_save and desc_to_save:
+                    await save_product_content_with_locale(
+                        shop_domain=shop,
+                        access_token=access_token,
+                        product_id=product_id,
+                        title=title_to_save,
+                        description=desc_to_save,
+                        target_locale=target_locale,
+                        shop_primary_locale=primary_locale,
+                    )
+                    logger.info(
+                        "[MissionStep] saved_to_shopify rid=%s shop=%s product_id=%s",
+                        rid, shop, product_id
+                    )
+            except Exception as e:
+                logger.error(
+                    "[MissionStep] shopify_save_failed rid=%s shop=%s err=%s",
+                    rid, shop, str(e)
+                )
+        
+        # Save agent data to metafields
+        if access_token and product_id:
+            metafields_to_save = []
+            
+            # Social hooks
+            if state.social_hooks:
+                hooks_data = []
+                for hook in state.social_hooks:
+                    if hasattr(hook, 'model_dump'):
+                        hooks_data.append(hook.model_dump())
+                    elif hasattr(hook, 'dict'):
+                        hooks_data.append(hook.dict())
+                    elif isinstance(hook, dict):
+                        hooks_data.append(hook)
+                    else:
+                        hooks_data.append(str(hook))
+                
+                metafields_to_save.append({
+                    "namespace": "crossborder_agent",
+                    "key": "social_hooks",
+                    "value": json.dumps(hooks_data),
+                    "type": "json",
+                })
+            
+            # Pricing analysis
+            if state.pricing_analysis:
+                metafields_to_save.append({
+                    "namespace": "crossborder_agent",
+                    "key": "pricing_analysis",
+                    "value": json.dumps(state.pricing_analysis),
+                    "type": "json",
+                })
+            
+            # SEO data
+            seo_data = {
+                "seo_title": state.seo_title,
+                "seo_description": state.seo_description,
+                "seo_alt_text": state.seo_alt_text,
+                "ctr_check": state.ctr_check,
+            }
+            if any(seo_data.values()):
+                metafields_to_save.append({
+                    "namespace": "crossborder_agent",
+                    "key": "seo_data",
+                    "value": json.dumps(seo_data),
+                    "type": "json",
+                })
+            
+            if metafields_to_save:
+                try:
+                    await save_product_metafields(
+                        shop_domain=shop,
+                        access_token=access_token,
+                        product_id=product_id,
+                        metafields=metafields_to_save,
+                    )
+                    logger.info(
+                        "[MissionStep] metafields_saved rid=%s shop=%s count=%d",
+                        rid, shop, len(metafields_to_save)
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "[MissionStep] metafields_save_failed rid=%s shop=%s err=%s",
+                        rid, shop, str(e)
+                    )
+        # === End Shopify save ===
     
     db.add(mission)
     db.commit()
@@ -813,6 +919,104 @@ async def skip_step(
     if state.status == "COMPLETED":
         from datetime import datetime, timezone
         mission.completed_at = datetime.now(timezone.utc)
+        
+        # === Save to Shopify on completion (if we have content) ===
+        from src.main.db.db_transactions import get_shop_access_token
+        from src.main.services.shopify_service import save_product_content_with_locale, save_product_metafields
+        import json
+        
+        access_token = get_shop_access_token(db, shop)
+        product_id = state.product_id
+        
+        # Only save if we have generated content (copywriter ran)
+        if access_token and product_id and state.draft_title and state.draft_content:
+            try:
+                raw_input = state.raw_input or {}
+                primary_locale = raw_input.get("primary_locale", "en")
+                target_locale = state.target_locale or "en"
+                
+                await save_product_content_with_locale(
+                    shop_domain=shop,
+                    access_token=access_token,
+                    product_id=product_id,
+                    title=state.draft_title,
+                    description=state.draft_content,
+                    target_locale=target_locale,
+                    shop_primary_locale=primary_locale,
+                )
+                logger.info(
+                    "[MissionStep] saved_to_shopify rid=%s shop=%s product_id=%s (via skip)",
+                    rid, shop, product_id
+                )
+            except Exception as e:
+                logger.error(
+                    "[MissionStep] shopify_save_failed rid=%s shop=%s err=%s (via skip)",
+                    rid, shop, str(e)
+                )
+        
+        # Save metafields if we have any data
+        if access_token and product_id:
+            metafields_to_save = []
+            
+            if state.social_hooks:
+                hooks_data = []
+                for hook in state.social_hooks:
+                    if hasattr(hook, 'model_dump'):
+                        hooks_data.append(hook.model_dump())
+                    elif hasattr(hook, 'dict'):
+                        hooks_data.append(hook.dict())
+                    elif isinstance(hook, dict):
+                        hooks_data.append(hook)
+                    else:
+                        hooks_data.append(str(hook))
+                
+                metafields_to_save.append({
+                    "namespace": "crossborder_agent",
+                    "key": "social_hooks",
+                    "value": json.dumps(hooks_data),
+                    "type": "json",
+                })
+            
+            if state.pricing_analysis:
+                metafields_to_save.append({
+                    "namespace": "crossborder_agent",
+                    "key": "pricing_analysis",
+                    "value": json.dumps(state.pricing_analysis),
+                    "type": "json",
+                })
+            
+            seo_data = {
+                "seo_title": state.seo_title,
+                "seo_description": state.seo_description,
+                "seo_alt_text": state.seo_alt_text,
+                "ctr_check": state.ctr_check,
+            }
+            if any(seo_data.values()):
+                metafields_to_save.append({
+                    "namespace": "crossborder_agent",
+                    "key": "seo_data",
+                    "value": json.dumps(seo_data),
+                    "type": "json",
+                })
+            
+            if metafields_to_save:
+                try:
+                    await save_product_metafields(
+                        shop_domain=shop,
+                        access_token=access_token,
+                        product_id=product_id,
+                        metafields=metafields_to_save,
+                    )
+                    logger.info(
+                        "[MissionStep] metafields_saved rid=%s shop=%s count=%d (via skip)",
+                        rid, shop, len(metafields_to_save)
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "[MissionStep] metafields_save_failed rid=%s shop=%s err=%s (via skip)",
+                        rid, shop, str(e)
+                    )
+        # === End Shopify save ===
     
     db.add(mission)
     db.commit()

@@ -205,13 +205,21 @@ def test_continue_step_completes_at_end(client, sample_mission):
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
     sample_mission.current_state["current_agent_index"] = 3  # Last agent
+    # Add draft content for Shopify save
+    sample_mission.current_state["draft_title"] = "Test Title"
+    sample_mission.current_state["draft_content"] = "<p>Test content</p>"
     
     mock_session = MagicMock()
     mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    response = client.post(f"/api/missions/{sample_mission.id}/continue")
+    # Mock Shopify save functions - patch where they're used (imported inside the function)
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="test-token"), \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save, \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_metafields:
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/continue")
     
     assert response.status_code == 200
     data = response.json()
@@ -393,13 +401,21 @@ def test_skip_step_completes_at_end(client, sample_mission):
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
     sample_mission.current_state["current_agent_index"] = 3
+    # Add some draft content
+    sample_mission.current_state["draft_title"] = "Test Title"
+    sample_mission.current_state["draft_content"] = "<p>Test</p>"
     
     mock_session = MagicMock()
     mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    response = client.post(f"/api/missions/{sample_mission.id}/skip")
+    # Mock Shopify save functions (may be called on completion) - patch where they're used
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="test-token"), \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/skip")
     
     assert response.status_code == 200
     data = response.json()
@@ -629,5 +645,243 @@ def test_regenerate_empty_body(client, sample_mission):
     
     # Should handle gracefully (empty body defaults to {})
     assert response.status_code in [200, 422]  # Either accept empty or validation error
+    
+    app.dependency_overrides.clear()
+
+
+# =============================================================================
+# Tests: Shopify Save Integration (verify correct parameters)
+# =============================================================================
+
+def test_continue_completion_saves_product_content(client, sample_mission):
+    """Test /continue saves product content to Shopify when mission completes."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state["status"] = "AWAITING_APPROVAL"
+    sample_mission.current_state["current_agent_index"] = 3  # Last agent
+    sample_mission.current_state["draft_title"] = "Optimized Title"
+    sample_mission.current_state["draft_content"] = "<p>Optimized description</p>"
+    sample_mission.current_state["product_id"] = "prod-123"
+    sample_mission.current_state["target_locale"] = "en"
+    sample_mission.current_state["raw_input"] = {
+        "primary_locale": "en",
+        "product_name": "Original Title"
+    }
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="test-access-token") as mock_get_token, \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/continue")
+    
+    assert response.status_code == 200
+    
+    # Verify save_product_content_with_locale was called with correct args
+    mock_save_content.assert_called_once()
+    call_kwargs = mock_save_content.call_args.kwargs
+    assert call_kwargs["shop_domain"] == "test-shop.myshopify.com"
+    assert call_kwargs["access_token"] == "test-access-token"
+    assert call_kwargs["product_id"] == "prod-123"
+    assert call_kwargs["title"] == "Optimized Title"
+    assert call_kwargs["description"] == "<p>Optimized description</p>"
+    assert call_kwargs["target_locale"] == "en"
+    
+    app.dependency_overrides.clear()
+
+
+def test_continue_completion_saves_metafields(client, sample_mission):
+    """Test /continue saves metafields when mission completes with agent data."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state["status"] = "AWAITING_APPROVAL"
+    sample_mission.current_state["current_agent_index"] = 3
+    sample_mission.current_state["product_id"] = "prod-456"
+    sample_mission.current_state["draft_title"] = "Title"
+    sample_mission.current_state["draft_content"] = "Content"
+    
+    # Add agent data that should be saved as metafields
+    sample_mission.current_state["social_hooks"] = [
+        {"type": "Story", "caption": "Test caption", "hashtags": ["#test"]}
+    ]
+    sample_mission.current_state["pricing_analysis"] = {
+        "recommended_price": 29.99,
+        "confidence": 0.85
+    }
+    sample_mission.current_state["seo_title"] = "SEO Optimized Title"
+    sample_mission.current_state["seo_description"] = "SEO meta description"
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="token"), \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/continue")
+    
+    assert response.status_code == 200
+    
+    # Verify save_product_metafields was called
+    mock_save_meta.assert_called_once()
+    call_kwargs = mock_save_meta.call_args.kwargs
+    
+    # Verify metafields structure
+    metafields = call_kwargs["metafields"]
+    assert len(metafields) == 3  # social_hooks, pricing_analysis, seo_data
+    
+    # Check namespaces and keys
+    metafield_keys = {mf["key"] for mf in metafields}
+    assert "social_hooks" in metafield_keys
+    assert "pricing_analysis" in metafield_keys
+    assert "seo_data" in metafield_keys
+    
+    # All should be crossborder_agent namespace
+    for mf in metafields:
+        assert mf["namespace"] == "crossborder_agent"
+        assert mf["type"] == "json"
+    
+    app.dependency_overrides.clear()
+
+
+def test_continue_completion_no_save_without_access_token(client, sample_mission):
+    """Test /continue skips Shopify save if no access token."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state["status"] = "AWAITING_APPROVAL"
+    sample_mission.current_state["current_agent_index"] = 3
+    sample_mission.current_state["draft_title"] = "Title"
+    sample_mission.current_state["draft_content"] = "Content"
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    # Return None for access token
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value=None), \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/continue")
+    
+    assert response.status_code == 200
+    
+    # Save functions should not be called without access token
+    mock_save_content.assert_not_called()
+    mock_save_meta.assert_not_called()
+    
+    app.dependency_overrides.clear()
+
+
+def test_continue_completion_no_save_without_content(client, sample_mission):
+    """Test /continue skips product content save if no draft content."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state["status"] = "AWAITING_APPROVAL"
+    sample_mission.current_state["current_agent_index"] = 3
+    sample_mission.current_state["product_id"] = "prod-123"
+    # No draft_title or draft_content
+    sample_mission.current_state["draft_title"] = None
+    sample_mission.current_state["draft_content"] = None
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="token"), \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/continue")
+    
+    assert response.status_code == 200
+    
+    # Product content save should not be called without content
+    mock_save_content.assert_not_called()
+    # But metafields save should also not be called since there's no data
+    mock_save_meta.assert_not_called()
+    
+    app.dependency_overrides.clear()
+
+
+def test_continue_completion_handles_shopify_error_gracefully(client, sample_mission):
+    """Test /continue handles Shopify save errors gracefully without failing."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state["status"] = "AWAITING_APPROVAL"
+    sample_mission.current_state["current_agent_index"] = 3
+    sample_mission.current_state["product_id"] = "prod-123"
+    sample_mission.current_state["draft_title"] = "Title"
+    sample_mission.current_state["draft_content"] = "Content"
+    sample_mission.current_state["raw_input"] = {"primary_locale": "en"}
+    sample_mission.current_state["target_locale"] = "en"
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    # Mock save to raise an exception
+    mock_save_content = AsyncMock(side_effect=Exception("Shopify API Error"))
+    
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="token"), \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", mock_save_content), \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/continue")
+    
+    # Request should still succeed even if Shopify save failed
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_complete"] is True
+    
+    app.dependency_overrides.clear()
+
+
+def test_skip_completion_saves_to_shopify(client, sample_mission):
+    """Test /skip saves to Shopify when mission completes via skip."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state["status"] = "AWAITING_APPROVAL"
+    sample_mission.current_state["current_agent_index"] = 3  # Last agent
+    sample_mission.current_state["product_id"] = "prod-789"
+    sample_mission.current_state["draft_title"] = "Title from earlier agent"
+    sample_mission.current_state["draft_content"] = "Content from earlier agent"
+    sample_mission.current_state["target_locale"] = "en"
+    sample_mission.current_state["raw_input"] = {"primary_locale": "en"}
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="token"), \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/skip")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_complete"] is True
+    
+    # Verify save was called
+    mock_save_content.assert_called_once()
+    call_kwargs = mock_save_content.call_args.kwargs
+    assert call_kwargs["product_id"] == "prod-789"
     
     app.dependency_overrides.clear()

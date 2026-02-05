@@ -250,3 +250,105 @@ async def save_product_content_with_locale(
             description=description,
             target_locale=target_locale
         )
+
+
+async def save_product_metafields(
+    shop_domain: str,
+    access_token: str,
+    product_id: int | str,
+    metafields: list[dict],
+) -> None:
+    """
+    Save custom metafields to a Shopify product.
+    
+    Used to store agent-generated data like social hooks, pricing analysis, SEO data.
+    
+    Args:
+        shop_domain: The shop domain (e.g., "myshop.myshopify.com")
+        access_token: Shopify access token
+        product_id: Product ID (numeric or GID)
+        metafields: List of dicts with:
+            - namespace: str (e.g., "crossborder_agent")
+            - key: str (e.g., "social_hooks", "pricing_analysis")
+            - value: str (JSON string)
+            - type: str (e.g., "json")
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json"
+    }
+    
+    # Ensure product_id is in GID format
+    if str(product_id).startswith("gid://"):
+        product_gid = str(product_id)
+    else:
+        product_gid = f"gid://shopify/Product/{product_id}"
+    
+    mutation = """
+    mutation productUpdate($input: ProductInput!) {
+      productUpdate(input: $input) {
+        product { 
+          id 
+          metafields(first: 10) {
+            edges {
+              node {
+                namespace
+                key
+              }
+            }
+          }
+        }
+        userErrors { field message }
+      }
+    }
+    """
+    
+    # Format metafields for GraphQL
+    metafield_inputs = [
+        {
+            "namespace": mf["namespace"],
+            "key": mf["key"],
+            "value": mf["value"],
+            "type": mf.get("type", "json"),
+        }
+        for mf in metafields
+    ]
+    
+    variables = {
+        "input": {
+            "id": product_gid,
+            "metafields": metafield_inputs
+        }
+    }
+    
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+            headers=headers,
+            json={"query": mutation, "variables": variables}
+        )
+        
+        if resp.status_code != 200:
+            logger.error(
+                f"❌ Metafield save failed for product {product_id} ({shop_domain}): "
+                f"{resp.status_code} {resp.text}"
+            )
+            raise Exception(f"Failed to save metafields: {resp.status_code}")
+        
+        data = resp.json()
+        
+        if "errors" in data:
+            logger.error(f"❌ GraphQL Syntax Error in metafield save: {data['errors']}")
+            raise Exception(f"GraphQL Syntax Error: {data['errors'][0].get('message')}")
+        
+        user_errors = data.get("data", {}).get("productUpdate", {}).get("userErrors", [])
+        if user_errors:
+            logger.error(f"❌ Metafield save user errors: {user_errors}")
+            raise Exception(f"Metafield error: {user_errors[0].get('message', 'Unknown error')}")
+        
+        saved_metafields = data.get("data", {}).get("productUpdate", {}).get("product", {}).get("metafields", {})
+        logger.info(
+            f"✅ Metafields saved for product {product_id} ({shop_domain}). "
+            f"Count: {len(metafield_inputs)}"
+        )
