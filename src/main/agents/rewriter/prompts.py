@@ -1,7 +1,7 @@
 """
-Copywriter Agent Prompts
+Rewriter Agent Prompts
 
-All prompts specific to the CopywriterAgent are centralized here
+All prompts specific to the RewriterAgent are centralized here
 for easy iteration and maintenance.
 """
 
@@ -15,7 +15,7 @@ from src.main.config.prompts import (
 )
 
 # Export for use by agent
-COPYWRITER_SYSTEM_PROMPT = BASE_SYSTEM_PROMPT
+REWRITER_SYSTEM_PROMPT = BASE_SYSTEM_PROMPT
 
 # User prompt template for product copy generation
 USER_PROMPT_TEMPLATE = """

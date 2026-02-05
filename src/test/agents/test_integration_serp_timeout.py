@@ -11,7 +11,8 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 from src.main.agents.orchestrator import MissionControl
-from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.rewriter import RewriterAgent
+CopywriterAgent = RewriterAgent  # Backward compat alias
 from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
@@ -290,7 +291,7 @@ class TestFullPipelineSerpTimeout:
         logs_text = "\n".join(all_logs)
         
         # All agents should have run (ComplianceAgent is disabled)
-        assert "Copywriter" in logs_text
+        assert "Rewriter" in logs_text
         assert "SEO" in logs_text
         assert "Marketing" in logs_text
         assert "PriceScout" in logs_text
@@ -308,7 +309,7 @@ class TestFullPipelineSerpTimeout:
         async for state in mission.execute(mission_state):
             final_state = state
         
-        # Should have draft content from Copywriter
+        # Should have draft content from Rewriter
         assert final_state.draft_content is not None or final_state.draft_title is not None
 
 

@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 from src.main.agents.orchestrator import MissionControl
 from src.main.agents.state import MissionState
-from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.rewriter import RewriterAgent
+CopywriterAgent = RewriterAgent  # Backward compat alias
 from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
@@ -120,7 +121,7 @@ async def test_free_tier_runs_all_agents(mock_services, product_data):
     logs_text = "\n".join(all_logs)
     
     # Verify all agents ran (ComplianceAgent is disabled)
-    assert "Running Copywriter" in logs_text, "Copywriter should run for Free tier"
+    assert "Running Rewriter" in logs_text, "Rewriter should run for Free tier"
     assert "Running SEO" in logs_text, "SEO should run for Free tier"
     assert "Running Marketing" in logs_text, "Marketing should run for Free tier"
     assert "Running PriceScout" in logs_text, "PriceScout should run for Free tier"
@@ -163,7 +164,7 @@ async def test_basic_tier_runs_all_agents(mock_services, product_data):
     
     logs_text = "\n".join(all_logs)
     
-    assert "Running Copywriter" in logs_text
+    assert "Running Rewriter" in logs_text
     assert "Running SEO" in logs_text
     assert "Running Marketing" in logs_text
     assert "Running PriceScout" in logs_text
@@ -202,7 +203,7 @@ async def test_standard_tier_runs_all_agents(mock_services, product_data):
     
     logs_text = "\n".join(all_logs)
     
-    assert "Running Copywriter" in logs_text
+    assert "Running Rewriter" in logs_text
     assert "Running SEO" in logs_text
     assert "Running Marketing" in logs_text
     assert "Running PriceScout" in logs_text
@@ -241,7 +242,7 @@ async def test_pro_tier_runs_all_agents(mock_services, product_data):
     
     logs_text = "\n".join(all_logs)
     
-    assert "Running Copywriter" in logs_text
+    assert "Running Rewriter" in logs_text
     assert "Running SEO" in logs_text
     assert "Running Marketing" in logs_text
     assert "Running PriceScout" in logs_text

@@ -1,10 +1,10 @@
 """
-CopywriterAgent - Generates optimized product copy using RAG and LLM.
+RewriterAgent - Generates optimized product copy using RAG and LLM.
 
 This agent handles the creative content generation for product descriptions
 and titles. It uses brand context from RAG to ensure brand-consistent messaging.
 
-NOTE: SEO generation is handled by MarketingAgent for all tiers.
+NOTE: SEO generation is handled by SEOAgent for all tiers.
 """
 
 from typing import List, Tuple
@@ -13,7 +13,7 @@ from ..base import BaseAgent
 from ..state import MissionState
 from ..context import AgentContext, AgentPlan, AgentAction
 from .prompts import (
-    COPYWRITER_SYSTEM_PROMPT,
+    REWRITER_SYSTEM_PROMPT,
     USER_PROMPT_TEMPLATE,
     TONE_PROMPTS,
     VALUE_DISCOVERY_PROMPT,
@@ -28,7 +28,7 @@ from src.main.logging.logger import get_logger
 logger = get_logger(__name__)
 
 
-class CopywriterAgent(BaseAgent):
+class RewriterAgent(BaseAgent):
     """
     Agent for generating optimized product copy.
     
@@ -40,10 +40,10 @@ class CopywriterAgent(BaseAgent):
     The agent transforms product data into compelling marketing copy
     that is localized and brand-consistent.
     
-    NOTE: SEO is handled by MarketingAgent for all tiers.
+    NOTE: SEO is handled by SEOAgent for all tiers.
     """
     
-    role_name = "Copywriter"
+    role_name = "Rewriter"
     default_tool = "llm.generate_text"
     
     # NOTE: requires_llm_reasoning = False (default)
@@ -79,13 +79,13 @@ class CopywriterAgent(BaseAgent):
                 
                 if brand_chunks:
                     logger.info(
-                        "[Copywriter] Loaded %d brand context chunks for shop=%s",
+                        "[Rewriter] Loaded %d brand context chunks for shop=%s",
                         len(brand_chunks),
                         self.shop_id,
                     )
             except Exception as e:
                 logger.warning(
-                    "[Copywriter] Failed to load brand context shop=%s err=%s",
+                    "[Rewriter] Failed to load brand context shop=%s err=%s",
                     self.shop_id,
                     e,
                 )
@@ -138,12 +138,12 @@ class CopywriterAgent(BaseAgent):
             state.draft_content = parsed.get("description", result)
             state.draft_title = parsed.get("title", "")
             state.discovered_values = parsed.get("discovered_values", [])
-            # NOTE: SEO is handled by MarketingAgent for all tiers
+            # NOTE: SEO is handled by SEOAgent for all tiers
             
             state.status = "DRAFT_READY"
             
             logger.info(
-                "[Copywriter] Generated content for product=%s shop=%s",
+                "[Rewriter] Generated content for product=%s shop=%s",
                 state.product_id,
                 self.shop_id,
             )
@@ -191,7 +191,7 @@ class CopywriterAgent(BaseAgent):
     ) -> str:
         """Build system prompt with brand context and locale persona."""
         # Start with base system prompt
-        prompt_parts = [COPYWRITER_SYSTEM_PROMPT]
+        prompt_parts = [REWRITER_SYSTEM_PROMPT]
         
         # Add value discovery prompt
         prompt_parts.append(VALUE_DISCOVERY_PROMPT)
@@ -263,7 +263,11 @@ class CopywriterAgent(BaseAgent):
             if isinstance(parsed, dict):
                 return parsed
         except Exception as e:
-            logger.warning("[Copywriter] Failed to parse LLM result: %s", e)
+            logger.warning("[Rewriter] Failed to parse LLM result: %s", e)
         
         # Fallback: return raw content as description
         return {"description": result}
+
+
+# Backward compatibility alias
+CopywriterAgent = RewriterAgent

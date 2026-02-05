@@ -7,7 +7,8 @@ Tests RAG perception, LLM generation, prompt building, and feedback.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.rewriter import RewriterAgent
+CopywriterAgent = RewriterAgent  # Backward compat alias
 from src.main.agents.state import MissionState
 from src.main.agents.context import AgentContext, AgentPlan
 

@@ -1,18 +1,21 @@
 """
-Copywriter Agent Pydantic Schemas
+Rewriter Agent Pydantic Schemas
 
-Structured output models for the CopywriterAgent.
+Structured output models for the RewriterAgent.
 """
 
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
-class CopywriterOutput(BaseModel):
+class RewriterOutput(BaseModel):
     """
-    Structured output for CopywriterAgent.
+    Structured output for RewriterAgent.
     
-    Contains all the content pieces generated for a product.
+    Contains the content pieces generated for a product.
+    
+    Note: SEO fields (seo_title, seo_description, seo_alt_text) are handled
+    by the dedicated SEOAgent and are not part of the Rewriter output.
     """
     
     title: str = Field(
@@ -20,18 +23,6 @@ class CopywriterOutput(BaseModel):
     )
     description: str = Field(
         description="Optimized product description (HTML)"
-    )
-    seo_title: Optional[str] = Field(
-        default=None,
-        description="SEO-optimized meta title (<= 70 characters)"
-    )
-    seo_description: Optional[str] = Field(
-        default=None,
-        description="SEO-optimized meta description (<= 160 characters)"
-    )
-    seo_alt_text: Optional[str] = Field(
-        default=None,
-        description="Descriptive alt-tag for main product image"
     )
     discovered_values: List[Dict[str, Any]] = Field(
         default_factory=list,
@@ -61,9 +52,9 @@ class ValueDiscovery(BaseModel):
     )
 
 
-class CopywritingPlan(BaseModel):
+class RewritingPlan(BaseModel):
     """
-    Plan created by advanced CopywriterAgent during LLM reasoning.
+    Plan created by advanced RewriterAgent during LLM reasoning.
     
     Only used when requires_llm_reasoning = True (Pro tier).
     """
