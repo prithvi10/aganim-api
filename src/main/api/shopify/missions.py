@@ -38,6 +38,47 @@ async def missions_preflight():
     return Response(status_code=204)
 
 
+@router.get("/api/missions")
+async def list_missions(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+    limit: int = Query(default=10, le=50),
+):
+    """
+    List missions for a shop, ordered by created_at descending.
+    
+    Returns recent missions with their status and basic info.
+    The 'latest' field indicates the most recent mission ID.
+    """
+    from src.main.db.db_models import Mission
+    
+    rid = _rid(request)
+    logger.info("[MissionList] rid=%s shop=%s limit=%d", rid, shop, limit)
+    
+    missions = db.query(Mission).filter(
+        Mission.shop_id == shop
+    ).order_by(Mission.created_at.desc()).limit(limit).all()
+    
+    return {
+        "missions": [
+            {
+                "id": m.id,
+                "product_id": m.product_id,
+                "status": m.status,
+                "plan_tier": m.plan_tier,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "completed_at": m.completed_at.isoformat() if m.completed_at else None,
+                "error_message": m.error_message,
+                # Extract product name from current_state if available
+                "product_name": (m.current_state or {}).get("raw_input", {}).get("product_name"),
+            }
+            for m in missions
+        ],
+        "latest": missions[0].id if missions else None,
+    }
+
+
 @router.post("/api/missions")
 async def create_mission(
     request: Request,
@@ -429,6 +470,7 @@ async def get_mission_status(
         error_message=mission.error_message,
         created_at=mission.created_at.isoformat() if mission.created_at else None,
         completed_at=mission.completed_at.isoformat() if mission.completed_at else None,
+        current_state=state,  # Include full state for resuming missions
     )
 
 
