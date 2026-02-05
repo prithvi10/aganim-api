@@ -10,11 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.main.agents.orchestrator import MissionControl, run_mission, AGENT_MAP
 from src.main.agents.state import MissionState
-from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.rewriter import RewriterAgent
 from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
 from src.main.services import ServiceRegistry
+
+# Backward compat alias
+CopywriterAgent = RewriterAgent
 
 
 # =============================================================================
@@ -138,18 +141,20 @@ def test_build_workflow_unknown_tier_defaults(mock_services):
 
 def test_agent_map_contains_expected_agents():
     """Test that AGENT_MAP contains expected agent classes (no Compliance)."""
-    assert "CopywriterAgent" in AGENT_MAP
+    assert "RewriterAgent" in AGENT_MAP
+    assert "CopywriterAgent" in AGENT_MAP  # Backward compat alias
     assert "SEOAgent" in AGENT_MAP
     assert "MarketingAgent" in AGENT_MAP
     assert "PriceScoutAgent" in AGENT_MAP
     # ComplianceAgent should NOT be in AGENT_MAP (disabled)
-    # Note: depending on implementation, it may be commented out or removed
-    assert len(AGENT_MAP) == 4
+    # Note: 5 entries because CopywriterAgent is aliased to RewriterAgent
+    assert len(AGENT_MAP) == 5
 
 
 def test_agent_map_maps_to_correct_classes():
     """Test that AGENT_MAP maps names to correct agent classes."""
-    assert AGENT_MAP["CopywriterAgent"] == CopywriterAgent
+    assert AGENT_MAP["RewriterAgent"] == RewriterAgent
+    assert AGENT_MAP["CopywriterAgent"] == RewriterAgent  # Alias
     assert AGENT_MAP["SEOAgent"] == SEOAgent
     assert AGENT_MAP["MarketingAgent"] == MarketingAgent
     assert AGENT_MAP["PriceScoutAgent"] == PriceScoutAgent
@@ -686,7 +691,7 @@ async def test_execute_single_step_runs_first_agent(mock_services, mission_state
         # Should have run first agent only
         final_state = states[-1]
         assert final_state.status == "AWAITING_APPROVAL"
-        assert "Copywriter" in "\n".join(final_state.logs)
+        assert "Rewriter" in "\n".join(final_state.logs)
 
 
 @pytest.mark.asyncio
@@ -695,7 +700,7 @@ async def test_execute_single_step_sets_workflow_agents(mock_services, mission_s
     async def mock_pass_through(self, state):
         return state
     
-    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+    with patch.object(RewriterAgent, 'run', mock_pass_through):
         mission = MissionControl(
             plan_tier="Standard",
             shop_id="test-shop.myshopify.com",
@@ -708,7 +713,7 @@ async def test_execute_single_step_sets_workflow_agents(mock_services, mission_s
         
         final_state = states[-1]
         assert len(final_state.workflow_agents) == 4
-        assert "CopywriterAgent" in final_state.workflow_agents
+        assert "RewriterAgent" in final_state.workflow_agents
 
 
 @pytest.mark.asyncio
@@ -719,7 +724,7 @@ async def test_execute_single_step_stores_agent_output(mock_services, mission_st
         state.draft_title = "Generated title"
         return state
     
-    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+    with patch.object(RewriterAgent, 'run', mock_pass_through):
         mission = MissionControl(
             plan_tier="Standard",
             shop_id="test-shop.myshopify.com",
@@ -731,8 +736,8 @@ async def test_execute_single_step_stores_agent_output(mock_services, mission_st
             states.append(state)
         
         final_state = states[-1]
-        assert "CopywriterAgent" in final_state.agent_outputs
-        assert final_state.agent_outputs["CopywriterAgent"]["draft_content"] == "Generated content"
+        assert "RewriterAgent" in final_state.agent_outputs
+        assert final_state.agent_outputs["RewriterAgent"]["draft_content"] == "Generated content"
 
 
 @pytest.mark.asyncio

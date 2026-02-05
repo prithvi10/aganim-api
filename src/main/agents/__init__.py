@@ -16,7 +16,7 @@ Directory Structure:
     ├── memory.py            # AgentMemoryService (shared)
     ├── orchestrator.py      # MissionControl (shared)
     │
-    ├── copywriter/          # Copywriter Agent (title + description)
+    ├── rewriter/            # Rewriter Agent (title + description)
     │   ├── agent.py
     │   ├── prompts.py
     │   └── schemas.py
@@ -52,7 +52,11 @@ from .memory import AgentMemoryService
 from .orchestrator import MissionControl, run_mission
 
 # Agent submodules (each is self-contained)
-from .copywriter import CopywriterAgent, CopywriterOutput
+from .rewriter import RewriterAgent, RewriterOutput
+# Backward compatibility aliases
+CopywriterAgent = RewriterAgent
+CopywriterOutput = RewriterOutput
+
 from .seo import SEOAgent, SEOInsights, CTRCheck, SerpCompetitor, SEOOutput
 from .marketing import (
     MarketingAgent,
@@ -74,8 +78,10 @@ __all__ = [
     "MissionControl",
     "run_mission",
     # Agents
-    "CopywriterAgent",
-    "CopywriterOutput",
+    "RewriterAgent",
+    "RewriterOutput",
+    "CopywriterAgent",  # Backward compat alias
+    "CopywriterOutput",  # Backward compat alias
     "SEOAgent",
     "SEOOutput",
     "SEOInsights",

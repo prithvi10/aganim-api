@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.main.agents.orchestrator import MissionControl, run_mission
 from src.main.agents.state import MissionState
-from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.rewriter import RewriterAgent
+CopywriterAgent = RewriterAgent  # Backward compat alias
 from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent

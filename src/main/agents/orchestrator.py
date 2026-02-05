@@ -16,7 +16,7 @@ from datetime import datetime
 
 from .base import BaseAgent
 from .state import MissionState
-from .copywriter import CopywriterAgent
+from .rewriter import RewriterAgent
 from .seo import SEOAgent
 from .marketing import MarketingAgent
 from .price_scout import PriceScoutAgent
@@ -30,7 +30,8 @@ logger = get_logger(__name__)
 # Agent name to class mapping for ad-hoc agent selection
 # NOTE: ComplianceAgent is disabled until further notice
 AGENT_MAP = {
-    "CopywriterAgent": CopywriterAgent,
+    "RewriterAgent": RewriterAgent,
+    "CopywriterAgent": RewriterAgent,  # Backward compat alias
     "SEOAgent": SEOAgent,
     "MarketingAgent": MarketingAgent,
     "PriceScoutAgent": PriceScoutAgent,
@@ -64,13 +65,13 @@ class MissionControl:
 
     # Agent workflow configurations per plan tier
     # NOTE: All tiers get full agent pipeline - usage limited by product count, not features
-    # Workflow: Copywriter → SEO → Marketing → PriceScout
+    # Workflow: Rewriter → SEO → Marketing → PriceScout
     # ComplianceAgent is DISABLED until further notice
     WORKFLOWS = {
-        "Free": [CopywriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
-        "Basic": [CopywriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
-        "Standard": [CopywriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
-        "Pro": [CopywriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Free": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Basic": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Standard": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Pro": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
     }
     
     # Maximum adversarial iterations for compliance (DISABLED)
@@ -92,7 +93,7 @@ class MissionControl:
             shop_id: Shop domain identifier
             services: ServiceRegistry with injected services
             requested_agents: Optional list of agent names for ad-hoc execution
-                              e.g., ["CopywriterAgent"], ["MarketingAgent", "ComplianceAgent"]
+                              e.g., ["RewriterAgent"], ["MarketingAgent", "PriceScoutAgent"]
                               If provided, only these agents will run instead of the tier workflow.
             mission_id: Optional mission ID from the database. If not provided, a new one is generated.
         """
@@ -136,7 +137,7 @@ class MissionControl:
             )
         
         # Default: tier-based workflow
-        return self.WORKFLOWS.get(self.plan_tier, [CopywriterAgent])
+        return self.WORKFLOWS.get(self.plan_tier, [RewriterAgent])
     
     def _record_fair_use_costs(self, state: MissionState) -> None:
         """
@@ -306,9 +307,9 @@ class MissionControl:
         state: MissionState,
     ) -> MissionState:
         """
-        Handle adversarial loop: Compliance rejection → Copywriter regeneration.
+        Handle adversarial loop: Compliance rejection → Rewriter regeneration.
         
-        For Pro tier, if compliance issues are found, we ask the Copywriter
+        For Pro tier, if compliance issues are found, we ask the Rewriter
         to regenerate with the compliance feedback, then re-check.
         
         Args:
@@ -326,7 +327,7 @@ class MissionControl:
                 f"regenerating for compliance ({len(state.compliance_flags)} flags)"
             )
             
-            # Add compliance feedback to raw_input for copywriter
+            # Add compliance feedback to raw_input for rewriter
             compliance_feedback = "\n".join([
                 f"- {flag}" for flag in state.compliance_flags
             ])
@@ -336,9 +337,9 @@ class MissionControl:
             # Clear compliance flags for re-check
             state.compliance_flags = []
             
-            # Re-run copywriter with compliance context
-            copywriter = CopywriterAgent(self.shop_id, services=self.services)
-            state = await copywriter.run(state)
+            # Re-run rewriter with compliance context
+            rewriter = RewriterAgent(self.shop_id, services=self.services)
+            state = await rewriter.run(state)
             
             if state.status == "ERROR":
                 break
@@ -479,7 +480,7 @@ class MissionControl:
         Returns:
             Dict containing the agent's specific output fields
         """
-        if agent_name == "CopywriterAgent":
+        if agent_name in ("RewriterAgent", "CopywriterAgent"):
             return {
                 "draft_content": state.draft_content,
                 "draft_title": state.draft_title,
@@ -629,7 +630,7 @@ async def run_mission(
         db: Optional database session
         target_locale: Target language/locale
         requested_agents: Optional list of agent names for ad-hoc execution
-                          e.g., ["CopywriterAgent"], ["MarketingAgent"]
+                          e.g., ["RewriterAgent"], ["MarketingAgent"]
     
     Yields:
         MissionState updates as agents complete

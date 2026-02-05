@@ -72,7 +72,7 @@ def sample_mission():
         "current_agent_index": 0,
         "skipped_agents": [],
         "agent_outputs": {},
-        "workflow_agents": ["CopywriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"],
+        "workflow_agents": ["RewriterAgent", "MarketingAgent", "PriceScoutAgent", "ComplianceAgent"],
         "logs": [],
     }
     return mission
@@ -101,7 +101,7 @@ def test_get_mission_status_returns_structured_response(client, sample_mission):
     assert data["status"] == "PENDING"
     assert data["current_agent_index"] == 0
     assert data["total_agents"] == 4
-    assert "CopywriterAgent" in data["workflow_agents"]
+    assert "RewriterAgent" in data["workflow_agents"]
     
     app.dependency_overrides.clear()
 
@@ -127,7 +127,7 @@ def test_get_mission_status_includes_agent_outputs(client, sample_mission):
     from src.main.db.database import get_db
     
     sample_mission.current_state["agent_outputs"] = {
-        "CopywriterAgent": {"draft_title": "Test Title"}
+        "RewriterAgent": {"draft_title": "Test Title"}
     }
     sample_mission.current_state["current_agent_index"] = 1
     
@@ -142,8 +142,8 @@ def test_get_mission_status_includes_agent_outputs(client, sample_mission):
     data = response.json()
     
     assert data["current_agent_index"] == 1
-    assert "CopywriterAgent" in data["agent_outputs"]
-    assert data["agent_outputs"]["CopywriterAgent"]["draft_title"] == "Test Title"
+    assert "RewriterAgent" in data["agent_outputs"]
+    assert data["agent_outputs"]["RewriterAgent"]["draft_title"] == "Test Title"
     
     app.dependency_overrides.clear()
 
@@ -363,9 +363,9 @@ def test_skip_step_records_agent(client, sample_mission):
     data = response.json()
     
     assert data["status"] == "success"
-    assert data["skipped_agent"] == "CopywriterAgent"
+    assert data["skipped_agent"] == "RewriterAgent"
     assert data["current_agent_index"] == 1
-    assert "CopywriterAgent" in data["skipped_agents"]
+    assert "RewriterAgent" in data["skipped_agents"]
     
     app.dependency_overrides.clear()
 

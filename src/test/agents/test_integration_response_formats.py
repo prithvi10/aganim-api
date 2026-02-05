@@ -9,7 +9,8 @@ import pytest
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-from src.main.agents.copywriter import CopywriterAgent
+from src.main.agents.rewriter import RewriterAgent
+CopywriterAgent = RewriterAgent  # Backward compat alias
 from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
