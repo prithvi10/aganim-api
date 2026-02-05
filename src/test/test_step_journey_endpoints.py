@@ -79,6 +79,209 @@ def sample_mission():
 
 
 # =============================================================================
+# Tests: GET /api/missions (list missions)
+# =============================================================================
+
+def test_list_missions_returns_missions_for_shop(client, sample_mission):
+    """Test that /api/missions returns missions for the authenticated shop."""
+    from src.main.db.database import get_db
+    from datetime import datetime, timezone
+    
+    # Create a second mission
+    second_mission = MagicMock()
+    second_mission.id = "test-mission-456"
+    second_mission.shop_id = "test-shop.myshopify.com"
+    second_mission.product_id = "prod-456"
+    second_mission.status = "COMPLETED"
+    second_mission.plan_tier = "Standard"
+    second_mission.error_message = None
+    second_mission.created_at = datetime.now(timezone.utc)
+    second_mission.completed_at = datetime.now(timezone.utc)
+    second_mission.current_state = {
+        "raw_input": {"product_name": "Test Product 2"}
+    }
+    
+    sample_mission.current_state = {
+        "raw_input": {"product_name": "Test Product 1"}
+    }
+    
+    mock_session = MagicMock()
+    mock_query = MagicMock()
+    mock_query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+        sample_mission, second_mission
+    ]
+    mock_session.query.return_value = mock_query
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get("/api/missions?limit=10")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert "missions" in data
+    assert len(data["missions"]) == 2
+    assert data["latest"] == sample_mission.id
+    
+    # Check first mission
+    assert data["missions"][0]["id"] == sample_mission.id
+    assert data["missions"][0]["product_name"] == "Test Product 1"
+    
+    app.dependency_overrides.clear()
+
+
+def test_list_missions_empty(client):
+    """Test that /api/missions returns empty list for shop with no missions."""
+    from src.main.db.database import get_db
+    
+    mock_session = MagicMock()
+    mock_query = MagicMock()
+    mock_query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+    mock_session.query.return_value = mock_query
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get("/api/missions")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["missions"] == []
+    assert data["latest"] is None
+    
+    app.dependency_overrides.clear()
+
+
+def test_list_missions_respects_limit_parameter(client, sample_mission):
+    """Test that /api/missions respects the limit query parameter."""
+    from src.main.db.database import get_db
+    
+    mock_session = MagicMock()
+    mock_query = MagicMock()
+    mock_query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [sample_mission]
+    mock_session.query.return_value = mock_query
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get("/api/missions?limit=5")
+    
+    assert response.status_code == 200
+    # Verify limit was called with correct value
+    mock_query.filter.return_value.order_by.return_value.limit.assert_called_with(5)
+    
+    app.dependency_overrides.clear()
+
+
+def test_list_missions_includes_all_status_fields(client):
+    """Test that /api/missions returns all expected fields for each mission."""
+    from src.main.db.database import get_db
+    from datetime import datetime, timezone
+    
+    mission = MagicMock()
+    mission.id = "mission-with-all-fields"
+    mission.product_id = "prod-123"
+    mission.status = "COMPLETED"
+    mission.plan_tier = "Pro"
+    mission.error_message = None
+    mission.created_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+    mission.completed_at = datetime(2024, 1, 15, 10, 35, 0, tzinfo=timezone.utc)
+    mission.current_state = {
+        "raw_input": {"product_name": "Premium Widget"}
+    }
+    
+    mock_session = MagicMock()
+    mock_query = MagicMock()
+    mock_query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [mission]
+    mock_session.query.return_value = mock_query
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get("/api/missions")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    m = data["missions"][0]
+    assert m["id"] == "mission-with-all-fields"
+    assert m["product_id"] == "prod-123"
+    assert m["status"] == "COMPLETED"
+    assert m["plan_tier"] == "Pro"
+    assert m["product_name"] == "Premium Widget"
+    assert m["created_at"] is not None
+    assert m["completed_at"] is not None
+    assert m["error_message"] is None
+    
+    app.dependency_overrides.clear()
+
+
+def test_list_missions_handles_null_product_name(client):
+    """Test that /api/missions handles missions without product_name in state."""
+    from src.main.db.database import get_db
+    from datetime import datetime, timezone
+    
+    mission = MagicMock()
+    mission.id = "mission-no-name"
+    mission.product_id = "prod-456"
+    mission.status = "ERROR"
+    mission.plan_tier = "Basic"
+    mission.error_message = "Something went wrong"
+    mission.created_at = datetime.now(timezone.utc)
+    mission.completed_at = None
+    mission.current_state = {}  # No raw_input
+    
+    mock_session = MagicMock()
+    mock_query = MagicMock()
+    mock_query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [mission]
+    mock_session.query.return_value = mock_query
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get("/api/missions")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    m = data["missions"][0]
+    assert m["product_name"] is None
+    assert m["error_message"] == "Something went wrong"
+    
+    app.dependency_overrides.clear()
+
+
+def test_list_missions_handles_null_current_state(client):
+    """Test that /api/missions handles missions with null current_state."""
+    from src.main.db.database import get_db
+    from datetime import datetime, timezone
+    
+    mission = MagicMock()
+    mission.id = "mission-null-state"
+    mission.product_id = "prod-789"
+    mission.status = "PENDING"
+    mission.plan_tier = "Standard"
+    mission.error_message = None
+    mission.created_at = datetime.now(timezone.utc)
+    mission.completed_at = None
+    mission.current_state = None  # Null state
+    
+    mock_session = MagicMock()
+    mock_query = MagicMock()
+    mock_query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [mission]
+    mock_session.query.return_value = mock_query
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get("/api/missions")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    m = data["missions"][0]
+    assert m["product_name"] is None
+    
+    app.dependency_overrides.clear()
+
+
+# =============================================================================
 # Tests: GET /api/missions/{mission_id}/status
 # =============================================================================
 
@@ -102,6 +305,89 @@ def test_get_mission_status_returns_structured_response(client, sample_mission):
     assert data["current_agent_index"] == 0
     assert data["total_agents"] == 4
     assert "RewriterAgent" in data["workflow_agents"]
+    
+    app.dependency_overrides.clear()
+
+
+def test_get_mission_status_includes_current_state(client, sample_mission):
+    """Test that /status includes current_state for mission resumption."""
+    from src.main.db.database import get_db
+    
+    # Add more fields to current_state for a completed mission
+    sample_mission.status = "COMPLETED"
+    sample_mission.current_state = {
+        "product_id": "prod-123",
+        "shop_id": "test-shop.myshopify.com",
+        "plan_tier": "Standard",
+        "status": "COMPLETED",
+        "draft_title": "Optimized Product Title",
+        "draft_content": "<p>Optimized description</p>",
+        "seo_title": "SEO Title",
+        "seo_description": "SEO meta description",
+        "social_hooks": [{"type": "instagram", "caption": "Check this out!"}],
+        "pricing_analysis": {"recommended_price": 29.99, "confidence": 0.85},
+        "workflow_agents": ["RewriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"],
+        "current_agent_index": 4,
+        "agent_outputs": {
+            "RewriterAgent": {"draft_title": "Optimized Product Title"},
+            "SEOAgent": {"seo_title": "SEO Title"},
+        },
+    }
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get(f"/api/missions/{sample_mission.id}/status")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Verify current_state is included
+    assert "current_state" in data
+    assert data["current_state"] is not None
+    
+    # Verify key fields are in current_state
+    state = data["current_state"]
+    assert state["draft_title"] == "Optimized Product Title"
+    assert state["draft_content"] == "<p>Optimized description</p>"
+    assert state["seo_title"] == "SEO Title"
+    assert len(state["social_hooks"]) == 1
+    assert state["pricing_analysis"]["recommended_price"] == 29.99
+    
+    app.dependency_overrides.clear()
+
+
+def test_get_mission_status_current_state_for_in_progress(client, sample_mission):
+    """Test that /status returns current_state for in-progress missions."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state = {
+        "product_id": "prod-123",
+        "status": "AWAITING_APPROVAL",
+        "current_agent_index": 1,
+        "workflow_agents": ["RewriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"],
+        "agent_outputs": {
+            "RewriterAgent": {"draft_title": "New Title", "draft_content": "New content"}
+        },
+    }
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get(f"/api/missions/{sample_mission.id}/status")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["status"] == "AWAITING_APPROVAL"
+    assert data["current_agent_index"] == 1
+    assert "current_state" in data
+    assert data["current_state"]["agent_outputs"]["RewriterAgent"]["draft_title"] == "New Title"
     
     app.dependency_overrides.clear()
 

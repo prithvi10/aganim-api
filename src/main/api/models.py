@@ -156,3 +156,4 @@ class MissionStatusResponse(BaseModel):
     error_message: str | None = None
     created_at: str | None = None
     completed_at: str | None = None
+    current_state: dict[str, Any] | None = None
