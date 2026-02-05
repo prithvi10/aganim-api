@@ -37,6 +37,7 @@ from .onboarding_service import onboard_user
 from .shopify_service import (
     create_shopify_translation,
     save_product_content_with_locale,
+    save_product_metafields,
 )
 from .brand_ingest_service import (
     ingest_brand_context,
@@ -72,6 +73,7 @@ __all__ = [
     # Shopify
     "create_shopify_translation",
     "save_product_content_with_locale",
+    "save_product_metafields",
     # Brand ingest
     "ingest_brand_context",
     "scrape_urls",
