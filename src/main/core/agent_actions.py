@@ -537,7 +537,7 @@ def seo_optimize_action(
 
 
 # ------------------------------------------------------------------------------
-# Price Scout Action (synchronous wrapper for PriceScoutAgent)
+# Price Scout Action (synchronous wrapper with Smart Price Discovery)
 # ------------------------------------------------------------------------------
 def price_scout_action(
     product_data: dict[str, Any],
@@ -546,14 +546,23 @@ def price_scout_action(
     shop_domain: str | None = None,
 ) -> dict[str, Any]:
     """
-    Synchronous price scouting action.
+    Synchronous Smart Price Discovery action.
     
-    Fetches competitor pricing via SERP and analyzes using LLM.
+    Flow (2 LLM calls):
+    1. Fetch 20 competitors from Google Shopping API
+    2. Semantic filter to keep only true comparables (LLM call 1)
+    3. Calculate min/max/avg/median from filtered list
+    4. Generate pricing recommendation (LLM call 2)
+    
     Does NOT store in database - returns results directly.
     Usage is tracked if db/shop_domain are provided.
     """
+    import json
+    import statistics
+    
     rid = str((context or {}).get("request_id") or "-")
     product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
+    description = str(product_data.get("description") or product_data.get("japanese_description") or "").strip()
     category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
     
     logger.info("[AgentAction] rid=%s action=price_scout product=%s", rid, product_title[:50])
@@ -562,19 +571,20 @@ def price_scout_action(
         # Create services with db/shop for usage tracking
         services = ServiceRegistry.create_default(db=db, shop_domain=shop_domain)
         
-        # Step 1: Fetch competitor prices via SERP
-        competitors = []
+        # === STEP 1: Fetch competitors from Google Shopping API ===
+        raw_competitors = []
         try:
-            competitors = await services.serp.get_competitor_prices(
+            raw_competitors = await services.serp.get_competitor_prices(
                 product_name=product_title,
                 category=category,
+                num_results=20,  # Request 20 for good sample pool
             )
-            logger.info("[AgentAction] rid=%s Found %d competitors", rid, len(competitors))
+            logger.info("[AgentAction] rid=%s Fetched %d shopping results", rid, len(raw_competitors))
         except Exception as e:
-            logger.warning("[AgentAction] rid=%s SERP price fetch failed: %s", rid, e)
+            logger.warning("[AgentAction] rid=%s Shopping fetch failed: %s", rid, e)
         
         # If no competitors, return empty analysis
-        if not competitors:
+        if not raw_competitors:
             from src.main.agents.price_scout.prompts import NO_COMPETITORS_MESSAGE
             return {
                 "competitor_avg_price": 0.0,
@@ -583,27 +593,126 @@ def price_scout_action(
                 "confidence": 0.0,
                 "reasoning": NO_COMPETITORS_MESSAGE,
                 "competitor_count": 0,
-                "competitors": [],
+                "valid_competitors": [],
+                "market_analysis": None,
+                "filter_reasoning": "No competitors fetched from Google Shopping.",
+                "raw_competitor_count": 0,
             }
         
-        # Step 2: Analyze pricing using LLM
-        from src.main.agents.price_scout.prompts import SYSTEM_PROMPT, ANALYSIS_PROMPT_TEMPLATE
-        from src.main.agents.price_scout.schemas import PricingAnalysis
+        # === STEP 2: Semantic Filtering (LLM Call 1) ===
+        from src.main.agents.price_scout.prompts import (
+            FILTER_COMPETITORS_PROMPT,
+            SYSTEM_PROMPT,
+            ANALYSIS_WITH_METRICS_PROMPT,
+        )
+        from src.main.agents.price_scout.schemas import (
+            FilteredCompetitorsResponse,
+            PricingAnalysis,
+        )
         
+        # Format competitors for filtering prompt
+        competitors_for_prompt = [
+            {
+                "index": i,
+                "title": c.get("title", ""),
+                "price": c.get("price", ""),
+                "extracted_price": c.get("extracted_price"),
+                "source": c.get("source", ""),
+                "link": c.get("link", ""),
+            }
+            for i, c in enumerate(raw_competitors)
+        ]
+        
+        filter_prompt = FILTER_COMPETITORS_PROMPT.format(
+            product_title=product_title,
+            product_description=description or product_title,
+            category=category,
+            competitors_json=json.dumps(competitors_for_prompt, indent=2),
+        )
+        
+        valid_competitors = raw_competitors
+        filter_reasoning = "Filtering skipped."
+        
+        try:
+            filter_response = await services.llm.generate_structured(
+                prompt=filter_prompt,
+                response_format=FilteredCompetitorsResponse,
+                system_prompt="You are a Market Analyst specializing in e-commerce product comparison.",
+                model="gpt-4o-mini",
+                temperature=0.0,
+            )
+            
+            valid_indices = set(filter_response.valid_competitor_indices)
+            valid_competitors = [
+                c for i, c in enumerate(raw_competitors)
+                if i in valid_indices
+            ]
+            filter_reasoning = filter_response.reasoning
+            
+            logger.info(
+                "[AgentAction] rid=%s Semantic filter: %d/%d kept",
+                rid,
+                len(valid_competitors),
+                len(raw_competitors),
+            )
+            
+        except Exception as e:
+            logger.warning("[AgentAction] rid=%s Semantic filtering failed: %s", rid, e)
+            # Fallback: use top 5 raw results
+            valid_competitors = raw_competitors[:5]
+            filter_reasoning = f"Filtering failed, using top results: {str(e)}"
+        
+        # If all filtered out, use top raw results
+        if not valid_competitors:
+            valid_competitors = raw_competitors[:5]
+            filter_reasoning += " (Fallback: using top raw results)"
+        
+        # === STEP 3: Calculate Market Metrics (No LLM) ===
+        prices = [
+            c["extracted_price"]
+            for c in valid_competitors
+            if c.get("extracted_price") and c["extracted_price"] > 0
+        ]
+        
+        if prices:
+            market_analysis = {
+                "min_price": min(prices),
+                "max_price": max(prices),
+                "average_price": sum(prices) / len(prices),
+                "median_price": statistics.median(prices),
+                "competitor_count": len(prices),
+            }
+        else:
+            market_analysis = {
+                "min_price": 0.0,
+                "max_price": 0.0,
+                "average_price": 0.0,
+                "median_price": 0.0,
+                "competitor_count": 0,
+            }
+        
+        # === STEP 4: Generate Pricing Recommendation (LLM Call 2) ===
         competitor_text = "\n".join([
-            f"- {c.get('title', 'Unknown')}: {c.get('snippet', '')}"
-            for c in competitors[:5]
+            f"- {c.get('title', 'Unknown')} ({c.get('source', 'Unknown')}): {c.get('price', 'N/A')}"
+            for c in valid_competitors[:10]
         ])
         
-        prompt = ANALYSIS_PROMPT_TEMPLATE.format(
+        analysis_prompt = ANALYSIS_WITH_METRICS_PROMPT.format(
             product_name=product_title,
+            product_description=description or product_title,
             category=category,
+            competitor_count=market_analysis.get("competitor_count", 0),
+            min_price=market_analysis.get("min_price", 0),
+            max_price=market_analysis.get("max_price", 0),
+            average_price=market_analysis.get("average_price", 0),
+            median_price=market_analysis.get("median_price", 0),
             competitor_text=competitor_text,
+            filter_reasoning=filter_reasoning,
         )
         
         try:
             analysis = await services.llm.generate_structured(
-                prompt=prompt,
+                prompt=analysis_prompt,
                 response_format=PricingAnalysis,
                 system_prompt=SYSTEM_PROMPT,
                 model="gpt-4o-mini",
@@ -611,25 +720,37 @@ def price_scout_action(
             )
             
             analysis_dict = analysis.model_dump()
-            analysis_dict["competitor_count"] = len(competitors)
-            analysis_dict["competitors"] = competitors[:5]
-            return analysis_dict
+            analysis_dict["competitor_avg_price"] = market_analysis.get("average_price", 0)
+            analysis_dict["competitor_count"] = market_analysis.get("competitor_count", 0)
             
         except Exception as e:
             logger.error("[AgentAction] rid=%s Price analysis LLM failed: %s", rid, e)
-            return {
-                "competitor_avg_price": 0.0,
-                "recommended_price": 0.0,
-                "price_position": "unknown",
-                "confidence": 0.0,
-                "reasoning": f"Analysis failed: {str(e)}",
-                "competitor_count": len(competitors),
-                "competitors": competitors[:5],
+            analysis_dict = {
+                "competitor_avg_price": market_analysis.get("average_price", 0),
+                "recommended_price": market_analysis.get("median_price", 0),
+                "price_position": "competitive",
+                "confidence": 0.3,
+                "reasoning": f"Analysis failed, using median as fallback: {str(e)}",
+                "competitor_count": market_analysis.get("competitor_count", 0),
             }
+        
+        # Return enriched result
+        return {
+            **analysis_dict,
+            "valid_competitors": valid_competitors,
+            "market_analysis": market_analysis,
+            "filter_reasoning": filter_reasoning,
+            "raw_competitor_count": len(raw_competitors),
+        }
     
     result = _run_async(_run_price_scout())
     
-    logger.info("[AgentAction] rid=%s action=price_scout done", rid)
+    logger.info(
+        "[AgentAction] rid=%s action=price_scout done filtered=%d/%d",
+        rid,
+        len(result.get("valid_competitors", [])),
+        result.get("raw_competitor_count", 0),
+    )
     
     return {
         "text": f"Recommended price: ${result.get('recommended_price', 0):.2f}" if result.get('recommended_price') else "",
