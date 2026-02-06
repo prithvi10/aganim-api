@@ -14,7 +14,7 @@ CopywriterAgent = RewriterAgent  # Backward compat alias
 from src.main.agents.seo import SEOAgent
 from src.main.agents.marketing import MarketingAgent
 from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.price_scout.schemas import PricingAnalysis
+from src.main.agents.price_scout.schemas import PricingAnalysis, FilteredCompetitorsResponse
 from src.main.agents.state import MissionState
 
 
@@ -280,22 +280,35 @@ class TestPriceScoutResponseFormats:
 
     @pytest.mark.asyncio
     async def test_handles_valid_pricing_analysis(self, mock_services, mission_state):
-        """Test handling of valid PricingAnalysis structured output."""
+        """Test handling of valid PricingAnalysis structured output with Smart Price Discovery."""
         mock_services.serp.get_competitor_prices = AsyncMock(return_value=[
-            {"title": "Comp 1", "price": 50.0}
+            {"title": "Comp 1", "price": "$50.00", "extracted_price": 50.0, "source": "Amazon", "link": "https://amazon.com/item"}
         ])
-        mock_services.llm.generate_structured = AsyncMock(return_value=PricingAnalysis(
-            competitor_avg_price=50.0,
-            recommended_price=55.0,
-            price_position="competitive",
-            confidence=0.85,
-            reasoning="Based on competitors",
-        ))
+        
+        # Mock both filter and analysis responses
+        def mock_generate_structured(prompt, response_format, **kwargs):
+            if response_format == FilteredCompetitorsResponse:
+                return FilteredCompetitorsResponse(
+                    valid_competitor_indices=[0],
+                    reasoning="Competitor is relevant.",
+                )
+            elif response_format == PricingAnalysis:
+                return PricingAnalysis(
+                    competitor_avg_price=50.0,
+                    recommended_price=55.0,
+                    price_position="competitive",
+                    confidence=0.85,
+                    reasoning="Based on competitors",
+                )
+            return MagicMock()
+        
+        mock_services.llm.generate_structured = AsyncMock(side_effect=mock_generate_structured)
         
         agent = PriceScoutAgent("test-shop.myshopify.com", mock_services)
         result = await agent.run(mission_state)
         
-        assert result.pricing_analysis["competitor_avg_price"] == 50.0
+        # competitor_avg_price now comes from calculated market_analysis, not LLM
+        assert result.pricing_analysis["market_analysis"]["average_price"] == 50.0
         assert result.pricing_analysis["recommended_price"] == 55.0
         assert result.pricing_analysis["price_position"] == "competitive"
 
@@ -315,15 +328,26 @@ class TestPriceScoutResponseFormats:
     async def test_pricing_analysis_confidence_range(self, mock_services, mission_state):
         """Test that confidence is within valid range."""
         mock_services.serp.get_competitor_prices = AsyncMock(return_value=[
-            {"title": "Comp 1", "price": 50.0}
+            {"title": "Comp 1", "price": "$50.00", "extracted_price": 50.0, "source": "Amazon", "link": "https://amazon.com/item"}
         ])
-        mock_services.llm.generate_structured = AsyncMock(return_value=PricingAnalysis(
-            competitor_avg_price=50.0,
-            recommended_price=55.0,
-            price_position="competitive",
-            confidence=0.85,
-            reasoning="Test",
-        ))
+        
+        def mock_generate_structured(prompt, response_format, **kwargs):
+            if response_format == FilteredCompetitorsResponse:
+                return FilteredCompetitorsResponse(
+                    valid_competitor_indices=[0],
+                    reasoning="Competitor is relevant.",
+                )
+            elif response_format == PricingAnalysis:
+                return PricingAnalysis(
+                    competitor_avg_price=50.0,
+                    recommended_price=55.0,
+                    price_position="competitive",
+                    confidence=0.85,
+                    reasoning="Test",
+                )
+            return MagicMock()
+        
+        mock_services.llm.generate_structured = AsyncMock(side_effect=mock_generate_structured)
         
         agent = PriceScoutAgent("test-shop.myshopify.com", mock_services)
         result = await agent.run(mission_state)

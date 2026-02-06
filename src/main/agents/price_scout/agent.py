@@ -1,17 +1,25 @@
 """
-PriceScoutAgent - Analyzes competitor pricing using SERP data.
+PriceScoutAgent - Smart Price Discovery using Google Shopping and Semantic Filtering.
 
-This agent gathers competitor pricing information from search results
-and provides pricing recommendations using structured LLM analysis.
+This agent gathers competitor pricing from Google Shopping API, filters irrelevant
+items using LLM semantic analysis, and provides data-driven pricing recommendations.
 """
 
-from typing import List, Tuple
+import json
+import statistics
+from typing import List, Tuple, Dict, Any
 
 from ..base import BaseAgent
 from ..state import MissionState
 from ..context import AgentContext, AgentPlan, AgentAction
-from .prompts import SYSTEM_PROMPT, ANALYSIS_PROMPT_TEMPLATE, NO_COMPETITORS_MESSAGE
-from .schemas import PricingAnalysis
+from .prompts import (
+    SYSTEM_PROMPT,
+    ANALYSIS_PROMPT_TEMPLATE,
+    NO_COMPETITORS_MESSAGE,
+    FILTER_COMPETITORS_PROMPT,
+    ANALYSIS_WITH_METRICS_PROMPT,
+)
+from .schemas import PricingAnalysis, FilteredCompetitorsResponse, MarketAnalysis
 from src.main.logging.logger import get_logger
 
 logger = get_logger(__name__)
@@ -19,15 +27,16 @@ logger = get_logger(__name__)
 
 class PriceScoutAgent(BaseAgent):
     """
-    Agent for competitor pricing analysis.
+    Agent for Smart Price Discovery.
     
-    Uses:
-    - SERP API for competitor data (Perception) - NOT an LLM call
-    - Deterministic planning (Reasoning)
-    - Structured LLM for analysis (Action) - SINGLE LLM CALL
+    Architecture (2 LLM calls):
+    1. PERCEPTION: Fetch 20 competitors from Google Shopping API (no LLM)
+    2. FILTERING: Semantic filter to keep only true comparables (LLM call 1)
+    3. METRICS: Calculate min/max/avg/median from filtered list (no LLM)
+    4. ANALYSIS: Generate pricing recommendation (LLM call 2)
     
     This agent helps merchants understand their competitive position
-    and make data-driven pricing decisions.
+    and make data-driven pricing decisions with curated market data.
     """
     
     role_name = "PriceScout"
@@ -36,7 +45,7 @@ class PriceScoutAgent(BaseAgent):
     # NOTE: requires_llm_reasoning = False (default)
 
     # -------------------------------------------------------------------------
-    # PERCEPTION: Gather competitor data via SERP (NO LLM call)
+    # PERCEPTION: Gather competitor data via Google Shopping (NO LLM call)
     # -------------------------------------------------------------------------
     async def _perceive_domain(
         self,
@@ -44,51 +53,52 @@ class PriceScoutAgent(BaseAgent):
         context: AgentContext,
     ) -> AgentContext:
         """
-        Gather competitor pricing data via SERP API.
+        Gather competitor pricing data via Google Shopping API.
         
-        This uses the SerpService to fetch competitor product listings,
-        which are then analyzed in the Action phase.
+        Fetches 20 results with structured price data.
+        Items without valid extracted_price are filtered at service level.
         """
         product_name = context.get_product_title()
         category = context.get_category()
         
         try:
-            # SERP API call (not LLM)
+            # Google Shopping API call (not LLM) - requests 20 results
             competitors = await self.services.serp.get_competitor_prices(
                 product_name=product_name,
                 category=category,
+                num_results=20,
             )
             
-            context.external_data["competitors"] = competitors
-            context.external_data["competitor_count"] = len(competitors)
+            context.external_data["raw_competitors"] = competitors
+            context.external_data["raw_competitor_count"] = len(competitors)
             
             if competitors:
                 logger.info(
-                    "[PriceScout] Found %d competitors for product=%s",
+                    "[PriceScout] Fetched %d shopping results for product=%s",
                     len(competitors),
                     product_name[:30],
                 )
             else:
                 logger.info(
-                    "[PriceScout] No competitors found for product=%s",
+                    "[PriceScout] No shopping results found for product=%s",
                     product_name[:30],
                 )
                 
         except Exception as e:
             logger.warning(
-                "[PriceScout] Failed to fetch competitors shop=%s err=%s",
+                "[PriceScout] Failed to fetch shopping results shop=%s err=%s",
                 self.shop_id,
                 e,
             )
-            context.external_data["competitors"] = []
-            context.external_data["competitor_count"] = 0
+            context.external_data["raw_competitors"] = []
+            context.external_data["raw_competitor_count"] = 0
         
         return context
 
     # NOTE: Uses default deterministic plan - NO LLM call in reasoning
 
     # -------------------------------------------------------------------------
-    # ACTION: Analyze pricing (SINGLE LLM CALL)
+    # ACTION: Filter + Analyze (2 LLM CALLS)
     # -------------------------------------------------------------------------
     async def _act_domain(
         self,
@@ -97,18 +107,21 @@ class PriceScoutAgent(BaseAgent):
         plan: AgentPlan,
     ) -> Tuple[List[AgentAction], MissionState]:
         """
-        Analyze competitor pricing using structured LLM output.
-        
-        This is the ONLY LLM call for this agent.
+        Smart Price Discovery flow:
+        1. Get raw competitors from perception
+        2. Semantic filtering (LLM call 1)
+        3. Calculate market metrics from filtered list
+        4. Generate pricing recommendation (LLM call 2)
         """
         actions = []
         
-        competitors = context.external_data.get("competitors", [])
+        raw_competitors = context.external_data.get("raw_competitors", [])
         product_name = context.get_product_title()
         category = context.get_category()
+        description = context.get_product_description() or product_name
         
         # If no competitor data, return early with empty analysis
-        if not competitors:
+        if not raw_competitors:
             state.pricing_analysis = {
                 "competitor_avg_price": 0.0,
                 "recommended_price": 0.0,
@@ -116,6 +129,9 @@ class PriceScoutAgent(BaseAgent):
                 "confidence": 0.0,
                 "reasoning": NO_COMPETITORS_MESSAGE,
                 "competitor_count": 0,
+                "valid_competitors": [],
+                "market_analysis": None,
+                "filter_reasoning": "No competitors fetched from Google Shopping.",
             }
             actions.append(
                 AgentAction.success_action(
@@ -126,60 +142,250 @@ class PriceScoutAgent(BaseAgent):
             )
             return actions, state
         
-        # Build analysis prompt
-        prompt = self._build_analysis_prompt(product_name, category, competitors)
+        # === STEP 1: Semantic Filtering (LLM Call 1) ===
+        valid_competitors, filter_reasoning = await self._filter_competitors(
+            product_title=product_name,
+            product_description=description,
+            category=category,
+            raw_competitors=raw_competitors,
+        )
         
-        try:
-            # === THE ONLY LLM CALL FOR THIS AGENT ===
-            analysis = await self.services.llm.generate_structured(
-                prompt=prompt,
-                response_format=PricingAnalysis,
-                system_prompt=SYSTEM_PROMPT,
-                model="gpt-4o-mini",  # Cheaper model for structured extraction
-                temperature=0.0,  # Deterministic
+        actions.append(
+            AgentAction.success_action(
+                tool_name="llm.generate_structured",
+                output={
+                    "step": "semantic_filtering",
+                    "raw_count": len(raw_competitors),
+                    "filtered_count": len(valid_competitors),
+                },
+                input_params={"response_format": "FilteredCompetitorsResponse"},
             )
-            
-            # Convert Pydantic model to dict for state storage
-            analysis_dict = analysis.model_dump()
-            analysis_dict["competitor_count"] = len(competitors)
-            
-            actions.append(
-                AgentAction.success_action(
-                    tool_name="llm.generate_structured",
-                    output=analysis_dict,
-                    input_params={"response_format": "PricingAnalysis"},
-                )
-            )
-            
-            state.pricing_analysis = analysis_dict
-            
-            logger.info(
-                "[PriceScout] Analysis complete product=%s position=%s confidence=%.2f",
+        )
+        
+        # If all competitors were filtered out, use raw data with low confidence
+        if not valid_competitors:
+            logger.warning(
+                "[PriceScout] All competitors filtered out, using raw data for product=%s",
                 product_name[:30],
-                analysis.price_position,
-                analysis.confidence,
             )
-            
-        except Exception as e:
-            actions.append(
-                AgentAction.failure_action(
-                    tool_name="llm.generate_structured",
-                    error=str(e),
-                    input_params={"response_format": "PricingAnalysis"},
-                )
+            valid_competitors = raw_competitors[:5]  # Use top 5 raw results
+            filter_reasoning += " (Fallback: using top raw results as filter was too aggressive)"
+        
+        # === STEP 2: Calculate Market Metrics (No LLM) ===
+        market_analysis = self._calculate_market_metrics(valid_competitors)
+        
+        # === STEP 3: Generate Pricing Recommendation (LLM Call 2) ===
+        analysis_dict = await self._generate_pricing_recommendation(
+            product_name=product_name,
+            product_description=description,
+            category=category,
+            valid_competitors=valid_competitors,
+            market_analysis=market_analysis,
+            filter_reasoning=filter_reasoning,
+        )
+        
+        actions.append(
+            AgentAction.success_action(
+                tool_name="llm.generate_structured",
+                output={
+                    "step": "pricing_analysis",
+                    "recommended_price": analysis_dict.get("recommended_price"),
+                    "price_position": analysis_dict.get("price_position"),
+                    "confidence": analysis_dict.get("confidence"),
+                },
+                input_params={"response_format": "PricingAnalysis"},
             )
-            logger.error(
-                "[PriceScout] Analysis failed product=%s err=%s",
-                product_name[:30],
-                e,
-            )
-            # Don't fail the whole mission, just log
-            state.pricing_analysis = None
+        )
+        
+        # Store enriched analysis in state
+        state.pricing_analysis = {
+            **analysis_dict,
+            "valid_competitors": valid_competitors,
+            "market_analysis": market_analysis,
+            "filter_reasoning": filter_reasoning,
+            "raw_competitor_count": len(raw_competitors),
+        }
+        
+        logger.info(
+            "[PriceScout] Analysis complete product=%s filtered=%d/%d position=%s confidence=%.2f",
+            product_name[:30],
+            len(valid_competitors),
+            len(raw_competitors),
+            analysis_dict.get("price_position"),
+            analysis_dict.get("confidence", 0),
+        )
         
         return actions, state
 
     # -------------------------------------------------------------------------
-    # Helper methods
+    # Semantic Filtering (LLM Call 1)
+    # -------------------------------------------------------------------------
+    async def _filter_competitors(
+        self,
+        product_title: str,
+        product_description: str,
+        category: str,
+        raw_competitors: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], str]:
+        """
+        Use LLM to filter irrelevant competitors based on semantic analysis.
+        
+        Returns:
+            Tuple of (valid_competitors list, reasoning string)
+        """
+        # Format competitors as JSON for the prompt
+        competitors_for_prompt = [
+            {
+                "index": i,
+                "title": c.get("title", ""),
+                "price": c.get("price", ""),
+                "extracted_price": c.get("extracted_price"),
+                "source": c.get("source", ""),
+                "link": c.get("link", ""),
+            }
+            for i, c in enumerate(raw_competitors)
+        ]
+        
+        prompt = FILTER_COMPETITORS_PROMPT.format(
+            product_title=product_title,
+            product_description=product_description,
+            category=category,
+            competitors_json=json.dumps(competitors_for_prompt, indent=2),
+        )
+        
+        try:
+            filter_response = await self.services.llm.generate_structured(
+                prompt=prompt,
+                response_format=FilteredCompetitorsResponse,
+                system_prompt="You are a Market Analyst specializing in e-commerce product comparison.",
+                model="gpt-4o-mini",  # Fast and cheap for filtering
+                temperature=0.0,  # Deterministic
+            )
+            
+            valid_indices = set(filter_response.valid_competitor_indices)
+            valid_competitors = [
+                c for i, c in enumerate(raw_competitors)
+                if i in valid_indices
+            ]
+            
+            logger.info(
+                "[PriceScout] Semantic filter: %d/%d competitors kept",
+                len(valid_competitors),
+                len(raw_competitors),
+            )
+            
+            return valid_competitors, filter_response.reasoning
+            
+        except Exception as e:
+            logger.warning(
+                "[PriceScout] Semantic filtering failed, using all competitors: %s",
+                e,
+            )
+            # Fallback: return all competitors if filtering fails
+            return raw_competitors, f"Filtering skipped due to error: {str(e)}"
+
+    # -------------------------------------------------------------------------
+    # Market Metrics Calculation (No LLM)
+    # -------------------------------------------------------------------------
+    def _calculate_market_metrics(
+        self,
+        competitors: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        Calculate market statistics from filtered competitors.
+        
+        Returns dict with min_price, max_price, average_price, median_price, competitor_count.
+        """
+        prices = [
+            c["extracted_price"]
+            for c in competitors
+            if c.get("extracted_price") and c["extracted_price"] > 0
+        ]
+        
+        if not prices:
+            return {
+                "min_price": 0.0,
+                "max_price": 0.0,
+                "average_price": 0.0,
+                "median_price": 0.0,
+                "competitor_count": 0,
+            }
+        
+        return {
+            "min_price": min(prices),
+            "max_price": max(prices),
+            "average_price": sum(prices) / len(prices),
+            "median_price": statistics.median(prices),
+            "competitor_count": len(prices),
+        }
+
+    # -------------------------------------------------------------------------
+    # Pricing Recommendation (LLM Call 2)
+    # -------------------------------------------------------------------------
+    async def _generate_pricing_recommendation(
+        self,
+        product_name: str,
+        product_description: str,
+        category: str,
+        valid_competitors: List[Dict[str, Any]],
+        market_analysis: Dict[str, Any],
+        filter_reasoning: str,
+    ) -> Dict[str, Any]:
+        """
+        Generate final pricing recommendation using filtered data and metrics.
+        """
+        # Format filtered competitors for prompt
+        competitor_text = "\n".join([
+            f"- {c.get('title', 'Unknown')} ({c.get('source', 'Unknown')}): {c.get('price', 'N/A')}"
+            for c in valid_competitors[:10]  # Show top 10
+        ])
+        
+        prompt = ANALYSIS_WITH_METRICS_PROMPT.format(
+            product_name=product_name,
+            product_description=product_description,
+            category=category,
+            competitor_count=market_analysis.get("competitor_count", 0),
+            min_price=market_analysis.get("min_price", 0),
+            max_price=market_analysis.get("max_price", 0),
+            average_price=market_analysis.get("average_price", 0),
+            median_price=market_analysis.get("median_price", 0),
+            competitor_text=competitor_text,
+            filter_reasoning=filter_reasoning,
+        )
+        
+        try:
+            analysis = await self.services.llm.generate_structured(
+                prompt=prompt,
+                response_format=PricingAnalysis,
+                system_prompt=SYSTEM_PROMPT,
+                model="gpt-4o-mini",
+                temperature=0.0,
+            )
+            
+            analysis_dict = analysis.model_dump()
+            # Use average from our calculated metrics
+            analysis_dict["competitor_avg_price"] = market_analysis.get("average_price", 0)
+            analysis_dict["competitor_count"] = market_analysis.get("competitor_count", 0)
+            
+            return analysis_dict
+            
+        except Exception as e:
+            logger.error(
+                "[PriceScout] Pricing recommendation failed: %s",
+                e,
+            )
+            # Return fallback with calculated metrics
+            return {
+                "competitor_avg_price": market_analysis.get("average_price", 0),
+                "recommended_price": market_analysis.get("median_price", 0),
+                "price_position": "competitive",
+                "confidence": 0.3,
+                "reasoning": f"Analysis failed, using median price as fallback. Error: {str(e)}",
+                "competitor_count": market_analysis.get("competitor_count", 0),
+            }
+
+    # -------------------------------------------------------------------------
+    # Legacy Helper (backward compatibility)
     # -------------------------------------------------------------------------
     def _build_analysis_prompt(
         self,
@@ -187,10 +393,10 @@ class PriceScoutAgent(BaseAgent):
         category: str,
         competitors: List[dict],
     ) -> str:
-        """Build prompt for pricing analysis."""
+        """Build legacy prompt for pricing analysis (backward compatibility)."""
         competitor_text = "\n".join([
-            f"- {c.get('title', 'Unknown')}: {c.get('snippet', '')}"
-            for c in competitors[:5]  # Limit to top 5
+            f"- {c.get('title', 'Unknown')}: {c.get('snippet', c.get('price', ''))}"
+            for c in competitors[:5]
         ])
         
         return ANALYSIS_PROMPT_TEMPLATE.format(
