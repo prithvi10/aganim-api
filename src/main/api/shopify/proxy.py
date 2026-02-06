@@ -305,6 +305,66 @@ async def admin_ext_agent(
 
 
 # =============================================================================
+# API Agent Endpoint (Alias for /apps/cross-border/agent)
+# =============================================================================
+
+@router.options("/api/agent")
+async def api_agent_preflight():
+    """CORS preflight for /api/agent endpoint."""
+    return Response(status_code=204)
+
+
+@router.post("/api/agent")
+async def api_agent(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Action-based endpoint for ad-hoc agent calls from the frontend.
+    This is an alias for /apps/cross-border/agent with simpler path.
+    
+    Used by SEO, Marketing, and Pricing pages for synchronous agent actions.
+    """
+    rid = _rid(request)
+    try:
+        body = await request.json()
+    except Exception:
+        logger.info("[Agent] invalid_json rid=%s", rid)
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    try:
+        agent_req = AgentRequest(**body)
+    except ValidationError as e:
+        logger.info("[Agent] invalid_payload rid=%s errors=%s", rid, e.errors())
+        raise HTTPException(status_code=422, detail=e.errors())
+
+    # Agents are also gated by monthly rewrite limits.
+    auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
+
+    logger.info("[Agent] start rid=%s shop=%s action=%s", rid, shop, agent_req.action)
+
+    # Propagate request id into action context for end-to-end traceability.
+    try:
+        if agent_req.context is None:
+            agent_req.context = {}
+        if isinstance(agent_req.context, dict) and "request_id" not in agent_req.context:
+            agent_req.context["request_id"] = rid
+    except Exception:
+        pass
+
+    result = run_agent_action(
+        action=agent_req.action,
+        context=agent_req.context or {},
+        product_data=agent_req.product_data or {},
+        db=db,
+        shop_domain=shop,
+    )
+
+    logger.info("[Agent] done rid=%s shop=%s action=%s", rid, shop, agent_req.action)
+    return {"status": "success", "data": {"text": result.get("text", ""), "metadata": result.get("metadata", {})}}
+
+
+# =============================================================================
 # Deprecated Direct Endpoint
 # =============================================================================
 
