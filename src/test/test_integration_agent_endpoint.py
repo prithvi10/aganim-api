@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from src.main.api.main import app
 from src.main.db.database import Base, get_db
 from src.main.db.db_models import Plan, User, Shop
+from src.main.security.security import verify_shopify_session
 
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -28,13 +29,20 @@ def override_get_db():
         db.close()
 
 
+async def override_verify_session():
+    """Mock verify_shopify_session to return dev shop domain."""
+    return "dev-shop.myshopify.com"
+
+
 @pytest.fixture(scope="module")
 def client():
     Base.metadata.create_all(bind=engine)
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[verify_shopify_session] = override_verify_session
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
     del app.dependency_overrides[get_db]
+    del app.dependency_overrides[verify_shopify_session]
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
@@ -83,18 +91,16 @@ def _auth_headers():
 def test_agent_endpoint_social_hook_happy_path(client, seed_shop, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
-        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
-    ):
-        resp = client.post(
-            "/apps/cross-border/agent",
-            headers=_auth_headers(),
-            json={
-                "action": "social_hook_architect",
-                "context": {"focus": "Instagram Reels"},
-                "product_data": {"title": "Test Product", "category": "General"},
-            },
-        )
+    # Auth is handled by dependency override in fixture
+    resp = client.post(
+        "/apps/cross-border/agent",
+        headers=_auth_headers(),
+        json={
+            "action": "social_hook_architect",
+            "context": {"focus": "Instagram Reels"},
+            "product_data": {"title": "Test Product", "category": "General"},
+        },
+    )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -105,18 +111,16 @@ def test_agent_endpoint_social_hook_happy_path(client, seed_shop, monkeypatch):
 
 
 def test_agent_endpoint_seasonal_happy_path(client, seed_shop):
-    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
-        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
-    ):
-        resp = client.post(
-            "/apps/cross-border/agent",
-            headers=_auth_headers(),
-            json={
-                "action": "seasonal_campaign_agent",
-                "context": {"current_date": "2026-04-10T00:00:00Z"},
-                "product_data": {"category": "Skincare"},
-            },
-        )
+    # Auth is handled by dependency override in fixture
+    resp = client.post(
+        "/apps/cross-border/agent",
+        headers=_auth_headers(),
+        json={
+            "action": "seasonal_campaign_agent",
+            "context": {"current_date": "2026-04-10T00:00:00Z"},
+            "product_data": {"category": "Skincare"},
+        },
+    )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -127,18 +131,16 @@ def test_agent_endpoint_seasonal_happy_path(client, seed_shop):
 
 def test_agent_endpoint_seasonal_caption_happy_path(client, seed_shop, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
-        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
-    ):
-        resp = client.post(
-            "/apps/cross-border/agent",
-            headers=_auth_headers(),
-            json={
-                "action": "seasonal_campaign_caption",
-                "context": {"current_date": "2026-04-10T00:00:00Z"},
-                "product_data": {"title": "Test Product", "category": "General", "tags": ["gift"]},
-            },
-        )
+    # Auth is handled by dependency override in fixture
+    resp = client.post(
+        "/apps/cross-border/agent",
+        headers=_auth_headers(),
+        json={
+            "action": "seasonal_campaign_caption",
+            "context": {"current_date": "2026-04-10T00:00:00Z"},
+            "product_data": {"title": "Test Product", "category": "General", "tags": ["gift"]},
+        },
+    )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -147,56 +149,61 @@ def test_agent_endpoint_seasonal_caption_happy_path(client, seed_shop, monkeypat
 
 
 def test_agent_endpoint_value_discovery_happy_path(client, seed_shop):
-    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
-        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
-    ):
-        resp = client.post(
-            "/apps/cross-border/agent",
-            headers=_auth_headers(),
-            json={
-                "action": "value_discovery",
-                "context": {},
-                "product_data": {"title": "Kyoto bowl", "description": "Made in Kyoto."},
-            },
-        )
+    # Auth is handled by dependency override in fixture
+    resp = client.post(
+        "/apps/cross-border/agent",
+        headers=_auth_headers(),
+        json={
+            "action": "value_discovery",
+            "context": {},
+            "product_data": {"title": "Kyoto bowl", "description": "Made in Kyoto."},
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "success"
     assert isinstance(body["data"]["metadata"]["discoveries"], list)
 
 def test_agent_endpoint_unknown_action_returns_400(client, seed_shop):
-    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
-        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
-    ):
-        resp = client.post(
-            "/apps/cross-border/agent",
-            headers=_auth_headers(),
-            json={"action": "nope", "context": {}, "product_data": {}},
-        )
+    # Auth is handled by dependency override in fixture
+    resp = client.post(
+        "/apps/cross-border/agent",
+        headers=_auth_headers(),
+        json={"action": "nope", "context": {}, "product_data": {}},
+    )
     assert resp.status_code == 400
 
 
 def test_agent_endpoint_invalid_json_returns_400(client, seed_shop):
-    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
-        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
-    ):
-        resp = client.post(
-            "/apps/cross-border/agent",
-            headers={"Authorization": "Bearer dev-token-123", "Content-Type": "text/plain"},
-            data="not-json",
-        )
+    # Auth is handled by dependency override in fixture
+    resp = client.post(
+        "/apps/cross-border/agent",
+        headers={"Authorization": "Bearer dev-token-123", "Content-Type": "text/plain"},
+        data="not-json",
+    )
     assert resp.status_code == 400
 
 
-def test_agent_endpoint_invalid_token_returns_401(client, seed_shop):
-    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
-        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
-    ):
-        resp = client.post(
-            "/apps/cross-border/agent",
-            headers={"Authorization": "Bearer not-a-real-token"},
-            json={"action": "social_hook_architect", "context": {}, "product_data": {}},
-        )
+def test_agent_endpoint_invalid_token_returns_401(seed_shop):
+    """Test that invalid token returns 401 - uses separate client without auth override."""
+    # Create a separate client without the verify_shopify_session override
+    app.dependency_overrides[get_db] = override_get_db
+    # Remove auth override temporarily if it exists
+    original_override = app.dependency_overrides.pop(verify_shopify_session, None)
+    
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), \
+             patch("src.main.security.security.SHOPIFY_API_SECRET", "test-secret"):
+            resp = test_client.post(
+                "/apps/cross-border/agent",
+                headers={"Authorization": "Bearer not-a-real-token"},
+                json={"action": "social_hook_architect", "context": {}, "product_data": {}},
+            )
+    
+    # Restore override
+    if original_override:
+        app.dependency_overrides[verify_shopify_session] = original_override
+    
     assert resp.status_code == 401
 
 
@@ -210,14 +217,12 @@ def test_agent_endpoint_quota_exceeded_returns_403(client, seed_shop):
     db.commit()
     db.close()
 
-    with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), patch(
-        "src.main.security.security.SHOPIFY_API_SECRET", "test-secret"
-    ):
-        resp = client.post(
-            "/apps/cross-border/agent",
-            headers=_auth_headers(),
-            json={"action": "social_hook_architect", "context": {}, "product_data": {}},
-        )
+    # Auth is handled by dependency override in fixture
+    resp = client.post(
+        "/apps/cross-border/agent",
+        headers=_auth_headers(),
+        json={"action": "social_hook_architect", "context": {}, "product_data": {}},
+    )
     assert resp.status_code == 403
 
 

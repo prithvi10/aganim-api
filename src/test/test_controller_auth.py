@@ -81,10 +81,11 @@ def test_auth_callback_success(client, auth_params):
         return_value=Response(200, json={"access_token": "shpat_123456", "scope": "write_products"})
     )
     
-    with patch("src.main.api.controller.SHOPIFY_API_KEY", MOCK_API_KEY), \
-         patch("src.main.api.controller.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
+    # Patch in the oauth module where these are used
+    with patch("src.main.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_API_KEY), \
+         patch("src.main.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
          patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
-         patch("src.main.api.controller.SHOPIFY_UI_URL", "https://ui.test.com"):
+         patch("src.main.api.shopify.oauth.SHOPIFY_UI_URL", "https://ui.test.com"):
         
         # We set follow_redirects=False to inspect the RedirectResponse
         response = client.get("/api/auth/callback", params=params, follow_redirects=False)
@@ -125,8 +126,9 @@ def test_auth_callback_exchange_failure(client, auth_params):
     token_url = f"https://{auth_params['shop']}/admin/oauth/access_token"
     respx.post(token_url).mock(return_value=Response(400, json={"error": "invalid_request"}))
     
-    with patch("src.main.api.controller.SHOPIFY_API_KEY", MOCK_API_KEY), \
-         patch("src.main.api.controller.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
+    # Patch in the oauth module where these are used
+    with patch("src.main.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_API_KEY), \
+         patch("src.main.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
          patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET):
         
         response = client.get("/api/auth/callback", params=params)

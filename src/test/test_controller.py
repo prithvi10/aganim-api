@@ -67,8 +67,9 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
     # No dependency override needed as we removed the signature validation dependency
     # But we MUST provide the 'shop' query parameter as the controller manually extracts it.
 
-    with patch("src.main.api.controller.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
-        with patch("src.main.api.controller.process_generation_request", new_callable=AsyncMock) as mock_process:
+    # Patch in the module where the function is used (shopify.proxy)
+    with patch("src.main.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
+        with patch("src.main.api.shopify.proxy.process_generation_request", new_callable=AsyncMock) as mock_process:
             mock_process.return_value = {
                 "status": "success",
                 "data": {"title": "My Title", "description": "My Description"}

@@ -1,3 +1,9 @@
+"""
+ValueDiscoveryService - Evidence-Discovery engine.
+
+Moved from service/value_discovery_service.py to consolidate services.
+"""
+
 from __future__ import annotations
 
 import re
@@ -71,5 +77,3 @@ class ValueDiscoveryService:
                 _add_discovery(rule=rule, evidence_text=m.group(0))
 
         return discoveries
-
-

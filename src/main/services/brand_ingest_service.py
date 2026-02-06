@@ -1,3 +1,9 @@
+"""
+BrandIngestService - Brand context ingestion.
+
+Moved from service/brand_context_ingest.py to consolidate services.
+"""
+
 import re
 from datetime import datetime, timezone
 from html import unescape
@@ -12,10 +18,15 @@ from src.main.db.db_models import StoreContext, Shop
 from src.main.logging.logger import get_logger
 from src.main.rag.chunking import chunk_text
 from src.main.rag.embedding import embed_texts
-from src.main.service.open_ai_api_service import OpenAIService
 from src.main.utils.llm_parser import parse_llm_json
 
 logger = get_logger(__name__)
+
+
+def _get_openai_service():
+    """Lazy import to avoid circular dependency."""
+    from src.main.services.openai_legacy_service import OpenAIService
+    return OpenAIService()
 
 
 def _html_to_text(html: str) -> str:
@@ -50,7 +61,7 @@ def scrape_urls(urls: Iterable[str]) -> list[dict]:
 def extract_file_text(*, file_b64: str, mime_type: str) -> str:
     if not file_b64 or not mime_type:
         return ""
-    service = OpenAIService()
+    service = _get_openai_service()
     raw = service.extract_text_from_file(file_b64=file_b64, mime_type=mime_type)
     parsed = parse_llm_json(raw or "")
     if isinstance(parsed, dict) and parsed.get("text"):
@@ -59,7 +70,7 @@ def extract_file_text(*, file_b64: str, mime_type: str) -> str:
 
 
 def _clean_brand_text(raw_text: str) -> dict:
-    service = OpenAIService()
+    service = _get_openai_service()
     payload = {"raw_text": raw_text}
     raw = service.generate_json(
         system_prompt=BRAND_CONTEXT_CLEAN_PROMPT,

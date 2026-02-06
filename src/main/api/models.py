@@ -73,3 +73,87 @@ class BrandContextIngestRequest(BaseModel):
 class BrandContextFileExtractRequest(BaseModel):
     file_b64: str
     mime_type: str
+
+
+# ==============================================================================
+# Agentic Architecture API Models
+# ==============================================================================
+
+class MissionRequest(BaseModel):
+    """
+    Request to create a new agent mission for product optimization.
+    
+    For ad-hoc agent execution, specify requested_agents with the agent names
+    to run only those agents instead of the full tier-based workflow.
+    """
+    product_id: str
+    product_name: str
+    japanese_description: str
+    category: str = "General"
+    target_locale: str = "en"
+    tone_profile: Literal["professional", "luxury", "minimalist", "playful"] = "professional"
+    brand_soul_enabled: bool = False
+    # Ad-hoc agent selection: specify agent names to run only those agents
+    # e.g., ["CopywriterAgent"], ["MarketingAgent"], ["PriceScoutAgent", "ComplianceAgent"]
+    requested_agents: list[str] | None = None
+
+
+class CorrectionRequest(BaseModel):
+    """
+    Request to submit a user correction for agent learning.
+    """
+    agent_role: str  # "Copywriter", "PriceScout", "Compliance"
+    original_output: str
+    user_correction: str
+    product_id: str | None = None
+    context_metadata: dict[str, Any] = {}
+
+
+# ==============================================================================
+# Step-by-Step Journey API Models
+# ==============================================================================
+
+class RegenerateRequest(BaseModel):
+    """
+    Request to regenerate the current agent's output with optional feedback.
+    """
+    feedback: str | None = None
+
+
+class StepResponse(BaseModel):
+    """
+    Response for step-by-step journey endpoints.
+    """
+    mission_id: str
+    current_agent: str
+    current_agent_index: int
+    total_agents: int
+    status: str
+    agent_output: dict[str, Any] | None = None
+    can_continue: bool
+    can_skip: bool
+    is_final: bool
+    workflow_agents: list[str] = []
+    skipped_agents: list[str] = []
+
+
+class MissionStatusResponse(BaseModel):
+    """
+    Response for getting mission status.
+    """
+    mission_id: str
+    shop_id: str
+    product_id: str
+    status: str
+    plan_tier: str
+    current_agent_index: int
+    total_agents: int
+    current_agent: str | None = None
+    workflow_agents: list[str] = []
+    skipped_agents: list[str] = []
+    agent_outputs: dict[str, Any] = {}
+    logs: list[str] = []
+    error_message: str | None = None
+    created_at: str | None = None
+    completed_at: str | None = None
+    current_state: dict[str, Any] | None = None

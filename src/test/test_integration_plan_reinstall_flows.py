@@ -135,8 +135,9 @@ def integration_client(monkeypatch):
     async def _mock_generation_request(*args, **kwargs):
         return {"status": "success", "data": {"title": "ok", "description": "<p>ok</p>"}}
 
+    # Patch in the proxy module where the function is used
     monkeypatch.setattr(
-        "src.main.api.controller.process_generation_request",
+        "src.main.api.shopify.proxy.process_generation_request",
         _mock_generation_request,
         raising=True,
     )
@@ -278,4 +279,3 @@ def test_paid_uninstall_reinstall_activates_previous_plan_with_grace_mode(integr
     # Rewrites should work during grace
     r_ok = _rewrite_success(client, shop)
     assert r_ok.status_code == 200
-

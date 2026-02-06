@@ -1,4 +1,4 @@
-from src.main.service.open_ai_api_service import OpenAIService
+from src.main.services.openai_legacy_service import OpenAIService
 from src.main.config.configs import EMBEDDING_MODEL
 
 

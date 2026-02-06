@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import os
@@ -10,13 +11,30 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from src.main.logging.logger import get_logger
-from src.main.service.open_ai_api_service import OpenAIService
+from src.main.services.openai_legacy_service import OpenAIService
+from src.main.services import ServiceRegistry, LLMService, SerpService
 from src.main.utils.llm_parser import parse_llm_json
-from src.main.service.value_discovery_service import ValueDiscoveryService
+from src.main.services.value_discovery_service import ValueDiscoveryService
 
 logger = get_logger(__name__)
 openai_service = OpenAIService()
 value_discovery_service = ValueDiscoveryService()
+
+
+def _run_async(coro):
+    """Run an async coroutine synchronously."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    
+    if loop and loop.is_running():
+        # We're in an async context, create a new task
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
 
 
 def _clean_hashtag(tag: str) -> str | None:
@@ -385,7 +403,259 @@ def value_discovery_action(product_data: dict[str, Any], context: dict[str, Any]
         },
     }
 
-def run_agent_action(action: str, product_data: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+
+# ------------------------------------------------------------------------------
+# SEO Optimize Action (synchronous wrapper for SEOAgent)
+# ------------------------------------------------------------------------------
+def seo_optimize_action(
+    product_data: dict[str, Any],
+    context: dict[str, Any],
+    db: Any = None,
+    shop_domain: str | None = None,
+) -> dict[str, Any]:
+    """
+    Synchronous SEO optimization action.
+    
+    Generates SEO metadata (title, description, alt-text) and runs CTR check.
+    Does NOT store in database - returns results directly.
+    Usage is tracked if db/shop_domain are provided.
+    """
+    rid = str((context or {}).get("request_id") or "-")
+    product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
+    description = str(product_data.get("description") or product_data.get("japanese_description") or "").strip()
+    category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
+    target_locale = str(context.get("target_locale") or "en").strip()
+    
+    logger.info("[AgentAction] rid=%s action=seo_optimize product=%s", rid, product_title[:50])
+    
+    async def _run_seo():
+        # Create services with db/shop for usage tracking
+        services = ServiceRegistry.create_default(db=db, shop_domain=shop_domain)
+        
+        # Step 1: Fetch SERP results for competitor insights
+        serp_results = []
+        search_query = f"{product_title} {category}".strip()
+        if search_query:
+            try:
+                results = await services.serp.search(query=search_query, num_results=3)
+                serp_results = [
+                    {
+                        "title": r.title,
+                        "snippet": r.snippet,
+                        "link": r.link,
+                        "position": r.position,
+                    }
+                    for r in results
+                ]
+            except Exception as e:
+                logger.warning("[AgentAction] rid=%s SERP fetch failed: %s", rid, e)
+        
+        # Step 2: Generate SEO metadata using LLM
+        from src.main.agents.seo.prompts import SEO_SYSTEM_PROMPT, SEO_USER_PROMPT_TEMPLATE
+        
+        serp_context = ""
+        if serp_results:
+            serp_lines = []
+            for r in serp_results[:3]:
+                serp_lines.append(
+                    f"#{r.get('position', '?')}: {r.get('title', 'N/A')}\n"
+                    f"   Snippet: {r.get('snippet', 'N/A')[:200]}"
+                )
+            serp_context = "\n\n".join(serp_lines)
+        else:
+            serp_context = "No competitor data available."
+        
+        user_prompt = SEO_USER_PROMPT_TEMPLATE.format(
+            title=product_title,
+            category=category,
+            target_locale=target_locale,
+            description=description[:2000],
+            serp_context=serp_context,
+        )
+        
+        seo_result = {}
+        try:
+            result = await services.llm.generate_text(
+                prompt=user_prompt,
+                system_prompt=SEO_SYSTEM_PROMPT,
+                model="gpt-4o-mini",
+                temperature=0.3,
+            )
+            seo_result = parse_llm_json(result) or {}
+        except Exception as e:
+            logger.error("[AgentAction] rid=%s SEO LLM failed: %s", rid, e)
+        
+        # Step 3: Run CTR/PST check (deterministic)
+        from src.main.agents.seo.prompts import PST_PAIN_PATTERNS, PST_SOLUTION_PATTERNS, PST_TRUST_PATTERNS
+        
+        text = f"{description} {seo_result.get('seo_description', '')}".lower()
+        pain_present = any(re.search(p, text, re.IGNORECASE) for p in PST_PAIN_PATTERNS)
+        solution_present = any(re.search(p, text, re.IGNORECASE) for p in PST_SOLUTION_PATTERNS)
+        trust_present = any(re.search(p, text, re.IGNORECASE) for p in PST_TRUST_PATTERNS)
+        
+        score = 0.0
+        if pain_present:
+            score += 0.33
+        if solution_present:
+            score += 0.34
+        if trust_present:
+            score += 0.33
+        
+        suggestions = []
+        if not pain_present:
+            suggestions.append("Add a question or pain point to hook readers")
+        if not solution_present:
+            suggestions.append("Include a concrete benefit with a specific feature/spec")
+        if not trust_present:
+            suggestions.append("Add a trust cue (origin, craftsmanship, guarantee, shipping)")
+        
+        ctr_check = {
+            "pain_present": pain_present,
+            "solution_present": solution_present,
+            "trust_present": trust_present,
+            "score": round(score, 2),
+            "suggestions": suggestions,
+        }
+        
+        return {
+            "seo_title": seo_result.get("seo_title", ""),
+            "seo_description": seo_result.get("seo_description", ""),
+            "seo_alt_text": seo_result.get("seo_alt_text", ""),
+            "seo_insights": seo_result.get("seo_insights", {}),
+            "ctr_check": ctr_check,
+            "serp_insights": serp_results,
+        }
+    
+    result = _run_async(_run_seo())
+    
+    logger.info("[AgentAction] rid=%s action=seo_optimize done", rid)
+    
+    return {
+        "text": result.get("seo_title", ""),
+        "metadata": result,
+    }
+
+
+# ------------------------------------------------------------------------------
+# Price Scout Action (synchronous wrapper for PriceScoutAgent)
+# ------------------------------------------------------------------------------
+def price_scout_action(
+    product_data: dict[str, Any],
+    context: dict[str, Any],
+    db: Any = None,
+    shop_domain: str | None = None,
+) -> dict[str, Any]:
+    """
+    Synchronous price scouting action.
+    
+    Fetches competitor pricing via SERP and analyzes using LLM.
+    Does NOT store in database - returns results directly.
+    Usage is tracked if db/shop_domain are provided.
+    """
+    rid = str((context or {}).get("request_id") or "-")
+    product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
+    category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
+    
+    logger.info("[AgentAction] rid=%s action=price_scout product=%s", rid, product_title[:50])
+    
+    async def _run_price_scout():
+        # Create services with db/shop for usage tracking
+        services = ServiceRegistry.create_default(db=db, shop_domain=shop_domain)
+        
+        # Step 1: Fetch competitor prices via SERP
+        competitors = []
+        try:
+            competitors = await services.serp.get_competitor_prices(
+                product_name=product_title,
+                category=category,
+            )
+            logger.info("[AgentAction] rid=%s Found %d competitors", rid, len(competitors))
+        except Exception as e:
+            logger.warning("[AgentAction] rid=%s SERP price fetch failed: %s", rid, e)
+        
+        # If no competitors, return empty analysis
+        if not competitors:
+            from src.main.agents.price_scout.prompts import NO_COMPETITORS_MESSAGE
+            return {
+                "competitor_avg_price": 0.0,
+                "recommended_price": 0.0,
+                "price_position": "unknown",
+                "confidence": 0.0,
+                "reasoning": NO_COMPETITORS_MESSAGE,
+                "competitor_count": 0,
+                "competitors": [],
+            }
+        
+        # Step 2: Analyze pricing using LLM
+        from src.main.agents.price_scout.prompts import SYSTEM_PROMPT, ANALYSIS_PROMPT_TEMPLATE
+        from src.main.agents.price_scout.schemas import PricingAnalysis
+        
+        competitor_text = "\n".join([
+            f"- {c.get('title', 'Unknown')}: {c.get('snippet', '')}"
+            for c in competitors[:5]
+        ])
+        
+        prompt = ANALYSIS_PROMPT_TEMPLATE.format(
+            product_name=product_title,
+            category=category,
+            competitor_text=competitor_text,
+        )
+        
+        try:
+            analysis = await services.llm.generate_structured(
+                prompt=prompt,
+                response_format=PricingAnalysis,
+                system_prompt=SYSTEM_PROMPT,
+                model="gpt-4o-mini",
+                temperature=0.0,
+            )
+            
+            analysis_dict = analysis.model_dump()
+            analysis_dict["competitor_count"] = len(competitors)
+            analysis_dict["competitors"] = competitors[:5]
+            return analysis_dict
+            
+        except Exception as e:
+            logger.error("[AgentAction] rid=%s Price analysis LLM failed: %s", rid, e)
+            return {
+                "competitor_avg_price": 0.0,
+                "recommended_price": 0.0,
+                "price_position": "unknown",
+                "confidence": 0.0,
+                "reasoning": f"Analysis failed: {str(e)}",
+                "competitor_count": len(competitors),
+                "competitors": competitors[:5],
+            }
+    
+    result = _run_async(_run_price_scout())
+    
+    logger.info("[AgentAction] rid=%s action=price_scout done", rid)
+    
+    return {
+        "text": f"Recommended price: ${result.get('recommended_price', 0):.2f}" if result.get('recommended_price') else "",
+        "metadata": {
+            "pricing_analysis": result,
+        },
+    }
+
+
+def run_agent_action(
+    action: str,
+    product_data: dict[str, Any],
+    context: dict[str, Any],
+    db: Any = None,
+    shop_domain: str | None = None,
+) -> dict[str, Any]:
+    """
+    Dispatch to the appropriate agent action.
+    
+    Args:
+        action: The action name (e.g., "seo_optimize", "price_scout")
+        product_data: Product data dict
+        context: Additional context (e.g., request_id, target_locale)
+        db: Optional SQLAlchemy session for usage tracking
+        shop_domain: Optional shop domain for usage tracking
+    """
     action = (action or "").strip()
     if action == "social_hook_architect":
         return social_hook_architect_action(product_data=product_data, context=context)
@@ -395,6 +665,10 @@ def run_agent_action(action: str, product_data: dict[str, Any], context: dict[st
         return seasonal_campaign_caption_action(product_data=product_data, context=context)
     if action == "value_discovery":
         return value_discovery_action(product_data=product_data, context=context)
+    if action == "seo_optimize":
+        return seo_optimize_action(product_data=product_data, context=context, db=db, shop_domain=shop_domain)
+    if action == "price_scout":
+        return price_scout_action(product_data=product_data, context=context, db=db, shop_domain=shop_domain)
 
     raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 

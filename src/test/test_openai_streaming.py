@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.main.service.open_ai_api_service import OpenAIService
+from src.main.services.openai_legacy_service import OpenAIService
 
 @pytest.mark.asyncio
 async def test_stream_openai_response_logic():
@@ -25,7 +25,7 @@ async def test_stream_openai_response_logic():
         shop_domain = "test-shop.myshopify.com"
         
         # We need to patch the DB update function since it's imported in the service
-        with patch("src.main.service.open_ai_api_service.increment_monthly_rewrites_used") as mock_inc:
+        with patch("src.main.services.openai_legacy_service.increment_monthly_rewrites_used") as mock_inc:
             
             generator = service.stream_openai_response(
                 product_name="Test",
