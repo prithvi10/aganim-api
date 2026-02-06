@@ -21,6 +21,8 @@ from .prompts import (
     LEARNED_PREFERENCES_TEMPLATE,
     LOCALE_PERSONA_TEMPLATE,
     COMPLIANCE_FEEDBACK_TEMPLATE,
+    REWRITER_REFINE_PROMPT,
+    REFINE_USER_PROMPT,
 )
 from src.main.config.configs import LOCALE_PERSONA_MAP
 from src.main.logging.logger import get_logger
@@ -108,9 +110,48 @@ class RewriterAgent(BaseAgent):
         Generate product copy using LLM.
         
         This is the ONLY LLM call for this agent.
+        
+        Supports two modes:
+        - Fresh Run: Generate from scratch using source data
+        - Refinement Mode: Modify existing draft based on user feedback
         """
         actions = []
         
+        # Check for refinement mode
+        feedback = state.raw_input.get("_regeneration_feedback")
+        previous_draft = self._get_previous_draft(state)
+        
+        if feedback and previous_draft:
+            # === REFINEMENT MODE ===
+            state.add_log("Rewriter: Refinement Mode Active")
+            logger.info(
+                "[Rewriter] Refinement mode for product=%s shop=%s feedback_len=%d",
+                state.product_id,
+                self.shop_id,
+                len(feedback),
+            )
+            actions, state = await self._run_refinement(
+                state, context, feedback, previous_draft, actions
+            )
+        else:
+            # === FRESH RUN ===
+            actions, state = await self._run_fresh_generation(
+                state, context, actions
+            )
+        
+        return actions, state
+
+    async def _run_fresh_generation(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """
+        Run fresh content generation from scratch.
+        
+        Uses the full REWRITER_SYSTEM_PROMPT to generate new content.
+        """
         # Build prompts with brand context and learned rules
         system_prompt = self._build_system_prompt(state, context)
         user_prompt = self._build_user_prompt(state, context)
@@ -128,7 +169,7 @@ class RewriterAgent(BaseAgent):
                 AgentAction.success_action(
                     tool_name="llm.generate_text",
                     output=result,
-                    input_params={"prompt_len": len(user_prompt)},
+                    input_params={"prompt_len": len(user_prompt), "mode": "fresh"},
                 )
             )
             
@@ -153,12 +194,118 @@ class RewriterAgent(BaseAgent):
                 AgentAction.failure_action(
                     tool_name="llm.generate_text",
                     error=str(e),
-                    input_params={"prompt_len": len(user_prompt) if user_prompt else 0},
+                    input_params={"prompt_len": len(user_prompt) if user_prompt else 0, "mode": "fresh"},
                 )
             )
             state.set_error(f"Content generation failed: {str(e)}")
         
         return actions, state
+
+    async def _run_refinement(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        feedback: str,
+        previous_draft: dict,
+        actions: List[AgentAction],
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """
+        Run refinement mode - modify existing draft based on user feedback.
+        
+        Uses REWRITER_REFINE_PROMPT to make targeted edits only.
+        """
+        # Build the refinement prompt with current draft and feedback
+        system_prompt = REWRITER_REFINE_PROMPT.format(
+            current_title=previous_draft.get("title", ""),
+            current_description=previous_draft.get("description", ""),
+            user_feedback=feedback,
+            source_title=context.get_product_title(),
+            category=context.get_category(),
+            source_description=context.get_product_description()[:3000],  # Limit length
+        )
+        
+        user_prompt = REFINE_USER_PROMPT
+        
+        try:
+            # === REFINEMENT LLM CALL ===
+            result = await self.services.llm.generate_text(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model="gpt-4o",  # Best model for creative work
+                temperature=0.5,  # Lower temperature for more controlled edits
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=result,
+                    input_params={
+                        "prompt_len": len(system_prompt) + len(user_prompt),
+                        "mode": "refinement",
+                        "feedback_len": len(feedback),
+                    },
+                )
+            )
+            
+            # Parse the result and update state
+            parsed = self._parse_llm_result(result)
+            
+            state.draft_content = parsed.get("description", previous_draft.get("description", ""))
+            state.draft_title = parsed.get("title", previous_draft.get("title", ""))
+            state.discovered_values = parsed.get(
+                "discovered_values",
+                previous_draft.get("discovered_values", [])
+            )
+            
+            state.status = "DRAFT_READY"
+            
+            logger.info(
+                "[Rewriter] Refined content for product=%s shop=%s",
+                state.product_id,
+                self.shop_id,
+            )
+            
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"mode": "refinement"},
+                )
+            )
+            state.set_error(f"Content refinement failed: {str(e)}")
+        
+        return actions, state
+
+    def _get_previous_draft(self, state: MissionState) -> dict | None:
+        """
+        Get the previous draft content for refinement mode.
+        
+        Checks multiple sources:
+        1. state.draft_content / state.draft_title (if already set)
+        2. state.agent_outputs["RewriterAgent"] (from previous run)
+        
+        Returns:
+            Dict with title, description, discovered_values or None if no draft exists
+        """
+        # Check if draft is already in state
+        if state.draft_content or state.draft_title:
+            return {
+                "title": state.draft_title or "",
+                "description": state.draft_content or "",
+                "discovered_values": state.discovered_values or [],
+            }
+        
+        # Check agent_outputs from previous run
+        rewriter_output = state.agent_outputs.get("RewriterAgent", {})
+        if rewriter_output:
+            return {
+                "title": rewriter_output.get("draft_title", ""),
+                "description": rewriter_output.get("draft_content", ""),
+                "discovered_values": rewriter_output.get("discovered_values", []),
+            }
+        
+        return None
 
     # -------------------------------------------------------------------------
     # FEEDBACK: Record for learning (NO LLM call)

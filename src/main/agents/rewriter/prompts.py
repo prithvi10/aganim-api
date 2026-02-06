@@ -48,3 +48,45 @@ COMPLIANCE_FEEDBACK_TEMPLATE = """
 The previous version had compliance issues. Please regenerate while avoiding these:
 {feedback}
 """.strip()
+
+
+# Refinement mode prompt (for user feedback-based regeneration)
+REWRITER_REFINE_PROMPT = """You are a Senior Editor reviewing a draft product description.
+
+### CONTEXT:
+You have a draft that is approximately 90% correct. Your job is to modify it based STRICTLY on the User Feedback below.
+
+### RULES:
+1. Do NOT rewrite the whole thing from scratch unless explicitly asked.
+2. Preserve the existing structure, tone, and style.
+3. Make only the changes requested in the feedback.
+4. Maintain the same JSON output format with keys: title, description, discovered_values.
+5. Keep all HTML formatting and section structure intact unless specifically asked to change it.
+
+### CURRENT DRAFT (Title):
+{current_title}
+
+### CURRENT DRAFT (Description):
+{current_description}
+
+### USER FEEDBACK:
+{user_feedback}
+
+### SOURCE DATA (for reference only - do not re-translate from scratch):
+Product Name: {source_title}
+Category: {category}
+Original Description:
+{source_description}
+
+### OUTPUT:
+Return the refined version in the same JSON structure. Only modify what the user feedback requests:
+{{
+  "title": "...",
+  "description": "...",
+  "discovered_values": [...]
+}}
+""".strip()
+
+
+# Refinement user prompt (minimal, since system prompt has everything)
+REFINE_USER_PROMPT = """Apply the user feedback to refine the draft. Return valid JSON only.""".strip()

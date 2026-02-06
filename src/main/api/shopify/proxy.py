@@ -296,6 +296,8 @@ async def admin_ext_agent(
         action=agent_req.action,
         context=agent_req.context or {},
         product_data=agent_req.product_data or {},
+        db=db,
+        shop_domain=shop,
     )
 
     logger.info("[Agent] done rid=%s shop=%s action=%s", rid, shop, agent_req.action)

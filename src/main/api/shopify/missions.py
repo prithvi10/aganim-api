@@ -50,15 +50,24 @@ async def list_missions(
     
     Returns recent missions with their status and basic info.
     The 'latest' field indicates the most recent mission ID.
+    
+    Note: Ad-hoc missions (is_adhoc=True) are filtered out as they are
+    lightweight single-agent runs that shouldn't clutter mission history.
     """
     from src.main.db.db_models import Mission
     
     rid = _rid(request)
     logger.info("[MissionList] rid=%s shop=%s limit=%d", rid, shop, limit)
     
-    missions = db.query(Mission).filter(
+    all_missions = db.query(Mission).filter(
         Mission.shop_id == shop
-    ).order_by(Mission.created_at.desc()).limit(limit).all()
+    ).order_by(Mission.created_at.desc()).limit(limit * 2).all()  # Fetch extra to account for filtering
+    
+    # Filter out ad-hoc missions (single-agent runs like SEO-only or Pricing-only)
+    missions = [
+        m for m in all_missions
+        if not (m.current_state or {}).get("is_adhoc", False)
+    ][:limit]  # Apply limit after filtering
     
     return {
         "missions": [
@@ -124,7 +133,7 @@ async def create_mission(
     from src.main.agents import MissionControl
     from src.main.services import ServiceRegistry
     
-    temp_services = ServiceRegistry.create_default()
+    temp_services = ServiceRegistry.create_default(db=db, shop_domain=shop)
     temp_mission_control = MissionControl(
         plan_tier=plan_tier,
         shop_id=shop,
@@ -261,7 +270,8 @@ async def stream_mission(
         )
     
     # Check if mission is currently being processed (prevents reconnection loops)
-    if mission.status == "IN_PROGRESS" or _mission_locks.get(mission_id):
+    # Only block if there's an active lock - IN_PROGRESS without lock means previous run was interrupted
+    if _mission_locks.get(mission_id):
         logger.warning(
             "[MissionStream] mission_already_running rid=%s mission_id=%s status=%s",
             rid, mission_id, mission.status,
@@ -287,6 +297,16 @@ async def stream_mission(
             },
         )
     
+    # Reset stuck IN_PROGRESS missions (no lock held but status is IN_PROGRESS)
+    if mission.status == "IN_PROGRESS":
+        logger.warning(
+            "[MissionStream] resetting_stuck_mission rid=%s mission_id=%s from IN_PROGRESS to PENDING",
+            rid, mission_id
+        )
+        mission.status = "PENDING"
+        db.add(mission)
+        db.commit()
+    
     logger.info("[MissionStream] start rid=%s shop=%s mission_id=%s", rid, shop, mission_id)
     
     async def event_generator():
@@ -303,8 +323,8 @@ async def stream_mission(
             
             state = MissionState.from_dict(initial_state_dict, db=db)
             
-            # Create services and mission control
-            services = ServiceRegistry.create_default()
+            # Create services and mission control (with db/shop for usage tracking)
+            services = ServiceRegistry.create_default(db=db, shop_domain=shop)
             plan_tier = mission.plan_tier or "Basic"
             
             # Check for ad-hoc agent selection
@@ -501,24 +521,30 @@ async def run_step(
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
     
-    # Check if mission is in a valid state to run a step
-    if mission.status not in ("PENDING", "AWAITING_APPROVAL"):
-        if mission.status == "IN_PROGRESS":
-            raise HTTPException(
-                status_code=409, 
-                detail="Step already in progress - wait for completion"
-            )
-        elif mission.status == "COMPLETED":
-            raise HTTPException(status_code=400, detail="Mission already completed")
-        elif mission.status == "ERROR":
-            raise HTTPException(status_code=400, detail="Mission in error state")
-    
-    # Check lock to prevent concurrent execution
+    # Check lock FIRST to prevent concurrent execution
     if _mission_locks.get(mission_id):
         raise HTTPException(
             status_code=409,
             detail="Step already being executed - wait for completion"
         )
+    
+    # Check if mission is in a valid state to run a step
+    if mission.status not in ("PENDING", "AWAITING_APPROVAL"):
+        if mission.status == "IN_PROGRESS":
+            # No lock held but status is IN_PROGRESS means previous run was interrupted
+            # Reset to AWAITING_APPROVAL so the step can be re-run
+            logger.warning(
+                "[MissionStep] resetting_stuck_mission rid=%s mission_id=%s from IN_PROGRESS to AWAITING_APPROVAL",
+                rid, mission_id
+            )
+            mission.status = "AWAITING_APPROVAL"
+            db.add(mission)
+            db.commit()
+            # Continue to run the step
+        elif mission.status == "COMPLETED":
+            raise HTTPException(status_code=400, detail="Mission already completed")
+        elif mission.status == "ERROR":
+            raise HTTPException(status_code=400, detail="Mission in error state")
     
     logger.info("[MissionStep] run-step rid=%s shop=%s mission_id=%s", rid, shop, mission_id)
     
@@ -535,8 +561,8 @@ async def run_step(
             state_dict = mission.current_state or {}
             state = MissionState.from_dict(state_dict, db=db)
             
-            # Create services and mission control
-            services = ServiceRegistry.create_default()
+            # Create services and mission control (with db/shop for usage tracking)
+            services = ServiceRegistry.create_default(db=db, shop_domain=shop)
             plan_tier = mission.plan_tier or "Basic"
             requested_agents = state_dict.get("requested_agents")
             
@@ -663,7 +689,8 @@ async def continue_step(
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
     
-    services = ServiceRegistry.create_default()
+    # Create services with db/shop for usage tracking
+    services = ServiceRegistry.create_default(db=db, shop_domain=shop)
     requested_agents = state_dict.get("requested_agents")
     
     mission_control = MissionControl(
@@ -860,7 +887,8 @@ async def regenerate_step(
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
     
-    services = ServiceRegistry.create_default()
+    # Create services with db/shop for usage tracking
+    services = ServiceRegistry.create_default(db=db, shop_domain=shop)
     requested_agents = state_dict.get("requested_agents")
     
     mission_control = MissionControl(
@@ -935,7 +963,8 @@ async def skip_step(
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
     
-    services = ServiceRegistry.create_default()
+    # Create services with db/shop for usage tracking
+    services = ServiceRegistry.create_default(db=db, shop_domain=shop)
     requested_agents = state_dict.get("requested_agents")
     
     mission_control = MissionControl(

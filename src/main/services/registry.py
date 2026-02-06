@@ -6,11 +6,14 @@ Provides a centralized registry of services that agents receive via injection.
 
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .llm_service import LLMService
 from .serp_service import SerpService
 from .rag_service import RAGService
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @dataclass
@@ -27,6 +30,9 @@ class ServiceRegistry:
         # Create with default configuration
         services = ServiceRegistry.create_default()
         
+        # Create with db/shop for usage tracking
+        services = ServiceRegistry.create_default(db=session, shop_domain="my-shop.myshopify.com")
+        
         # Create with custom services (for testing)
         services = ServiceRegistry(
             llm=mock_llm_service,
@@ -35,7 +41,7 @@ class ServiceRegistry:
         )
         
         # Inject into agent
-        agent = CopywriterAgent(shop_id="my-shop.myshopify.com", services=services)
+        agent = RewriterAgent(shop_id="my-shop.myshopify.com", services=services)
     """
     
     llm: LLMService
@@ -47,17 +53,29 @@ class ServiceRegistry:
     # etc.
 
     @classmethod
-    def create_default(cls) -> "ServiceRegistry":
+    def create_default(
+        cls,
+        db: Optional["Session"] = None,
+        shop_domain: Optional[str] = None,
+    ) -> "ServiceRegistry":
         """
         Factory method to create registry with default configuration.
         
         Reads API keys from environment variables.
         
+        Args:
+            db: Optional SQLAlchemy session for usage tracking
+            shop_domain: Optional shop domain for usage tracking
+        
         Returns:
             ServiceRegistry with all services configured
         """
         return cls(
-            llm=LLMService(api_key=os.getenv("OPENAI_API_KEY")),
+            llm=LLMService(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                db=db,
+                shop_domain=shop_domain,
+            ),
             serp=SerpService(api_key=os.getenv("SERP_API_KEY")),
             rag=RAGService(),
         )
