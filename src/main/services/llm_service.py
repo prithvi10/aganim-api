@@ -7,13 +7,16 @@ Tracks token usage for fair_use cost accounting.
 
 import os
 from dataclasses import dataclass, field
-from typing import Type, TypeVar, Optional, Dict, Any
+from typing import TYPE_CHECKING, Type, TypeVar, Optional, Dict, Any
 from pydantic import BaseModel
 from openai import AsyncOpenAI, APIError
 import httpx
 
 from src.main.logging.logger import get_logger
 from src.main.config.configs import OPENAI_MODEL, OPENAI_TEMPERATURE, OPENAI_MAX_TOKENS
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
@@ -113,10 +116,21 @@ class LLMService:
         - accumulated_usage: AccumulatedUsage across all calls since last reset
         - get_accumulated_usage(): Get total usage for fair_use cost recording
         - reset_usage(): Clear accumulated usage (call after recording costs)
+        
+    Automatic Recording:
+        If db and shop_domain are provided, usage is recorded to the database
+        immediately after each LLM call - no manual recording needed.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        db: Optional["Session"] = None,
+        shop_domain: Optional[str] = None,
+    ):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.db = db
+        self.shop_domain = shop_domain
         
         # Usage tracking for fair_use integration
         self.last_usage: Optional[LLMUsage] = None
@@ -139,7 +153,12 @@ class LLMService:
             raise RuntimeError("LLMService: OPENAI_API_KEY not configured")
     
     def _track_usage(self, usage: Any, model: str) -> LLMUsage:
-        """Extract and track token usage from OpenAI response."""
+        """
+        Extract and track token usage from OpenAI response.
+        
+        If db and shop_domain are configured, immediately records usage
+        to the database for cost tracking.
+        """
         llm_usage = LLMUsage(model=model)
         
         if usage:
@@ -158,6 +177,31 @@ class LLMService:
         # Store last usage and accumulate
         self.last_usage = llm_usage
         self.accumulated_usage.add(llm_usage)
+        
+        # Immediately record to database if session available
+        if self.db and self.shop_domain and llm_usage.total_tokens > 0:
+            try:
+                from src.main.services.fair_use_service import record_cost_from_usage
+                usage_dict = {
+                    "prompt_tokens": llm_usage.prompt_tokens,
+                    "completion_tokens": llm_usage.completion_tokens,
+                    "reasoning_tokens": llm_usage.reasoning_tokens,
+                    "total_tokens": llm_usage.total_tokens,
+                }
+                record_cost_from_usage(
+                    db=self.db,
+                    shop_domain=self.shop_domain,
+                    usage=usage_dict,
+                    model_used=model,
+                )
+                logger.debug(
+                    "[LLM] Usage recorded shop=%s tokens=%d model=%s",
+                    self.shop_domain,
+                    llm_usage.total_tokens,
+                    model,
+                )
+            except Exception as e:
+                logger.warning("[LLM] Failed to record usage to database: %s", e)
         
         return llm_usage
     

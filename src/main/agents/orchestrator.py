@@ -645,8 +645,8 @@ async def run_mission(
         target_locale=target_locale,
     )
     
-    # Create services and mission control
-    services = ServiceRegistry.create_default()
+    # Create services and mission control (with db/shop for usage tracking)
+    services = ServiceRegistry.create_default(db=db, shop_domain=shop_id)
     mission = MissionControl(
         plan_tier=plan_tier,
         shop_id=shop_id,

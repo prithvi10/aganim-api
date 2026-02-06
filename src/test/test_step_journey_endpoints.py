@@ -166,8 +166,8 @@ def test_list_missions_respects_limit_parameter(client, sample_mission):
     response = client.get("/api/missions?limit=5")
     
     assert response.status_code == 200
-    # Verify limit was called with correct value
-    mock_query.filter.return_value.order_by.return_value.limit.assert_called_with(5)
+    # Verify limit was called with limit*2 (to account for ad-hoc filtering)
+    mock_query.filter.return_value.order_by.return_value.limit.assert_called_with(10)
     
     app.dependency_overrides.clear()
 
@@ -817,6 +817,35 @@ def test_run_step_rejects_if_already_in_progress(client, sample_mission):
     assert "already" in response.json()["detail"].lower()
     
     # Clean up lock
+    _mission_locks.pop(sample_mission.id, None)
+    app.dependency_overrides.clear()
+
+
+def test_run_step_resets_stuck_in_progress_mission(client, sample_mission):
+    """Test /run-step resets stuck IN_PROGRESS mission (no lock held) instead of returning 409."""
+    from src.main.db.database import get_db
+    from src.main.api.shopify.missions import _mission_locks
+    
+    # Mission is IN_PROGRESS but no lock (simulates interrupted previous run)
+    sample_mission.status = "IN_PROGRESS"
+    
+    # Ensure no lock is held
+    _mission_locks.pop(sample_mission.id, None)
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    # run-step should reset the status and attempt to run (returns SSE stream)
+    # Instead of returning 409 "Step already in progress", it should proceed
+    response = client.get(f"/api/missions/{sample_mission.id}/run-step")
+    
+    # Should NOT be 409 - the stuck mission should be reset and allowed to proceed
+    # (Response will be 200 with SSE stream, may error due to missing mocks but not 409)
+    assert response.status_code != 409, "Stuck IN_PROGRESS mission should be reset, not rejected with 409"
+    
+    # Clean up
     _mission_locks.pop(sample_mission.id, None)
     app.dependency_overrides.clear()
 

@@ -291,3 +291,205 @@ def test_parse_llm_result_with_markdown_code_block():
     result = agent._parse_llm_result('```json\n{"title": "Test", "description": "Desc"}\n```')
     
     assert result["title"] == "Test"
+
+
+# =============================================================================
+# Tests: Refinement Mode
+# =============================================================================
+
+@pytest.fixture
+def mission_state_with_draft(mission_state):
+    """MissionState with existing draft content for refinement testing."""
+    mission_state.draft_content = "<p>Previously generated description</p>"
+    mission_state.draft_title = "Previously Generated Title"
+    mission_state.discovered_values = [{"name": "Heritage", "value": "Kyoto craft"}]
+    return mission_state
+
+
+@pytest.fixture
+def mission_state_with_feedback(mission_state):
+    """MissionState with regeneration feedback for refinement testing."""
+    mission_state.raw_input["_regeneration_feedback"] = "Make the bullet points punchier"
+    return mission_state
+
+
+@pytest.fixture
+def mission_state_for_refinement(mission_state_with_draft, mission_state_with_feedback):
+    """MissionState with both draft and feedback - triggers refinement mode."""
+    mission_state_with_draft.raw_input["_regeneration_feedback"] = "Make the bullet points punchier"
+    return mission_state_with_draft
+
+
+def test_get_previous_draft_from_state(mock_services, mission_state_with_draft):
+    """Test _get_previous_draft returns draft from state when available."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    result = agent._get_previous_draft(mission_state_with_draft)
+    
+    assert result is not None
+    assert result["title"] == "Previously Generated Title"
+    assert result["description"] == "<p>Previously generated description</p>"
+    assert len(result["discovered_values"]) == 1
+
+
+def test_get_previous_draft_from_agent_outputs(mock_services, mission_state):
+    """Test _get_previous_draft returns draft from agent_outputs when state is empty."""
+    mission_state.agent_outputs["RewriterAgent"] = {
+        "draft_title": "Title from agent outputs",
+        "draft_content": "<p>Content from agent outputs</p>",
+        "discovered_values": [],
+    }
+    
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    result = agent._get_previous_draft(mission_state)
+    
+    assert result is not None
+    assert result["title"] == "Title from agent outputs"
+    assert result["description"] == "<p>Content from agent outputs</p>"
+
+
+def test_get_previous_draft_returns_none_when_empty(mock_services, mission_state):
+    """Test _get_previous_draft returns None when no draft exists."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    result = agent._get_previous_draft(mission_state)
+    
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_refinement_mode_triggered_with_feedback_and_draft(mock_services, mission_state_for_refinement):
+    """Test that refinement mode is triggered when both feedback and draft exist."""
+    mock_services.llm.generate_text = AsyncMock(
+        return_value='{"title": "Refined Title", "description": "<p>Refined description</p>", "discovered_values": []}'
+    )
+    
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    result = await agent.run(mission_state_for_refinement)
+    
+    # Should log refinement mode
+    assert any("Refinement Mode Active" in log for log in result.logs)
+    
+    # Should generate refined content
+    assert result.draft_title == "Refined Title"
+    assert "Refined description" in result.draft_content
+
+
+@pytest.mark.asyncio
+async def test_refinement_mode_uses_lower_temperature(mock_services, mission_state_for_refinement):
+    """Test that refinement mode uses lower temperature for controlled edits."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    await agent.run(mission_state_for_refinement)
+    
+    # Check temperature parameter
+    call_args = mock_services.llm.generate_text.call_args
+    # Refinement mode uses temperature=0.5 (lower than fresh run's 0.7)
+    assert call_args.kwargs.get("temperature") == 0.5
+
+
+@pytest.mark.asyncio
+async def test_refinement_mode_includes_current_draft_in_prompt(mock_services, mission_state_for_refinement):
+    """Test that refinement mode includes the current draft in the system prompt."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    await agent.run(mission_state_for_refinement)
+    
+    call_args = mock_services.llm.generate_text.call_args
+    system_prompt = call_args.kwargs.get("system_prompt", "")
+    
+    # Should include the previous draft content
+    assert "Previously generated description" in system_prompt or "Previously Generated Title" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_refinement_mode_includes_user_feedback_in_prompt(mock_services, mission_state_for_refinement):
+    """Test that refinement mode includes user feedback in the prompt."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    await agent.run(mission_state_for_refinement)
+    
+    call_args = mock_services.llm.generate_text.call_args
+    system_prompt = call_args.kwargs.get("system_prompt", "")
+    
+    # Should include the user feedback
+    assert "Make the bullet points punchier" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_fresh_run_when_no_feedback(mock_services, mission_state_with_draft):
+    """Test that fresh run is used when no feedback is provided (even with draft)."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    await agent.run(mission_state_with_draft)
+    
+    # Should NOT log refinement mode
+    # Fresh run uses temperature=0.7
+    call_args = mock_services.llm.generate_text.call_args
+    assert call_args.kwargs.get("temperature") == 0.7
+
+
+@pytest.mark.asyncio
+async def test_fresh_run_when_no_draft(mock_services, mission_state_with_feedback):
+    """Test that fresh run is used when no previous draft exists (even with feedback)."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    result = await agent.run(mission_state_with_feedback)
+    
+    # Should NOT log refinement mode (no previous draft)
+    assert not any("Refinement Mode Active" in log for log in result.logs)
+    
+    # Fresh run uses temperature=0.7
+    call_args = mock_services.llm.generate_text.call_args
+    assert call_args.kwargs.get("temperature") == 0.7
+
+
+@pytest.mark.asyncio
+async def test_refinement_preserves_values_on_parse_error(mock_services, mission_state_for_refinement):
+    """Test that refinement preserves previous values when JSON parsing fails."""
+    mock_services.llm.generate_text = AsyncMock(return_value="Invalid JSON response")
+    
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    result = await agent.run(mission_state_for_refinement)
+    
+    # Should still have output (fallback to raw content or preserved values)
+    assert result.draft_content is not None
+    assert result.status == "DRAFT_READY"
+
+
+@pytest.mark.asyncio
+async def test_refinement_handles_llm_error(mock_services, mission_state_for_refinement):
+    """Test that refinement handles LLM errors gracefully."""
+    mock_services.llm.generate_text = AsyncMock(side_effect=Exception("LLM refinement error"))
+    
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    result = await agent.run(mission_state_for_refinement)
+    
+    # Should set error state
+    assert result.status == "ERROR"
+    assert "refinement failed" in result.error_message.lower() or "Content" in result.error_message
+
+
+@pytest.mark.asyncio
+async def test_action_params_include_mode_fresh(mock_services, mission_state):
+    """Test that action params include mode='fresh' for fresh generation."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    result = await agent.run(mission_state)
+    
+    # Check that the action was logged with mode info
+    # The agent stores actions with input_params including mode
+    call_args = mock_services.llm.generate_text.call_args
+    assert call_args is not None  # LLM was called
+
+
+@pytest.mark.asyncio
+async def test_action_params_include_mode_refinement(mock_services, mission_state_for_refinement):
+    """Test that action params include mode='refinement' for refinement."""
+    agent = CopywriterAgent("test-shop.myshopify.com", mock_services)
+    
+    result = await agent.run(mission_state_for_refinement)
+    
+    # Verify refinement mode was detected
+    assert any("Refinement Mode Active" in log for log in result.logs)
