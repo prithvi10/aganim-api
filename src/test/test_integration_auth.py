@@ -101,11 +101,11 @@ def test_integration_oauth_handshake(client): # Inject client fixture
     )
 
     # 3. Execute Request with Patched Secrets
-    # We need to patch the secrets in both security (for validation) and controller (for exchange)
+    # Patch in the oauth module where these are used
     with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
-         patch("src.main.api.controller.SHOPIFY_API_KEY", MOCK_INTEGRATION_KEY), \
-         patch("src.main.api.controller.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
-         patch("src.main.api.controller.SHOPIFY_UI_URL", "https://ui.test.com"):
+         patch("src.main.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_INTEGRATION_KEY), \
+         patch("src.main.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
+         patch("src.main.api.shopify.oauth.SHOPIFY_UI_URL", "https://ui.test.com"):
         
         response = client.get("/api/auth/callback", params=params, follow_redirects=False)
         

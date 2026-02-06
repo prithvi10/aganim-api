@@ -666,7 +666,10 @@ def _assert_copy_contract(payload: dict[str, Any]) -> None:
     _assert(len(seo_desc) <= 160, f"seo_description too long: {len(seo_desc)}")
 
     desc = data.get("description") or ""
-    _assert_in("<h3>Dimensions & Specifications</h3>", desc, "Missing mandatory Dimensions table header in description")
+    # Check for spec tables (Standard/Pro tiers generate separate tables)
+    has_specs = "<h3>Product Specifications</h3>" in desc
+    has_dims = "<h3>Detailed Dimensions</h3>" in desc
+    _assert(has_specs or has_dims, "Missing mandatory spec tables (Product Specifications or Detailed Dimensions) in description")
 
 
 def _assert_competitor_results_present(payload: dict[str, Any]) -> None:

@@ -5,7 +5,8 @@ from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
 
 from src.main.api.main import app
-from src.main.api import controller as controller_module
+from src.main.api.shopify import admin as admin_module
+from src.main.api.shopify.shared import resolve_shop_domain
 from src.main.db.database import Base, get_db
 from src.main.db.db_models import Shop
 
@@ -41,17 +42,16 @@ def _seed_shop(domain: str) -> None:
 @pytest.fixture
 def _overrides():
     app.dependency_overrides[get_db] = _override_get_db
-    controller_module.SessionLocal = TestingSessionLocal
     yield
     app.dependency_overrides.pop(get_db, None)
-    app.dependency_overrides.pop(controller_module.resolve_shop_domain, None)
+    app.dependency_overrides.pop(resolve_shop_domain, None)
     Base.metadata.drop_all(bind=engine)
 
 
 def test_brand_context_status_idle(_overrides):
     shop = "brand-test.myshopify.com"
     _seed_shop(shop)
-    app.dependency_overrides[controller_module.resolve_shop_domain] = lambda: shop
+    app.dependency_overrides[resolve_shop_domain] = lambda: shop
 
     with TestClient(app) as client:
         resp = client.get(f"/api/admin/brand-context/status?shop={shop}")
@@ -63,7 +63,7 @@ def test_brand_context_status_idle(_overrides):
 def test_brand_context_ingest_async_accepts_and_sets_ready(_overrides):
     shop = "brand-async.myshopify.com"
     _seed_shop(shop)
-    app.dependency_overrides[controller_module.resolve_shop_domain] = lambda: shop
+    app.dependency_overrides[resolve_shop_domain] = lambda: shop
 
     def _mock_run(*, shop_id: str, raw_texts: list[dict], job_id: str) -> None:
         db = TestingSessionLocal()
@@ -89,7 +89,8 @@ def test_brand_context_ingest_async_accepts_and_sets_ready(_overrides):
         "urls": [],
     }
 
-    with patch.object(controller_module, "_run_brand_context_ingest", side_effect=_mock_run):
+    # Patch in the admin module where the function is used
+    with patch.object(admin_module, "_run_brand_context_ingest", side_effect=_mock_run):
         with TestClient(app) as client:
             resp = client.post("/api/admin/brand-context/ingest-async", json=payload)
             assert resp.status_code == 200
@@ -106,7 +107,7 @@ def test_brand_context_ingest_async_accepts_and_sets_ready(_overrides):
 def test_brand_context_ingest_async_missing_content(_overrides):
     shop = "brand-missing.myshopify.com"
     _seed_shop(shop)
-    app.dependency_overrides[controller_module.resolve_shop_domain] = lambda: shop
+    app.dependency_overrides[resolve_shop_domain] = lambda: shop
 
     with TestClient(app) as client:
         resp = client.post("/api/admin/brand-context/ingest-async", json={})

@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.main.db.database import Base
 from src.main.db.db_models import Plan, Shop, User
-from src.main.service import fair_use
+from src.main.services import fair_use_service as fair_use
 
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -138,7 +138,7 @@ def test_webhook_failure_does_not_raise(db, monkeypatch):
     monkeypatch.setenv("FAIR_USE_WEBHOOK_URL", "https://example.invalid/webhook")
 
     with patch.object(fair_use, "_USD_PER_OUTPUT_TOKEN", 1.0), patch.object(fair_use, "FAIR_USE_COST_CAP", 1.0):
-        with patch("src.main.service.fair_use.httpx.post", side_effect=Exception("boom")):
+        with patch("src.main.services.fair_use_service.httpx.post", side_effect=Exception("boom")):
             # Should not raise
             fair_use.record_cost_from_usage(db, shop_domain, {"completion_tokens": 2}, model_used="gpt-5-pro")
 
