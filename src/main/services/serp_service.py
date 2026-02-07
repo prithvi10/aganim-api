@@ -165,7 +165,9 @@ class SerpService:
         """
         Fetch Google Shopping results for a product query.
         
-        Uses engine="google_shopping" for structured price data.
+        Uses engine="google_shopping_light" for fast, structured price data.
+        The Light API provides all critical data with faster response times
+        compared to the regular Google Shopping API.
         
         Args:
             query: Product search query
@@ -181,11 +183,11 @@ class SerpService:
             return []
 
         if not self.api_key:
-            logger.warning("[SERP] API key not configured; skipping shopping search")
+            logger.warning("[SERP] API key not configured; skipping shopping_light search")
             return []
 
         params = {
-            "engine": "google_shopping",
+            "engine": "google_shopping_light",  # Light API for faster responses
             "q": q,
             "num": num_results,
             "api_key": self.api_key,
@@ -193,8 +195,8 @@ class SerpService:
         if location:
             params["location"] = location
 
-        # Increase timeout for shopping results (more data)
-        shopping_timeout = httpx.Timeout(10.0)
+        # Reduced timeout since Light API is faster
+        shopping_timeout = httpx.Timeout(8.0)
 
         for attempt in range(2):
             try:
@@ -206,7 +208,7 @@ class SerpService:
                     
                     if resp.status_code != 200:
                         logger.warning(
-                            "[SERP] shopping non_200 status=%s attempt=%s q=%s body=%s",
+                            "[SERP] shopping_light non_200 status=%s attempt=%s q=%s body=%s",
                             resp.status_code,
                             attempt + 1,
                             q[:30],
@@ -261,7 +263,7 @@ class SerpService:
 
                     if results:
                         logger.info(
-                            "[SERP] shopping query=%s results=%s (filtered from %s)",
+                            "[SERP] shopping_light query=%s results=%s (filtered from %s)",
                             q[:30],
                             len(results),
                             len(shopping_results),
@@ -270,13 +272,13 @@ class SerpService:
 
             except Exception as e:
                 logger.warning(
-                    "[SERP] shopping fetch_failed attempt=%s q=%s err=%s",
+                    "[SERP] shopping_light fetch_failed attempt=%s q=%s err=%s",
                     attempt + 1,
                     q[:30],
                     e,
                 )
 
-        logger.warning("[SERP] shopping giving up after retries q=%s", q[:30])
+        logger.warning("[SERP] shopping_light giving up after retries q=%s", q[:30])
         return []
 
     async def get_competitor_prices(
@@ -286,9 +288,10 @@ class SerpService:
         num_results: int = 20,
     ) -> List[Dict]:
         """
-        Fetch competitor prices using Google Shopping API.
+        Fetch competitor prices using Google Shopping Light API.
         
-        Returns structured price data for competitor analysis.
+        Returns structured price data for competitor analysis with
+        faster response times than the regular Shopping API.
         Items without valid extracted_price are filtered out.
         
         Args:
