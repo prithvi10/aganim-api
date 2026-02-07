@@ -7,7 +7,7 @@ and titles. It uses brand context from RAG to ensure brand-consistent messaging.
 NOTE: SEO generation is handled by SEOAgent for all tiers.
 """
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from ..base import BaseAgent
 from ..state import MissionState
@@ -277,7 +277,7 @@ class RewriterAgent(BaseAgent):
         
         return actions, state
 
-    def _get_previous_draft(self, state: MissionState) -> dict | None:
+    def _get_previous_draft(self, state: MissionState) -> Optional[dict]:
         """
         Get the previous draft content for refinement mode.
         
