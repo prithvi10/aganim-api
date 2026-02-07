@@ -25,6 +25,19 @@ class SerpResult:
     position: int
 
 
+@dataclass
+class ShoppingResult:
+    """Structured Google Shopping result with price data."""
+    title: str
+    price: str                    # Display string (e.g., "$45.00")
+    extracted_price: float        # Numeric value for calculations
+    source: str                   # Merchant name (e.g., "Amazon", "Etsy")
+    link: str
+    thumbnail: Optional[str] = None
+    shipping: Optional[str] = None
+    position: int = 0
+
+
 class SerpService:
     """
     Service for fetching Search Engine Results Page data.
@@ -143,27 +156,171 @@ class SerpService:
         logger.warning("[SERP] giving up after retries q=%s", q[:30])
         return []
 
+    async def search_shopping(
+        self,
+        query: str,
+        num_results: int = 20,
+        location: Optional[str] = "United States",
+    ) -> List[ShoppingResult]:
+        """
+        Fetch Google Shopping results for a product query.
+        
+        Uses engine="google_shopping_light" for fast, structured price data.
+        The Light API provides all critical data with faster response times
+        compared to the regular Google Shopping API.
+        
+        Args:
+            query: Product search query
+            num_results: Number of results to fetch (default: 20 for good sample)
+            location: Location for localized results (default: United States)
+        
+        Returns:
+            List of ShoppingResult objects with extracted prices.
+            Items without valid prices are filtered out at service level.
+        """
+        q = (query or "").strip()
+        if not q:
+            return []
+
+        if not self.api_key:
+            logger.warning("[SERP] API key not configured; skipping shopping_light search")
+            return []
+
+        params = {
+            "engine": "google_shopping_light",  # Light API for faster responses
+            "q": q,
+            "num": num_results,
+            "api_key": self.api_key,
+        }
+        if location:
+            params["location"] = location
+
+        # Reduced timeout since Light API is faster
+        shopping_timeout = httpx.Timeout(8.0)
+
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=shopping_timeout,
+                    verify=ssl_verify_serp(),
+                ) as client:
+                    resp = await client.get(self.api_url, params=params)
+                    
+                    if resp.status_code != 200:
+                        logger.warning(
+                            "[SERP] shopping_light non_200 status=%s attempt=%s q=%s body=%s",
+                            resp.status_code,
+                            attempt + 1,
+                            q[:30],
+                            resp.text[:200],
+                        )
+                        continue
+
+                    data = resp.json() or {}
+                    shopping_results = data.get("shopping_results") or []
+
+                    results: List[ShoppingResult] = []
+                    for i, item in enumerate(shopping_results[:num_results]):
+                        title = str(item.get("title") or "").strip()
+                        
+                        # Extract price - SerpAPI provides extracted_price as float
+                        extracted_price = item.get("extracted_price")
+                        if extracted_price is None:
+                            # Try to parse from price string if extracted_price not available
+                            price_str = str(item.get("price") or "")
+                            try:
+                                # Remove currency symbols and parse
+                                cleaned = price_str.replace("$", "").replace(",", "").strip()
+                                extracted_price = float(cleaned) if cleaned else None
+                            except (ValueError, TypeError):
+                                extracted_price = None
+                        
+                        # Filter out items without valid price
+                        if extracted_price is None or extracted_price <= 0:
+                            continue
+                        
+                        price = str(item.get("price") or f"${extracted_price:.2f}")
+                        source = str(item.get("source") or item.get("merchant") or "Unknown").strip()
+                        link = str(item.get("link") or item.get("product_link") or "").strip()
+                        thumbnail = item.get("thumbnail")
+                        shipping = item.get("shipping") or item.get("delivery")
+                        
+                        if not title:
+                            continue
+
+                        results.append(
+                            ShoppingResult(
+                                title=title,
+                                price=price,
+                                extracted_price=float(extracted_price),
+                                source=source,
+                                link=link,
+                                thumbnail=thumbnail,
+                                shipping=str(shipping) if shipping else None,
+                                position=i + 1,
+                            )
+                        )
+
+                    if results:
+                        logger.info(
+                            "[SERP] shopping_light query=%s results=%s (filtered from %s)",
+                            q[:30],
+                            len(results),
+                            len(shopping_results),
+                        )
+                        return results
+
+            except Exception as e:
+                logger.warning(
+                    "[SERP] shopping_light fetch_failed attempt=%s q=%s err=%s",
+                    attempt + 1,
+                    q[:30],
+                    e,
+                )
+
+        logger.warning("[SERP] shopping_light giving up after retries q=%s", q[:30])
+        return []
+
     async def get_competitor_prices(
         self,
         product_name: str,
         category: str,
+        num_results: int = 20,
     ) -> List[Dict]:
         """
-        Convenience method for price comparison use case.
+        Fetch competitor prices using Google Shopping Light API.
         
-        Searches for product + "price" and extracts price signals.
+        Returns structured price data for competitor analysis with
+        faster response times than the regular Shopping API.
+        Items without valid extracted_price are filtered out.
         
         Args:
             product_name: Name of the product
             category: Product category
+            num_results: Number of results to fetch (default: 20)
         
         Returns:
-            List of dicts with title, snippet, link
+            List of dicts with structured shopping data:
+            - title: Product title
+            - price: Display price string (e.g., "$45.00")
+            - extracted_price: Float value for calculations
+            - source: Merchant name (e.g., "Amazon", "Etsy")
+            - link: Product URL
+            - thumbnail: Image URL (optional)
+            - shipping: Shipping info (optional)
         """
-        query = f"{product_name} {category} price buy"
-        results = await self.search(query, num_results=5)
+        query = f"{product_name} {category}"
+        results = await self.search_shopping(query, num_results=num_results)
         return [
-            {"title": r.title, "snippet": r.snippet, "link": r.link}
+            {
+                "title": r.title,
+                "price": r.price,
+                "extracted_price": r.extracted_price,
+                "source": r.source,
+                "link": r.link,
+                "thumbnail": r.thumbnail,
+                "shipping": r.shipping,
+            }
             for r in results
         ]
 
