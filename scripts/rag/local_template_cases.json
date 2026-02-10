@@ -8,16 +8,6 @@
     "expected_keywords": ["1885", "Kyoto", "Yo-no-bi"]
   },
   "product_templates": {
-    "product/title": {
-      "inputs": {
-        "title": "蒼釉・深皿（24cm）",
-        "category": "Tableware",
-        "description": "パスタやカレーに最適な深皿です。直径24cm、高さ5cm。電子レンジ使用可。桐箱入り。信楽の陶土と天然釉薬を使用。",
-        "target_locale": "en"
-      },
-      "expected_keys": ["title", "alternatives"],
-      "expected_keywords": []
-    },
     "product/collection": {
       "inputs": {
         "collection_name": "Everyday Tableware Collection",
@@ -46,6 +36,16 @@
         "target_locale": "en"
       },
       "expected_keys": ["headline", "subheadline", "cta_text"],
+      "expected_keywords": []
+    },
+    "product/blog-post": {
+      "inputs": {
+        "topic": "The Ancient Art of Wood-Kiln Firing: How 4 Days of Fire Transform Clay into Heirloom Ceramics",
+        "category": "Artisan Techniques",
+        "context": "Koto-gama fires its pieces once a month in a traditional wood kiln (薪窯) over 4 continuous days. The process uses Shigaraki clay and natural mineral glazes — no synthetic pigments. Each firing yields unique variations in color and texture.",
+        "target_locale": "en"
+      },
+      "expected_keys": ["title", "body_html", "tags"],
       "expected_keywords": []
     }
   },

@@ -1,12 +1,11 @@
 """
 Unit tests for RewriterAgent template-based generation.
 
-Tests all 5 product templates with PROD-quality mock responses:
-- product/description
-- product/title
+Tests all 4 product templates with PROD-quality mock responses:
 - product/collection
 - product/faq
 - product/landing-hero
+- product/blog-post
 
 Each test verifies:
 1. Correct template routing
@@ -30,7 +29,6 @@ from src.test.fixtures.brand_soul_fixtures import (
     PRODUCT_CELADON_BOWL,
     PRODUCT_TEAPOT,
     MOCK_PRODUCT_DESCRIPTION_RESPONSE,
-    MOCK_PRODUCT_TITLE_RESPONSE,
     MOCK_COLLECTION_RESPONSE,
     MOCK_FAQ_RESPONSE,
     MOCK_LANDING_HERO_RESPONSE,
@@ -94,118 +92,53 @@ def _assert_brand_voice(text: str):
         )
 
 
-# =============================================================================
-# Tests: product/description template
-# =============================================================================
-
-class TestProductDescriptionTemplate:
-    """Tests for the default product description template."""
-
-    @pytest.mark.asyncio
-    async def test_routes_to_description_generator(self, mock_services, base_state):
-        """Default template_id should route to _generate_description."""
-        agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        result = await agent.run(base_state)
-
-        assert result.status == "DRAFT_READY"
-        assert result.draft_content is not None
-        assert "jade whisper" in result.draft_content.lower()
-
-    @pytest.mark.asyncio
-    async def test_description_contains_product_html(self, mock_services, base_state):
-        """Output should contain HTML with product information."""
-        agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        result = await agent.run(base_state)
-
-        assert "<p>" in result.draft_content
-        assert "12 cm" in result.draft_content or "12cm" in result.draft_content
-
-    @pytest.mark.asyncio
-    async def test_description_extracts_title(self, mock_services, base_state):
-        agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        result = await agent.run(base_state)
-
-        assert result.draft_title is not None
-        assert "Celadon" in result.draft_title
-
-    @pytest.mark.asyncio
-    async def test_description_extracts_discovered_values(self, mock_services, base_state):
-        agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        result = await agent.run(base_state)
-
-        assert result.discovered_values is not None
-        assert len(result.discovered_values) >= 1
-
-    @pytest.mark.asyncio
-    async def test_description_brand_voice(self, mock_services, base_state):
-        agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        result = await agent.run(base_state)
-
-        _assert_brand_voice(result.draft_content)
-
-    @pytest.mark.asyncio
-    async def test_description_uses_gpt4o(self, mock_services, base_state):
-        agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        await agent.run(base_state)
-
-        call_kwargs = mock_services.llm.generate_text.call_args.kwargs
-        assert call_kwargs.get("model") == "gpt-4o"
-        assert call_kwargs.get("temperature") == 0.7
-
 
 # =============================================================================
-# Tests: product/title template
+# Tests: product/blog-post template
 # =============================================================================
 
-class TestProductTitleTemplate:
-    """Tests for the product title generator template."""
+class TestProductBlogPostTemplate:
+    """Tests for the brand blog post template."""
 
     @pytest.fixture
-    def title_state(self, base_state):
-        base_state.raw_input["template_id"] = "product/title"
+    def blog_state(self, base_state):
+        base_state.raw_input["template_id"] = "product/blog-post"
+        base_state.raw_input["topic"] = "The Art of Wood-Kiln Firing"
+        base_state.raw_input["category"] = "Artisan Techniques"
+        base_state.raw_input["context"] = "Traditional wood kiln firing takes 4 days."
         return base_state
 
     @pytest.mark.asyncio
-    async def test_routes_to_title_generator(self, mock_services, title_state):
-        mock_services.llm.generate_text = AsyncMock(return_value=MOCK_PRODUCT_TITLE_RESPONSE)
+    async def test_routes_to_blog_generator(self, mock_services, blog_state):
+        mock_response = json.dumps({
+            "title": "The Ancient Art of Wood-Kiln Firing",
+            "meta_description": "Discover how four days of fire transform raw clay into heirloom ceramics.",
+            "body_html": "<h2>A Tradition Born in Fire</h2><p>In Kyoto's Higashiyama district, craftsmanship and heritage converge.</p>",
+            "tags": ["ceramics", "wood-kiln", "artisan"]
+        })
+        mock_services.llm.generate_text = AsyncMock(return_value=mock_response)
         agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        result = await agent.run(title_state)
+        result = await agent.run(blog_state)
 
         assert result.status == "DRAFT_READY"
-        assert result.draft_title is not None
-        assert "Celadon" in result.draft_title
+        assert result.draft_content is not None
 
     @pytest.mark.asyncio
-    async def test_title_has_alternatives(self, mock_services, title_state):
-        mock_services.llm.generate_text = AsyncMock(return_value=MOCK_PRODUCT_TITLE_RESPONSE)
+    async def test_blog_prompt_uses_template(self, mock_services, blog_state):
+        mock_response = json.dumps({
+            "title": "The Ancient Art of Wood-Kiln Firing",
+            "meta_description": "Discover the process.",
+            "body_html": "<p>Content here</p>",
+            "tags": ["ceramics"]
+        })
+        mock_services.llm.generate_text = AsyncMock(return_value=mock_response)
         agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        result = await agent.run(title_state)
-
-        parsed = json.loads(MOCK_PRODUCT_TITLE_RESPONSE)
-        assert len(parsed["alternatives"]) == 3
-
-    @pytest.mark.asyncio
-    async def test_title_prompt_uses_template(self, mock_services, title_state):
-        mock_services.llm.generate_text = AsyncMock(return_value=MOCK_PRODUCT_TITLE_RESPONSE)
-        agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        await agent.run(title_state)
+        await agent.run(blog_state)
 
         call_kwargs = mock_services.llm.generate_text.call_args.kwargs
         system_prompt = call_kwargs.get("system_prompt", "")
-        # Title template should ask for SEO-friendly titles
-        assert "title" in system_prompt.lower()
-        assert "70 character" in system_prompt.lower() or "70 char" in system_prompt.lower()
-
-    @pytest.mark.asyncio
-    async def test_title_action_records_template_id(self, mock_services, title_state):
-        mock_services.llm.generate_text = AsyncMock(return_value=MOCK_PRODUCT_TITLE_RESPONSE)
-        agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
-        await agent.run(title_state)
-
-        call_kwargs = mock_services.llm.generate_text.call_args.kwargs
-        # The prompt should contain the product title
-        prompt = call_kwargs.get("prompt", "")
-        assert PRODUCT_CELADON_BOWL["title"] in prompt
+        assert "blog" in system_prompt.lower()
+        assert "html" in system_prompt.lower()
 
 
 # =============================================================================
@@ -383,7 +316,7 @@ class TestOperationalRulesInjection:
             brand_context=BRAND_CONTEXT_CHUNKS,
             strategic_intelligence=STRATEGIC_INTELLIGENCE,
         )
-        system_prompt = agent._build_system_prompt(base_state, context, "product/description")
+        system_prompt = agent._build_system_prompt(base_state, context, "product/collection")
 
         # Should include archetype
         assert "artisan_master" in system_prompt.lower()
@@ -403,7 +336,7 @@ class TestOperationalRulesInjection:
             raw_input=base_state.raw_input,
             brand_context=BRAND_CONTEXT_CHUNKS,
         )
-        system_prompt = agent._build_system_prompt(base_state, context, "product/description")
+        system_prompt = agent._build_system_prompt(base_state, context, "product/collection")
 
         assert "fourth-generation" in system_prompt.lower()
         assert "Yō-no-bi" in system_prompt
@@ -418,7 +351,7 @@ class TestOperationalRulesInjection:
             brand_context=[],
             strategic_intelligence=None,
         )
-        system_prompt = agent._build_system_prompt(base_state, context, "product/description")
+        system_prompt = agent._build_system_prompt(base_state, context, "product/collection")
 
         # Should still have the base system prompt
         assert len(system_prompt) > 100
@@ -433,7 +366,7 @@ class TestTemplateRoutingEdgeCases:
 
     @pytest.mark.asyncio
     async def test_unknown_template_falls_back_to_description(self, mock_services, base_state):
-        """Unknown template_id should fall back to product/description."""
+        """Unknown template_id should fall back to default description generation."""
         base_state.raw_input["template_id"] = "product/unknown-template"
         agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)
         result = await agent.run(base_state)
@@ -443,7 +376,7 @@ class TestTemplateRoutingEdgeCases:
 
     @pytest.mark.asyncio
     async def test_missing_template_id_defaults_to_description(self, mock_services, base_state):
-        """Missing template_id should default to product/description."""
+        """Missing template_id should default to description generation."""
         # template_id not in raw_input
         base_state.raw_input.pop("template_id", None)
         agent = RewriterAgent("takumi-ceramics.myshopify.com", mock_services)

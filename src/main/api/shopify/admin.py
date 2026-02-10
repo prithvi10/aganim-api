@@ -570,7 +570,6 @@ async def list_templates_endpoint(
     request: Request,
     category: str = None,
     agent_type: str = None,
-    tier: str = None,
 ):
     """
     List available content templates.
@@ -578,7 +577,6 @@ async def list_templates_endpoint(
     Args:
         category: Filter by category (product/marketing)
         agent_type: Filter by agent type (rewriter/marketing)
-        tier: Filter by minimum tier required (Free/Basic/Standard/Pro)
     
     Returns:
         List of template objects
@@ -606,7 +604,6 @@ async def list_templates_endpoint(
     templates = list_templates(
         category=category_enum,
         agent_type=agent_type_enum,
-        tier=tier,
     )
     
     return {
@@ -618,7 +615,6 @@ async def list_templates_endpoint(
                 "agent_type": t.agent_type.value,
                 "description": t.description,
                 "output_format": t.output_format,
-                "tier_required": t.tier_required,
                 "inputs": [
                     {
                         "name": inp.name,
@@ -646,7 +642,7 @@ async def generate_content_endpoint(
     Generate content using specified template.
     
     Args:
-        template_id: Template ID (e.g., "product/title", "marketing/email-launch")
+        template_id: Template ID (e.g., "product/blog-post", "marketing/email-launch")
         request: Request body with template inputs
     
     Returns:
@@ -667,25 +663,10 @@ async def generate_content_endpoint(
     except Exception:
         body = {}
     
-    # Get plan tier for routing
-    auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
-    plan_name = auth_context.get("effective_plan_name") or "Free"
-    
-    # Check tier access
-    tier_order = ["Free", "Basic", "Standard", "Pro"]
-    template_tier_index = tier_order.index(template.tier_required) if template.tier_required in tier_order else 0
-    plan_tier_index = tier_order.index(plan_name) if plan_name in tier_order else 0
-    if plan_tier_index < template_tier_index:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Template '{template_id}' requires {template.tier_required} plan. Current plan: {plan_name}",
-        )
-    
     # Build mission state
     state = MissionState(
         product_id=body.get("product_id", ""),
         shop_id=shop,
-        plan_tier=plan_name,
         raw_input={
             "template_id": template_id,
             **body,  # Include all template inputs
