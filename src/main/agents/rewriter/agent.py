@@ -43,10 +43,26 @@ class RewriterAgent(BaseAgent):
     that is localized and brand-consistent.
     
     NOTE: SEO is handled by SEOAgent for all tiers.
+    
+    Supports multiple templates:
+    - product/description: Product description (existing)
+    - product/title: Product title generator
+    - product/collection: Collection description
+    - product/faq: Product FAQ generator
+    - product/landing-hero: Landing page hero section
     """
     
     role_name = "Rewriter"
     default_tool = "llm.generate_text"
+    
+    # Supported templates
+    SUPPORTED_TEMPLATES = [
+        "product/description",
+        "product/title",
+        "product/collection",
+        "product/faq",
+        "product/landing-hero",
+    ]
     
     # NOTE: requires_llm_reasoning = False (default)
     # Reasoning phase uses deterministic plan - NO LLM call
@@ -151,10 +167,41 @@ class RewriterAgent(BaseAgent):
         Run fresh content generation from scratch.
         
         Uses the full REWRITER_SYSTEM_PROMPT to generate new content.
+        Supports template routing for different content types.
         """
+        # Check for template ID
+        template_id = state.raw_input.get("template_id", "product/description")
+        
+        # Route to appropriate generator based on template
+        if template_id == "product/description":
+            # Existing product description flow
+            return await self._generate_description(state, context, actions)
+        elif template_id == "product/title":
+            return await self._generate_title(state, context, actions)
+        elif template_id == "product/collection":
+            return await self._generate_collection(state, context, actions)
+        elif template_id == "product/faq":
+            return await self._generate_faq(state, context, actions)
+        elif template_id == "product/landing-hero":
+            return await self._generate_landing_hero(state, context, actions)
+        else:
+            # Fallback to description
+            logger.warning(
+                "[Rewriter] Unknown template_id=%s, falling back to product/description",
+                template_id,
+            )
+            return await self._generate_description(state, context, actions)
+    
+    async def _generate_description(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """Generate product description (existing flow)."""
         # Build prompts with brand context and learned rules
-        system_prompt = self._build_system_prompt(state, context)
-        user_prompt = self._build_user_prompt(state, context)
+        system_prompt = self._build_system_prompt(state, context, "product/description")
+        user_prompt = self._build_user_prompt(state, context, "product/description")
         
         try:
             # === THE ONLY LLM CALL FOR THIS AGENT ===
@@ -335,10 +382,28 @@ class RewriterAgent(BaseAgent):
         self,
         state: MissionState,
         context: AgentContext,
+        template_id: Optional[str] = None,
     ) -> str:
         """Build system prompt with brand context and locale persona."""
-        # Start with base system prompt
-        prompt_parts = [REWRITER_SYSTEM_PROMPT]
+        prompt_parts = []
+        
+        # NEW: Inject operational rules FIRST (highest priority)
+        operational_rules = context.get_operational_rules_prompt()
+        if operational_rules:
+            prompt_parts.append(operational_rules)
+        
+        # Get template-specific system prompt if available
+        if template_id and template_id != "product/description":
+            from src.main.agents.templates import get_template
+            template = get_template(template_id)
+            if template and template.system_prompt:
+                prompt_parts.append(template.system_prompt)
+            else:
+                # Fallback to base prompt
+                prompt_parts.append(REWRITER_SYSTEM_PROMPT)
+        else:
+            # Start with base system prompt
+            prompt_parts.append(REWRITER_SYSTEM_PROMPT)
         
         # Add value discovery prompt
         prompt_parts.append(VALUE_DISCOVERY_PROMPT)
@@ -383,8 +448,46 @@ class RewriterAgent(BaseAgent):
         self,
         state: MissionState,
         context: AgentContext,
+        template_id: Optional[str] = None,
     ) -> str:
         """Build user prompt with product data."""
+        # Get template-specific user prompt if available
+        if template_id and template_id != "product/description":
+            from src.main.agents.templates import get_template
+            template = get_template(template_id)
+            if template and template.user_prompt_template:
+                # Format template with available data
+                title = context.get_product_title()
+                description = context.get_product_description()
+                category = context.get_category()
+                target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+                
+                # Build format dict with all possible template variables
+                format_dict = {
+                    "title": title,
+                    "description": description,
+                    "category": category,
+                    "target_locale": target_locale,
+                    **state.raw_input,  # Include any additional inputs
+                }
+                
+                try:
+                    return template.user_prompt_template.format(**format_dict)
+                except KeyError as e:
+                    logger.warning(
+                        "[Rewriter] Missing template variable %s, using defaults",
+                        e,
+                    )
+                    # Fallback to basic format
+                    return template.user_prompt_template.format(
+                        title=title,
+                        category=category,
+                        target_locale=target_locale,
+                        description=description,
+                        **{k: "" for k in template.user_prompt_template.split("{")[1:] if "}" in k},
+                    )
+        
+        # Default: product description prompt
         title = context.get_product_title()
         description = context.get_product_description()
         category = context.get_category()
@@ -414,6 +517,197 @@ class RewriterAgent(BaseAgent):
         
         # Fallback: return raw content as description
         return {"description": result}
+    
+    # -------------------------------------------------------------------------
+    # Template-specific generators
+    # -------------------------------------------------------------------------
+    
+    async def _generate_title(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """Generate product title using template."""
+        system_prompt = self._build_system_prompt(state, context, "product/title")
+        user_prompt = self._build_user_prompt(state, context, "product/title")
+        
+        try:
+            result = await self.services.llm.generate_text(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model="gpt-4o",
+                temperature=0.7,
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=result,
+                    input_params={"template_id": "product/title", "mode": "fresh"},
+                )
+            )
+            
+            parsed = self._parse_llm_result(result)
+            state.draft_title = parsed.get("title", result)
+            state.status = "DRAFT_READY"
+            
+            logger.info(
+                "[Rewriter] Generated title for product=%s shop=%s",
+                state.product_id,
+                self.shop_id,
+            )
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"template_id": "product/title"},
+                )
+            )
+            state.set_error(f"Title generation failed: {str(e)}")
+        
+        return actions, state
+    
+    async def _generate_collection(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """Generate collection description using template."""
+        system_prompt = self._build_system_prompt(state, context, "product/collection")
+        user_prompt = self._build_user_prompt(state, context, "product/collection")
+        
+        try:
+            result = await self.services.llm.generate_text(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model="gpt-4o",
+                temperature=0.7,
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=result,
+                    input_params={"template_id": "product/collection", "mode": "fresh"},
+                )
+            )
+            
+            parsed = self._parse_llm_result(result)
+            state.draft_content = parsed.get("description", result)
+            state.status = "DRAFT_READY"
+            
+            logger.info(
+                "[Rewriter] Generated collection description shop=%s",
+                self.shop_id,
+            )
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"template_id": "product/collection"},
+                )
+            )
+            state.set_error(f"Collection generation failed: {str(e)}")
+        
+        return actions, state
+    
+    async def _generate_faq(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """Generate product FAQ using template."""
+        system_prompt = self._build_system_prompt(state, context, "product/faq")
+        user_prompt = self._build_user_prompt(state, context, "product/faq")
+        
+        try:
+            result = await self.services.llm.generate_text(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model="gpt-4o",
+                temperature=0.7,
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=result,
+                    input_params={"template_id": "product/faq", "mode": "fresh"},
+                )
+            )
+            
+            parsed = self._parse_llm_result(result)
+            state.draft_content = str(parsed.get("faqs", result))  # Store FAQs as content
+            state.status = "DRAFT_READY"
+            
+            logger.info(
+                "[Rewriter] Generated FAQ for product=%s shop=%s",
+                state.product_id,
+                self.shop_id,
+            )
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"template_id": "product/faq"},
+                )
+            )
+            state.set_error(f"FAQ generation failed: {str(e)}")
+        
+        return actions, state
+    
+    async def _generate_landing_hero(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """Generate landing page hero section using template."""
+        system_prompt = self._build_system_prompt(state, context, "product/landing-hero")
+        user_prompt = self._build_user_prompt(state, context, "product/landing-hero")
+        
+        try:
+            result = await self.services.llm.generate_text(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model="gpt-4o",
+                temperature=0.7,
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=result,
+                    input_params={"template_id": "product/landing-hero", "mode": "fresh"},
+                )
+            )
+            
+            parsed = self._parse_llm_result(result)
+            state.draft_content = str(parsed)  # Store hero section as content
+            state.status = "DRAFT_READY"
+            
+            logger.info(
+                "[Rewriter] Generated landing hero for product=%s shop=%s",
+                state.product_id,
+                self.shop_id,
+            )
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"template_id": "product/landing-hero"},
+                )
+            )
+            state.set_error(f"Landing hero generation failed: {str(e)}")
+        
+        return actions, state
 
 
 # Backward compatibility alias

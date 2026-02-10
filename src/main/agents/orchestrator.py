@@ -10,7 +10,7 @@ This is the central coordinator that:
 - Records token usage for fair_use cost tracking
 """
 
-from typing import List, Type, AsyncGenerator, Optional
+from typing import List, Dict, Type, AsyncGenerator, Optional, Any
 import uuid
 from datetime import datetime
 
@@ -84,6 +84,7 @@ class MissionControl:
         services: ServiceRegistry,
         requested_agents: Optional[List[str]] = None,
         mission_id: Optional[str] = None,
+        workflow_config: Optional[List[Dict[str, Any]]] = None,
     ):
         """
         Initialize MissionControl.
@@ -96,24 +97,52 @@ class MissionControl:
                               e.g., ["RewriterAgent"], ["MarketingAgent", "PriceScoutAgent"]
                               If provided, only these agents will run instead of the tier workflow.
             mission_id: Optional mission ID from the database. If not provided, a new one is generated.
+            workflow_config: Optional merchant-defined pipeline config from Mission Architect.
+                             e.g., [{"agent_name": "RewriterAgent", "has_gate": True}, ...]
+                             When provided, overrides both requested_agents and tier-based workflow.
         """
         self.plan_tier = plan_tier
         self.shop_id = shop_id
         self.services = services
         self.requested_agents = requested_agents
+        self.workflow_config = workflow_config or []
         self.workflow = self._build_workflow()
         self.mission_id = mission_id or uuid.uuid4().hex
 
     def _build_workflow(self) -> List[Type[BaseAgent]]:
         """
-        Build the agent workflow based on plan tier or ad-hoc agent selection.
+        Build the agent workflow based on workflow_config, requested_agents, or plan tier.
         
-        If requested_agents is provided, only those agents will be included.
-        Otherwise, uses the tier-based workflow configuration.
+        Priority:
+        1. workflow_config (Mission Architect) - highest priority
+        2. requested_agents (ad-hoc mode)
+        3. tier-based workflow (default)
         
         Returns:
             List of agent classes to execute in order
         """
+        # Mission Architect mode: build from workflow_config
+        if self.workflow_config:
+            workflow = []
+            for step in self.workflow_config:
+                agent_name = step.get("agent_name", "")
+                if agent_name in AGENT_MAP:
+                    workflow.append(AGENT_MAP[agent_name])
+                else:
+                    logger.warning(
+                        "[MissionControl] Unknown agent in workflow_config: %s (skipped)",
+                        agent_name
+                    )
+            if workflow:
+                logger.info(
+                    "[MissionControl] Architect mode: running agents %s",
+                    [a.__name__ for a in workflow]
+                )
+                return workflow
+            logger.warning(
+                "[MissionControl] No valid agents in workflow_config, falling back"
+            )
+        
         # Ad-hoc mode: use only the requested agents
         if self.requested_agents:
             workflow = []
@@ -138,6 +167,28 @@ class MissionControl:
         
         # Default: tier-based workflow
         return self.WORKFLOWS.get(self.plan_tier, [RewriterAgent])
+    
+    def _should_auto_proceed(self, state: MissionState, current_idx: int) -> bool:
+        """
+        Check whether the current step should auto-proceed (skip human gate).
+        
+        A step auto-proceeds when workflow_config has has_gate=False for that index.
+        If no workflow_config is set, defaults to requiring a gate (returns False).
+        
+        Args:
+            state: Current mission state
+            current_idx: Index of the current step in the workflow
+        
+        Returns:
+            True if the step should auto-proceed without human approval
+        """
+        wf_config = state.workflow_config or self.workflow_config
+        if not wf_config or current_idx >= len(wf_config):
+            return False  # Default: require gate
+        
+        step_config = wf_config[current_idx]
+        has_gate = step_config.get("has_gate", True)  # Default to gated for safety
+        return not has_gate
     
     def _record_fair_use_costs(self, state: MissionState) -> None:
         """
@@ -444,17 +495,38 @@ class MissionControl:
             agent_output = self._extract_agent_output(state, agent_name)
             state.agent_outputs[agent_name] = agent_output
             
-            # Mark step complete - waiting for merchant decision
-            state.status = "AWAITING_APPROVAL"
-            state.add_log(f"MissionControl: {agent_name} completed - awaiting approval")
-            
-            logger.info(
-                "[MissionControl] Step completed mission=%s agent=%s index=%d/%d",
-                self.mission_id,
-                agent_name,
-                current_idx + 1,
-                len(self.workflow),
-            )
+            # Check gate logic: auto-proceed or wait for human
+            if self._should_auto_proceed(state, current_idx):
+                # Auto-proceed: advance index without waiting for human
+                state.current_agent_index += 1
+                if state.current_agent_index >= len(self.workflow):
+                    state.status = "COMPLETED"
+                    state.add_log(f"MissionControl: {agent_name} auto-approved (no gate) - all agents completed")
+                    self._record_fair_use_costs(state)
+                else:
+                    state.status = "PENDING"
+                    next_agent = self.workflow[state.current_agent_index].__name__
+                    state.add_log(f"MissionControl: {agent_name} auto-approved (no gate) - advancing to {next_agent}")
+                
+                logger.info(
+                    "[MissionControl] Step auto-proceeded mission=%s agent=%s index=%d/%d",
+                    self.mission_id,
+                    agent_name,
+                    current_idx + 1,
+                    len(self.workflow),
+                )
+            else:
+                # Human gate: wait for merchant decision
+                state.status = "AWAITING_APPROVAL"
+                state.add_log(f"MissionControl: {agent_name} completed - awaiting approval")
+                
+                logger.info(
+                    "[MissionControl] Step completed mission=%s agent=%s index=%d/%d",
+                    self.mission_id,
+                    agent_name,
+                    current_idx + 1,
+                    len(self.workflow),
+                )
             
             yield state
             

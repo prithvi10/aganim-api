@@ -482,3 +482,338 @@ class TestAdhocWithDifferentTiers:
         body = resp.json()
         assert body["is_adhoc"] is True
         assert body["requested_agents"] == ["MarketingAgent"]
+
+
+# =============================================================================
+# Tests: Mission Architect – workflow_config
+# =============================================================================
+
+class TestCreateMissionWithWorkflowConfig:
+    """Tests for creating missions with the Mission Architect workflow_config."""
+
+    def test_create_mission_with_workflow_config(self, client, seed_shop):
+        """Test creating a mission with a custom workflow_config."""
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-1",
+                "product_name": "Workflow Config Product",
+                "japanese_description": "ワークフロー設定テスト",
+                "workflow_config": [
+                    {"agent_name": "PriceScoutAgent", "has_gate": True},
+                    {"agent_name": "RewriterAgent", "has_gate": False},
+                ],
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "created"
+        assert "mission_id" in body
+        assert body["total_agents"] == 2
+        assert body["current_agent_index"] == 0
+        assert "PriceScoutAgent" in body["workflow_agents"]
+        assert "RewriterAgent" in body["workflow_agents"]
+
+    def test_workflow_config_overrides_requested_agents(self, client, seed_shop):
+        """workflow_config should take priority over requested_agents."""
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-override",
+                "product_name": "Override Product",
+                "japanese_description": "オーバーライドテスト",
+                "requested_agents": ["SEOAgent", "MarketingAgent"],
+                "workflow_config": [
+                    {"agent_name": "PriceScoutAgent", "has_gate": True},
+                ],
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total_agents"] == 1
+        assert "PriceScoutAgent" in body["workflow_agents"]
+        # requested_agents should be ignored because workflow_config is provided
+        assert "SEOAgent" not in body.get("workflow_agents", [])
+
+    def test_workflow_config_with_all_gates_true(self, client, seed_shop):
+        """All steps gated – every step should require human approval."""
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-all-gates",
+                "product_name": "All Gates Product",
+                "japanese_description": "全ゲートテスト",
+                "workflow_config": [
+                    {"agent_name": "RewriterAgent", "has_gate": True},
+                    {"agent_name": "SEOAgent", "has_gate": True},
+                    {"agent_name": "MarketingAgent", "has_gate": True},
+                ],
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total_agents"] == 3
+        # Verify workflow_config is stored correctly
+        if "workflow_config" in body:
+            for step in body["workflow_config"]:
+                assert step["has_gate"] is True
+
+    def test_workflow_config_with_all_gates_false(self, client, seed_shop):
+        """No gates – agents should auto-proceed without approval."""
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-no-gates",
+                "product_name": "No Gates Product",
+                "japanese_description": "ゲートなしテスト",
+                "workflow_config": [
+                    {"agent_name": "RewriterAgent", "has_gate": False},
+                    {"agent_name": "SEOAgent", "has_gate": False},
+                ],
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total_agents"] == 2
+        if "workflow_config" in body:
+            for step in body["workflow_config"]:
+                assert step["has_gate"] is False
+
+    def test_workflow_config_with_mixed_gates(self, client, seed_shop):
+        """Mix of gated and non-gated steps."""
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-mixed",
+                "product_name": "Mixed Gates Product",
+                "japanese_description": "ミックスゲートテスト",
+                "workflow_config": [
+                    {"agent_name": "RewriterAgent", "has_gate": False},
+                    {"agent_name": "SEOAgent", "has_gate": True},
+                    {"agent_name": "MarketingAgent", "has_gate": False},
+                    {"agent_name": "PriceScoutAgent", "has_gate": True},
+                ],
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total_agents"] == 4
+        if "workflow_config" in body:
+            gates = [s["has_gate"] for s in body["workflow_config"]]
+            assert gates == [False, True, False, True]
+
+    def test_workflow_config_single_agent(self, client, seed_shop):
+        """Workflow with only one agent."""
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-single",
+                "product_name": "Single Agent Product",
+                "japanese_description": "単一エージェントテスト",
+                "workflow_config": [
+                    {"agent_name": "MarketingAgent", "has_gate": True},
+                ],
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total_agents"] == 1
+        assert "MarketingAgent" in body["workflow_agents"]
+
+    def test_workflow_config_without_field_uses_default(self, client, seed_shop):
+        """When workflow_config is absent, use default tier workflow."""
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-default",
+                "product_name": "Default Workflow Product",
+                "japanese_description": "デフォルトテスト",
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "created"
+        # Should still have agents derived from tier
+        assert body["total_agents"] > 0
+        assert len(body["workflow_agents"]) > 0
+
+
+class TestWorkflowConfigStateStorage:
+    """Tests for verifying workflow_config is persisted in DB state."""
+
+    def test_workflow_config_stored_in_mission_record(self, client, seed_shop):
+        """Verify workflow_config is stored in mission.current_state."""
+        workflow_config = [
+            {"agent_name": "RewriterAgent", "has_gate": True},
+            {"agent_name": "SEOAgent", "has_gate": False},
+        ]
+
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-store",
+                "product_name": "State Store Test",
+                "japanese_description": "ステート保存テスト",
+                "workflow_config": workflow_config,
+            },
+        )
+
+        assert resp.status_code == 200
+        mission_id = resp.json()["mission_id"]
+
+        db = TestingSessionLocal()
+        mission = db.query(Mission).filter(Mission.id == mission_id).first()
+        assert mission is not None
+
+        state = mission.current_state
+        assert "workflow_config" in state
+        assert len(state["workflow_config"]) == 2
+        assert state["workflow_config"][0]["agent_name"] == "RewriterAgent"
+        assert state["workflow_config"][0]["has_gate"] is True
+        assert state["workflow_config"][1]["agent_name"] == "SEOAgent"
+        assert state["workflow_config"][1]["has_gate"] is False
+
+        db.close()
+
+    def test_workflow_agents_derived_from_config(self, client, seed_shop):
+        """workflow_agents list should match agent names from workflow_config."""
+        workflow_config = [
+            {"agent_name": "MarketingAgent", "has_gate": True},
+            {"agent_name": "PriceScoutAgent", "has_gate": False},
+            {"agent_name": "SEOAgent", "has_gate": True},
+        ]
+
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-wf-agents",
+                "product_name": "Agents Derived Test",
+                "japanese_description": "エージェント派生テスト",
+                "workflow_config": workflow_config,
+            },
+        )
+
+        assert resp.status_code == 200
+        mission_id = resp.json()["mission_id"]
+
+        db = TestingSessionLocal()
+        mission = db.query(Mission).filter(Mission.id == mission_id).first()
+        state = mission.current_state
+
+        expected_agents = ["MarketingAgent", "PriceScoutAgent", "SEOAgent"]
+        assert state.get("workflow_agents") == expected_agents
+
+        db.close()
+
+
+class TestApproveEndpointIntegration:
+    """Integration tests for POST /api/missions/{id}/approve."""
+
+    def _create_awaiting_mission(self, client, seed_shop):
+        """Helper: create a mission and manually set it to AWAITING_APPROVAL."""
+        resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-approve-int",
+                "product_name": "Approve Integration",
+                "japanese_description": "承認統合テスト",
+                "workflow_config": [
+                    {"agent_name": "RewriterAgent", "has_gate": True},
+                    {"agent_name": "SEOAgent", "has_gate": True},
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        mission_id = resp.json()["mission_id"]
+
+        # Manually set status to AWAITING_APPROVAL in the DB
+        db = TestingSessionLocal()
+        mission = db.query(Mission).filter(Mission.id == mission_id).first()
+        mission.status = "AWAITING_APPROVAL"
+        state = mission.current_state or {}
+        state["status"] = "AWAITING_APPROVAL"
+        mission.current_state = state
+        db.commit()
+        db.close()
+
+        return mission_id
+
+    def test_approve_advances_step(self, client, seed_shop):
+        """Test /approve advances the current_agent_index."""
+        mission_id = self._create_awaiting_mission(client, seed_shop)
+
+        resp = client.post(
+            f"/api/missions/{mission_id}/approve",
+            headers=_auth_headers(),
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "success"
+        assert body["current_agent_index"] == 1
+        assert body["is_complete"] is False
+
+    def test_approve_is_alias_for_continue(self, client, seed_shop):
+        """Test /approve returns same shape as /continue."""
+        mission_id = self._create_awaiting_mission(client, seed_shop)
+
+        resp = client.post(
+            f"/api/missions/{mission_id}/approve",
+            headers=_auth_headers(),
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        # Should contain the same keys as /continue
+        assert "status" in body
+        assert "current_agent_index" in body
+        assert "is_complete" in body
+
+    def test_approve_404_for_missing_mission(self, client, seed_shop):
+        """Test /approve returns 404 for a non-existent mission."""
+        resp = client.post(
+            "/api/missions/does-not-exist-123/approve",
+            headers=_auth_headers(),
+        )
+        assert resp.status_code == 404
+
+    def test_approve_rejects_non_awaiting(self, client, seed_shop):
+        """Test /approve rejects missions not in AWAITING_APPROVAL status."""
+        # Create a mission but leave it in PENDING status
+        create_resp = client.post(
+            "/api/missions",
+            headers=_auth_headers(),
+            json={
+                "product_id": "prod-approve-reject",
+                "product_name": "Reject Test",
+                "japanese_description": "拒否テスト",
+                "workflow_config": [
+                    {"agent_name": "RewriterAgent", "has_gate": True},
+                ],
+            },
+        )
+        assert create_resp.status_code == 200
+        mission_id = create_resp.json()["mission_id"]
+
+        resp = client.post(
+            f"/api/missions/{mission_id}/approve",
+            headers=_auth_headers(),
+        )
+        assert resp.status_code == 400

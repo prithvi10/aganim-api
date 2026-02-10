@@ -14,7 +14,16 @@ from src.main.db.database import get_db, SessionLocal
 from src.main.db.db_models import Shop, StoreContext
 from src.main.api.validation import validate_shop_and_quota
 from src.main.security.security import verify_shopify_session
-from src.main.services.brand_ingest_service import ingest_brand_context, scrape_urls, extract_file_text
+from src.main.services.brand_ingest_service import (
+    ingest_brand_context,
+    ingest_brand_context_with_intelligence,
+    scrape_urls,
+    extract_file_text,
+)
+from src.main.services.intelligence_extractor import IntelligenceExtractorService
+from src.main.services.llm_service import LLMService
+from src.main.services.rag_service import RAGService
+from datetime import datetime, timezone
 from src.main.config.configs import PROMO_PRICING_ENABLED
 from src.main.logging.logger import get_logger
 
@@ -256,13 +265,27 @@ async def brand_context_ingest_endpoint(
     if not raw_texts:
         raise HTTPException(status_code=400, detail="No brand context content provided")
 
-    result = ingest_brand_context(db, shop_id=shop, raw_texts=raw_texts)
+    result = await ingest_brand_context_with_intelligence(db, shop_id=shop, raw_texts=raw_texts)
+
+    # Set status to "ready" after the full pipeline (including intelligence) completes.
+    # ingest_brand_context_with_intelligence uses set_status=False internally
+    # to avoid a premature "ready" before intelligence extraction finishes.
+    try:
+        shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+        if shop_record:
+            shop_record.brand_context_status = "ready"
+            db.add(shop_record)
+            db.commit()
+    except Exception:
+        pass
+
     logger.info(
-        "[BrandIngest] done rid=%s shop=%s inserted=%s chunks=%s",
+        "[BrandIngest] done rid=%s shop=%s inserted=%s chunks=%s intel=%s",
         rid,
         shop,
         result.get("inserted"),
         result.get("chunk_count"),
+        "yes" if result.get("strategic_intelligence") else "no",
     )
     return {"status": "success", **result}
 
@@ -273,6 +296,7 @@ def _run_brand_context_ingest(
     raw_texts: list[dict],
     job_id: str,
 ) -> None:
+    import asyncio
     db = SessionLocal()
     try:
         shop = db.query(Shop).filter(Shop.domain == shop_id).first()
@@ -283,7 +307,18 @@ def _run_brand_context_ingest(
             db.add(shop)
             db.commit()
 
-        result = ingest_brand_context(db, shop_id=shop_id, raw_texts=raw_texts)
+        # Run the async intelligence-aware ingestion from this sync background task
+        result = asyncio.run(
+            ingest_brand_context_with_intelligence(db, shop_id=shop_id, raw_texts=raw_texts)
+        )
+
+        logger.info(
+            "[BrandIngest] background done shop=%s inserted=%s chunks=%s intel=%s",
+            shop_id,
+            result.get("inserted"),
+            result.get("chunk_count"),
+            "yes" if result.get("strategic_intelligence") else "no",
+        )
 
         shop = db.query(Shop).filter(Shop.domain == shop_id).first()
         if shop:
@@ -293,6 +328,7 @@ def _run_brand_context_ingest(
             db.add(shop)
             db.commit()
     except Exception as e:
+        logger.error("[BrandIngest] background failed shop=%s err=%s", shop_id, e)
         try:
             shop = db.query(Shop).filter(Shop.domain == shop_id).first()
             if shop:
@@ -522,4 +558,258 @@ async def brand_context_status_endpoint(
             if getattr(shop, "brand_context_updated_at", None)
             else None
         ),
+    }
+
+
+# =============================================================================
+# Template Endpoints
+# =============================================================================
+
+@router.get("/api/templates")
+async def list_templates_endpoint(
+    request: Request,
+    category: str = None,
+    agent_type: str = None,
+    tier: str = None,
+):
+    """
+    List available content templates.
+    
+    Args:
+        category: Filter by category (product/marketing)
+        agent_type: Filter by agent type (rewriter/marketing)
+        tier: Filter by minimum tier required (Free/Basic/Standard/Pro)
+    
+    Returns:
+        List of template objects
+    """
+    from src.main.agents.templates import (
+        list_templates,
+        TemplateCategory,
+        AgentType,
+    )
+    
+    category_enum = None
+    if category:
+        try:
+            category_enum = TemplateCategory(category.lower())
+        except ValueError:
+            pass
+    
+    agent_type_enum = None
+    if agent_type:
+        try:
+            agent_type_enum = AgentType(agent_type.lower())
+        except ValueError:
+            pass
+    
+    templates = list_templates(
+        category=category_enum,
+        agent_type=agent_type_enum,
+        tier=tier,
+    )
+    
+    return {
+        "templates": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "category": t.category.value,
+                "agent_type": t.agent_type.value,
+                "description": t.description,
+                "output_format": t.output_format,
+                "tier_required": t.tier_required,
+                "inputs": [
+                    {
+                        "name": inp.name,
+                        "label": inp.label,
+                        "required": inp.required,
+                        "input_type": inp.input_type,
+                        "description": inp.description,
+                    }
+                    for inp in t.inputs
+                ],
+            }
+            for t in templates
+        ]
+    }
+
+
+@router.post("/api/generate/{template_id:path}")
+async def generate_content_endpoint(
+    template_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Generate content using specified template.
+    
+    Args:
+        template_id: Template ID (e.g., "product/title", "marketing/email-launch")
+        request: Request body with template inputs
+    
+    Returns:
+        Generated content
+    """
+    from src.main.agents.templates import get_template
+    from src.main.agents.state import MissionState
+    from src.main.services.registry import ServiceRegistry
+    
+    # Get template
+    template = get_template(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+    
+    # Parse request body
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    # Get plan tier for routing
+    auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
+    plan_name = auth_context.get("effective_plan_name") or "Free"
+    
+    # Check tier access
+    tier_order = ["Free", "Basic", "Standard", "Pro"]
+    template_tier_index = tier_order.index(template.tier_required) if template.tier_required in tier_order else 0
+    plan_tier_index = tier_order.index(plan_name) if plan_name in tier_order else 0
+    if plan_tier_index < template_tier_index:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Template '{template_id}' requires {template.tier_required} plan. Current plan: {plan_name}",
+        )
+    
+    # Build mission state
+    state = MissionState(
+        product_id=body.get("product_id", ""),
+        shop_id=shop,
+        plan_tier=plan_name,
+        raw_input={
+            "template_id": template_id,
+            **body,  # Include all template inputs
+        },
+        db=db,
+    )
+    
+    # Create services with db and shop for usage tracking
+    services = ServiceRegistry.create_default(db=db, shop_domain=shop)
+    services.rag = RAGService()
+    
+    # Route to appropriate agent
+    if template.agent_type.value == "rewriter":
+        from src.main.agents.rewriter import RewriterAgent
+        agent = RewriterAgent(shop_id=shop, services=services)
+    elif template.agent_type.value == "marketing":
+        from src.main.agents.marketing import MarketingAgent
+        agent = MarketingAgent(shop_id=shop, services=services)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown agent type: {template.agent_type.value}")
+    
+    # Execute agent
+    try:
+        new_state = await agent.run(state)
+        
+        return {
+            "status": "success",
+            "template_id": template_id,
+            "content": new_state.draft_content or new_state.draft_title or "",
+            "title": new_state.draft_title,
+            "description": new_state.draft_content,
+        }
+    except Exception as e:
+        logger.error(
+            "[Generate] Template generation failed template=%s shop=%s err=%s",
+            template_id,
+            shop,
+            e,
+        )
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+
+# =============================================================================
+# Brand Intelligence Endpoints
+# =============================================================================
+
+@router.post("/api/admin/brand-intelligence/extract")
+async def extract_brand_intelligence_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Extract strategic intelligence from existing brand context.
+    
+    Triggers the intelligence extraction pipeline on stored brand text.
+    """
+    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+    if not shop_record:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    
+    if not shop_record.brand_context:
+        raise HTTPException(status_code=404, detail="No brand context found. Please ingest brand context first.")
+    
+    try:
+        # Get brand text
+        brand_context = shop_record.brand_context
+        if isinstance(brand_context, str):
+            brand_context = json.loads(brand_context)
+        
+        brand_text = brand_context.get("en", {}).get("clean_text", "")
+        if not brand_text:
+            brand_text = brand_context.get("ja", {}).get("clean_text", "")
+        
+        if not brand_text:
+            raise HTTPException(status_code=400, detail="No brand text found in brand context")
+        
+        # Extract intelligence
+        llm_service = LLMService(db=db, shop_domain=shop)
+        extractor = IntelligenceExtractorService(llm_service)
+        
+        existing_pillars = brand_context.get("en", {}).get("pillars", [])
+        intel = await extractor.extract_strategic_audit(
+            brand_text=brand_text,
+            existing_pillars=existing_pillars if existing_pillars else None,
+        )
+        
+        # Store
+        shop_record.strategic_intelligence = intel.model_dump()
+        shop_record.strategic_intelligence_updated_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        return {
+            "status": "success",
+            "intelligence": intel.model_dump(),
+            "updated_at": shop_record.strategic_intelligence_updated_at.isoformat(),
+        }
+    except Exception as e:
+        logger.error(
+            "[BrandIntel] Extraction failed shop=%s err=%s",
+            shop,
+            e,
+        )
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Intelligence extraction failed: {str(e)}")
+
+
+@router.get("/api/admin/brand-intelligence")
+async def get_brand_intelligence_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Get stored strategic intelligence for a shop.
+    """
+    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+    if not shop_record:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    
+    strategic_intel = getattr(shop_record, "strategic_intelligence", None)
+    updated_at = getattr(shop_record, "strategic_intelligence_updated_at", None)
+    
+    return {
+        "intelligence": strategic_intel,
+        "updated_at": updated_at.isoformat() if updated_at else None,
     }
