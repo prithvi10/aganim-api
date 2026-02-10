@@ -7,6 +7,7 @@ and titles. It uses brand context from RAG to ensure brand-consistent messaging.
 NOTE: SEO generation is handled by SEOAgent for all tiers.
 """
 
+import json
 from typing import List, Optional, Tuple
 
 from ..base import BaseAgent
@@ -550,7 +551,7 @@ class RewriterAgent(BaseAgent):
             
             parsed = self._parse_llm_result(result)
             state.draft_title = parsed.get("title", "")
-            state.draft_content = parsed.get("body_html", result)
+            state.draft_content = json.dumps(parsed)  # Store blog post as valid JSON
             state.status = "DRAFT_READY"
             
             logger.info(
@@ -597,7 +598,7 @@ class RewriterAgent(BaseAgent):
             )
             
             parsed = self._parse_llm_result(result)
-            state.draft_content = parsed.get("description", result)
+            state.draft_content = json.dumps(parsed)  # Store collection as valid JSON
             state.status = "DRAFT_READY"
             
             logger.info(
@@ -643,7 +644,7 @@ class RewriterAgent(BaseAgent):
             )
             
             parsed = self._parse_llm_result(result)
-            state.draft_content = str(parsed.get("faqs", result))  # Store FAQs as content
+            state.draft_content = json.dumps(parsed)  # Store FAQs as valid JSON
             state.status = "DRAFT_READY"
             
             logger.info(
@@ -690,7 +691,7 @@ class RewriterAgent(BaseAgent):
             )
             
             parsed = self._parse_llm_result(result)
-            state.draft_content = str(parsed)  # Store hero section as content
+            state.draft_content = json.dumps(parsed)  # Store hero section as valid JSON
             state.status = "DRAFT_READY"
             
             logger.info(

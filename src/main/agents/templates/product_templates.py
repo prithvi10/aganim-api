@@ -191,7 +191,7 @@ def register_product_templates():
         name="Brand Blog Post",
         category=TemplateCategory.PRODUCT,
         agent_type=AgentType.REWRITER,
-        description="Write blog posts about manufacturing, artisan techniques, shipping, sustainability and more",
+        description="Blog about manufacturing, artisan craft, shipping & more",
         inputs=[
             TemplateInput(name="topic", label="Subject / Topic", required=True,
                           description="e.g. 'Our wood-kiln firing process', 'How we source Shigaraki clay', 'The art of gift wrapping'"),

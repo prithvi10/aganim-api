@@ -1,12 +1,11 @@
 """
 Unit tests for MarketingAgent template-based generation.
 
-Tests all 7 marketing templates with PROD-quality mock responses:
-- marketing/social-instagram (existing flow)
+Tests all 6 marketing templates with PROD-quality mock responses:
+- marketing/social-tiktok (existing flow)
 - marketing/email-launch
 - marketing/email-abandoned
 - marketing/email-welcome
-- marketing/blog-post
 - marketing/ad-facebook
 - marketing/ad-google
 
@@ -35,7 +34,6 @@ from src.test.fixtures.brand_soul_fixtures import (
     MOCK_EMAIL_LAUNCH_RESPONSE,
     MOCK_EMAIL_ABANDONED_RESPONSE,
     MOCK_EMAIL_WELCOME_RESPONSE,
-    MOCK_BLOG_POST_RESPONSE,
     MOCK_AD_FACEBOOK_RESPONSE,
     MOCK_AD_GOOGLE_RESPONSE,
     BRAND_VOICE_MUST_INCLUDE_KEYWORDS,
@@ -98,11 +96,11 @@ def _assert_brand_voice(text: str):
 
 
 # =============================================================================
-# Tests: marketing/social-instagram template (existing flow)
+# Tests: marketing/social-tiktok template (existing flow)
 # =============================================================================
 
-class TestSocialInstagramTemplate:
-    """Tests for the Instagram social hooks template."""
+class TestSocialTikTokTemplate:
+    """Tests for the TikTok social hooks template."""
 
     @pytest.mark.asyncio
     async def test_routes_to_social_generator(self, mock_services, base_state):
@@ -293,68 +291,6 @@ class TestEmailWelcomeTemplate:
 
 
 # =============================================================================
-# Tests: marketing/blog-post template
-# =============================================================================
-
-class TestBlogPostTemplate:
-    """Tests for the blog post template."""
-
-    @pytest.fixture
-    def blog_state(self, base_state):
-        base_state.raw_input["template_id"] = "marketing/blog-post"
-        base_state.raw_input["topic"] = "The 23 Steps Behind Every Takumi Bowl"
-        base_state.raw_input["product_context"] = PRODUCT_CELADON_BOWL["description"]
-        base_state.raw_input["word_count"] = "1000"
-        return base_state
-
-    @pytest.mark.asyncio
-    async def test_routes_to_blog_generator(self, mock_services, blog_state):
-        mock_services.llm.generate_text = AsyncMock(return_value=MOCK_BLOG_POST_RESPONSE)
-        agent = MarketingAgent("takumi-ceramics.myshopify.com", mock_services)
-        result = await agent.run(blog_state)
-
-        assert result.status == "DRAFT_READY"
-        assert result.draft_content is not None
-        # Blog content should be extracted from JSON
-        assert "<h1>" in result.draft_content or "<h2>" in result.draft_content
-
-    @pytest.mark.asyncio
-    async def test_blog_post_structure(self):
-        """Blog post should have title, meta, content, and tags."""
-        parsed = json.loads(MOCK_BLOG_POST_RESPONSE)
-        assert "title" in parsed
-        assert "meta_description" in parsed
-        assert "content" in parsed
-        assert "tags" in parsed
-        assert len(parsed["meta_description"]) <= 160
-        assert len(parsed["tags"]) >= 3
-
-    @pytest.mark.asyncio
-    async def test_blog_uses_gpt4o(self, mock_services, blog_state):
-        """Blog uses gpt-4o for quality long-form content."""
-        mock_services.llm.generate_text = AsyncMock(return_value=MOCK_BLOG_POST_RESPONSE)
-        agent = MarketingAgent("takumi-ceramics.myshopify.com", mock_services)
-        await agent.run(blog_state)
-
-        call_kwargs = mock_services.llm.generate_text.call_args.kwargs
-        assert call_kwargs.get("model") == "gpt-4o"
-        assert call_kwargs.get("temperature") == 0.8
-
-    @pytest.mark.asyncio
-    async def test_blog_brand_voice(self):
-        parsed = json.loads(MOCK_BLOG_POST_RESPONSE)
-        _assert_brand_voice(parsed["content"])
-
-    @pytest.mark.asyncio
-    async def test_blog_content_has_headings(self):
-        """Blog should have structured HTML content with headings."""
-        parsed = json.loads(MOCK_BLOG_POST_RESPONSE)
-        content = parsed["content"]
-        assert "<h1>" in content or "<h2>" in content
-        assert "<p>" in content
-
-
-# =============================================================================
 # Tests: marketing/ad-facebook template
 # =============================================================================
 
@@ -481,19 +417,6 @@ class TestMarketingOperationalRules:
         assert "Arita" in system_prompt
 
     @pytest.mark.asyncio
-    async def test_blog_prompt_includes_operational_rules(self, mock_services, base_state):
-        agent = MarketingAgent("takumi-ceramics.myshopify.com", mock_services)
-
-        context = AgentContext(
-            raw_input=base_state.raw_input,
-            strategic_intelligence=STRATEGIC_INTELLIGENCE,
-        )
-        system_prompt = agent._build_system_prompt(base_state, context, "marketing/blog-post")
-
-        assert "artisan_master" in system_prompt.lower()
-        assert "handcrafted" in system_prompt.lower()
-
-    @pytest.mark.asyncio
     async def test_ad_prompt_includes_operational_rules(self, mock_services, base_state):
         agent = MarketingAgent("takumi-ceramics.myshopify.com", mock_services)
 
@@ -538,7 +461,7 @@ class TestMarketingRoutingEdgeCases:
 
     @pytest.mark.asyncio
     async def test_default_template_is_social(self, mock_services, base_state):
-        """Missing template_id should default to social-instagram."""
+        """Missing template_id should default to social-tiktok."""
         base_state.raw_input.pop("template_id", None)
         agent = MarketingAgent("takumi-ceramics.myshopify.com", mock_services)
         result = await agent.run(base_state)
@@ -609,16 +532,6 @@ class TestBrandConsistencyAcrossTemplates:
                 assert banned.lower() not in text, (
                     f"Banned word '{banned}' found in ad output"
                 )
-
-    @pytest.mark.asyncio
-    async def test_blog_no_banned_words(self):
-        """Blog post should contain zero banned words."""
-        parsed = json.loads(MOCK_BLOG_POST_RESPONSE)
-        text = parsed["content"].lower()
-        for banned in BRAND_VOICE_BANNED_WORDS:
-            assert banned.lower() not in text, (
-                f"Banned word '{banned}' found in blog post"
-            )
 
     @pytest.mark.asyncio
     async def test_social_no_banned_words(self):

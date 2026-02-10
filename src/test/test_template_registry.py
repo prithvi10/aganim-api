@@ -29,8 +29,8 @@ class TestTemplateRegistration:
         # Force import to trigger registration
         import src.main.agents.templates  # noqa: F401
 
-        assert len(TEMPLATE_REGISTRY) >= 11, (
-            f"Expected at least 11 templates (4 product + 7 marketing), got {len(TEMPLATE_REGISTRY)}"
+        assert len(TEMPLATE_REGISTRY) >= 9, (
+            f"Expected at least 9 templates (4 product + 5 marketing), got {len(TEMPLATE_REGISTRY)}"
         )
 
     # --- Product templates ---
@@ -57,11 +57,9 @@ class TestTemplateRegistration:
     @pytest.mark.parametrize(
         "template_id",
         [
-            "marketing/social-instagram",
             "marketing/email-launch",
             "marketing/email-abandoned",
             "marketing/email-welcome",
-            "marketing/blog-post",
             "marketing/ad-facebook",
             "marketing/ad-google",
         ],
@@ -103,9 +101,9 @@ class TestTemplateStructure:
         t = get_template("product/blog-post")
         assert t is not None
 
-    def test_marketing_blog_post_exists(self):
-        """Marketing blog post should be registered."""
-        t = get_template("marketing/blog-post")
+    def test_marketing_email_launch_exists(self):
+        """Marketing email launch should be registered."""
+        t = get_template("marketing/email-launch")
         assert t is not None
 
 
@@ -126,7 +124,7 @@ class TestTemplateFiltering:
         import src.main.agents.templates  # noqa: F401
         results = list_templates(category=TemplateCategory.MARKETING)
         assert all(t.category == TemplateCategory.MARKETING for t in results)
-        assert len(results) >= 7
+        assert len(results) >= 5
 
     def test_filter_by_agent_type_rewriter(self):
         import src.main.agents.templates  # noqa: F401
@@ -191,11 +189,6 @@ class TestPromptContent:
         assert "headline" in t.system_prompt.lower()
         assert "cta" in t.system_prompt.lower()
 
-    def test_blog_post_prompt_requests_word_count(self):
-        t = get_template("marketing/blog-post")
-        assert t is not None
-        assert "800" in t.system_prompt or "1500" in t.system_prompt
-
     def test_product_blog_post_prompt_requests_html(self):
         t = get_template("product/blog-post")
         assert t is not None
@@ -208,7 +201,7 @@ class TestPromptContent:
         import src.main.agents.templates  # noqa: F401
         marketing_templates = list_templates(category=TemplateCategory.MARKETING)
         for t in marketing_templates:
-            if t.system_prompt:  # Skip templates with empty prompts (social-instagram)
-                assert "json" in t.system_prompt.lower(), (
-                    f"Marketing template {t.id} should request JSON output"
-                )
+            assert t.system_prompt, f"Marketing template {t.id} has empty system_prompt"
+            assert "json" in t.system_prompt.lower(), (
+                f"Marketing template {t.id} should request JSON output"
+            )

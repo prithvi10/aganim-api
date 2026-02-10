@@ -92,34 +92,6 @@ Target Locale: {target_locale}
 Generate a welcome email for new subscribers.
 """
 
-# Blog Post
-BLOG_POST_SYSTEM_PROMPT = """You are a content marketing expert.
-
-Generate blog posts that:
-- Hook readers in the first paragraph
-- Provide valuable information
-- Naturally incorporate products
-- Include SEO keywords
-- End with a clear CTA
-- Match the brand voice
-
-Return ONLY valid JSON:
-{
-  "title": "Blog post title",
-  "meta_description": "SEO meta description (160 chars max)",
-  "content": "Blog post HTML content (800-1500 words)",
-  "tags": ["tag1", "tag2", "tag3"]
-}
-"""
-
-BLOG_POST_USER_PROMPT = """Topic: {topic}
-Product Context: {product_context}
-Target Locale: {target_locale}
-Word Count: {word_count}
-
-Generate a blog post.
-"""
-
 # Ad Copy - Social (Facebook/Instagram)
 AD_COPY_SOCIAL_SYSTEM_PROMPT = """You are a performance marketing expert.
 
@@ -179,23 +151,6 @@ Generate Google Ads search ad copy.
 def register_marketing_templates():
     """Register all marketing templates."""
     
-    # Social Hooks (existing - reference only)
-    register_template(ContentTemplate(
-        id="marketing/social-instagram",
-        name="Instagram Caption",
-        category=TemplateCategory.MARKETING,
-        agent_type=AgentType.MARKETING,
-        description="Generate Instagram captions and hooks",
-        inputs=[
-            TemplateInput(name="product_title", label="Product Title", required=True),
-            TemplateInput(name="category", label="Category", required=True),
-            TemplateInput(name="tags", label="Tags", required=False),
-        ],
-        output_format="json",
-        system_prompt="",  # Uses existing social hooks prompt
-        user_prompt_template="",
-    ))
-    
     # Email - Launch
     register_template(ContentTemplate(
         id="marketing/email-launch",
@@ -247,24 +202,6 @@ def register_marketing_templates():
         output_format="json",
         system_prompt=EMAIL_WELCOME_SYSTEM_PROMPT,
         user_prompt_template=EMAIL_WELCOME_USER_PROMPT,
-    ))
-    
-    # Blog Post
-    register_template(ContentTemplate(
-        id="marketing/blog-post",
-        name="Blog Post",
-        category=TemplateCategory.MARKETING,
-        agent_type=AgentType.MARKETING,
-        description="Generate long-form blog articles",
-        inputs=[
-            TemplateInput(name="topic", label="Topic", required=True),
-            TemplateInput(name="product_context", label="Product Context", required=False, input_type="textarea"),
-            TemplateInput(name="target_locale", label="Target Locale", required=True),
-            TemplateInput(name="word_count", label="Word Count", required=False, input_type="text"),
-        ],
-        output_format="html",
-        system_prompt=BLOG_POST_SYSTEM_PROMPT,
-        user_prompt_template=BLOG_POST_USER_PROMPT,
     ))
     
     # Ad Copy - Social
