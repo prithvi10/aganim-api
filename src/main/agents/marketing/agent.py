@@ -348,13 +348,31 @@ class MarketingAgent(BaseAgent):
             description = context.get_product_description()
             target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
             
+            # Derive shop/brand name from shop_id for welcome emails, etc.
+            shop_name = (
+                state.shop_id.replace(".myshopify.com", "").replace("-", " ").title()
+                if state.shop_id else "Our Brand"
+            )
+            
+            # Smart defaults for mission-mode (when template fields aren't
+            # explicitly provided via the Content Templates page).
+            smart_defaults = {
+                "brand_name": shop_name,                 # email-welcome
+                "price": "See product page",             # email-abandoned
+                "launch_date": "Coming Soon",            # email-launch
+                "platform": "Facebook/Instagram",        # ad-facebook
+                "keywords": f"{title}, {category}",      # ad-google
+            }
+            
+            # Build: smart defaults → standard fields → raw_input overrides
             format_dict = {
+                **smart_defaults,
                 "title": title,
                 "product_title": title,  # Alias
                 "category": category,
                 "description": description,
                 "target_locale": target_locale,
-                **state.raw_input,  # Include any additional inputs
+                **state.raw_input,  # Explicit inputs always win
             }
             
             try:
@@ -364,12 +382,12 @@ class MarketingAgent(BaseAgent):
                     "[Marketing] Missing template variable %s, using defaults",
                     e,
                 )
-                return template.user_prompt_template.format(
-                    title=title,
-                    category=category,
-                    target_locale=target_locale,
-                    description=description,
-                )
+                # Robust fallback: extract all {var} names and default to ""
+                import re
+                var_names = re.findall(r"\{(\w+)\}", template.user_prompt_template)
+                safe_dict = {v: "" for v in var_names}
+                safe_dict.update(format_dict)
+                return template.user_prompt_template.format(**safe_dict)
         
         # Fallback for social hooks
         if template_id.startswith("marketing/social"):
