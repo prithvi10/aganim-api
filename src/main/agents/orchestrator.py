@@ -464,8 +464,24 @@ class MissionControl:
         agent_class = self.workflow[current_idx]
         agent_name = agent_class.__name__
         
+        # ── Inject template_id for template steps ────────────────────────
+        wf_config = state.workflow_config or self.workflow_config
+        step_template_id = None
+        if wf_config and current_idx < len(wf_config):
+            step_template_id = wf_config[current_idx].get("template_id")
+        
+        if step_template_id:
+            state.raw_input["template_id"] = step_template_id
+            state.add_log(
+                f"MissionControl: Step {current_idx + 1}/{len(self.workflow)} - "
+                f"Running {agent_name} with template '{step_template_id}'..."
+            )
+        else:
+            # Clear template_id so agent uses its default behaviour
+            state.raw_input.pop("template_id", None)
+            state.add_log(f"MissionControl: Step {current_idx + 1}/{len(self.workflow)} - Running {agent_name}...")
+        
         state.status = "IN_PROGRESS"
-        state.add_log(f"MissionControl: Step {current_idx + 1}/{len(self.workflow)} - Running {agent_name}...")
         yield state
         
         try:
@@ -492,8 +508,10 @@ class MissionControl:
                 return
             
             # Extract and store this agent's output
-            agent_output = self._extract_agent_output(state, agent_name)
-            state.agent_outputs[agent_name] = agent_output
+            agent_output = self._extract_agent_output(state, agent_name, current_idx=current_idx)
+            # Use step index as key prefix for template steps to avoid overwrites
+            output_key = f"{agent_name}:{step_template_id}" if step_template_id else agent_name
+            state.agent_outputs[output_key] = agent_output
             
             # Check gate logic: auto-proceed or wait for human
             if self._should_auto_proceed(state, current_idx):
@@ -539,19 +557,39 @@ class MissionControl:
             state.set_error(f"{agent_name} failed: {str(e)}")
             yield state
 
-    def _extract_agent_output(self, state: MissionState, agent_name: str) -> dict:
+    def _extract_agent_output(
+        self,
+        state: MissionState,
+        agent_name: str,
+        current_idx: int | None = None,
+    ) -> dict:
         """
         Extract the relevant output for a specific agent.
         
         This allows the frontend to display each agent's contribution clearly.
+        For template steps (workflow_config entry with template_id), draft_content
+        is always returned since templates write their output there.
         
         Args:
             state: Current mission state
             agent_name: Name of the agent whose output to extract
+            current_idx: Step index (used to detect template steps)
         
         Returns:
             Dict containing the agent's specific output fields
         """
+        # ── Template step: always return draft_content ───────────────────
+        wf_config = state.workflow_config or self.workflow_config
+        if current_idx is not None and wf_config and current_idx < len(wf_config):
+            template_id = wf_config[current_idx].get("template_id")
+            if template_id:
+                return {
+                    "template_id": template_id,
+                    "draft_content": state.draft_content,
+                    "draft_title": state.draft_title,
+                }
+
+        # ── Regular agent step ───────────────────────────────────────────
         if agent_name in ("RewriterAgent", "CopywriterAgent"):
             return {
                 "draft_content": state.draft_content,

@@ -636,6 +636,21 @@ async def run_step(
             workflow_agents = final_state.get("workflow_agents", [])
             current_agent = workflow_agents[current_idx] if current_idx < len(workflow_agents) else None
             
+            # Resolve template_id for this step (if any)
+            wf_config = final_state.get("workflow_config", [])
+            step_template_id = None
+            if wf_config and current_idx < len(wf_config):
+                step_template_id = wf_config[current_idx].get("template_id")
+            
+            # Look up agent output — template steps use composite key
+            agent_outputs = final_state.get("agent_outputs", {})
+            if step_template_id and current_agent:
+                agent_output = agent_outputs.get(f"{current_agent}:{step_template_id}") or agent_outputs.get(current_agent)
+            elif current_agent:
+                agent_output = agent_outputs.get(current_agent)
+            else:
+                agent_output = None
+            
             # Determine step response
             step_data = {
                 "mission_id": mission_id,
@@ -643,11 +658,13 @@ async def run_step(
                 "current_agent_index": current_idx,
                 "total_agents": len(workflow_agents),
                 "status": mission.status,
-                "agent_output": final_state.get("agent_outputs", {}).get(current_agent) if current_agent else None,
+                "agent_output": agent_output,
+                "template_id": step_template_id,
                 "can_continue": current_idx < len(workflow_agents) - 1,
                 "can_skip": current_idx < len(workflow_agents),
                 "is_final": mission.status == "COMPLETED",
                 "workflow_agents": workflow_agents,
+                "workflow_config": wf_config,
                 "skipped_agents": final_state.get("skipped_agents", []),
             }
             
