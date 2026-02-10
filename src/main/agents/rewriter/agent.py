@@ -463,13 +463,23 @@ class RewriterAgent(BaseAgent):
                 category = context.get_category()
                 target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
                 
-                # Build format dict with all possible template variables
+                # Smart defaults for mission-mode (when template fields aren't
+                # explicitly provided via the Content Templates page).
+                smart_defaults = {
+                    "topic": title,                      # blog-post
+                    "context": description,              # blog-post
+                    "collection_name": title,            # collection
+                    "products": description,             # collection
+                }
+                
+                # Build format dict: smart defaults → standard fields → raw_input overrides
                 format_dict = {
+                    **smart_defaults,
                     "title": title,
                     "description": description,
                     "category": category,
                     "target_locale": target_locale,
-                    **state.raw_input,  # Include any additional inputs
+                    **state.raw_input,  # Explicit inputs always win
                 }
                 
                 try:
@@ -479,14 +489,12 @@ class RewriterAgent(BaseAgent):
                         "[Rewriter] Missing template variable %s, using defaults",
                         e,
                     )
-                    # Fallback to basic format
-                    return template.user_prompt_template.format(
-                        title=title,
-                        category=category,
-                        target_locale=target_locale,
-                        description=description,
-                        **{k: "" for k in template.user_prompt_template.split("{")[1:] if "}" in k},
-                    )
+                    # Robust fallback: extract all {var} names and default to ""
+                    import re
+                    var_names = re.findall(r"\{(\w+)\}", template.user_prompt_template)
+                    safe_dict = {v: "" for v in var_names}
+                    safe_dict.update(format_dict)
+                    return template.user_prompt_template.format(**safe_dict)
         
         # Default: product description prompt
         title = context.get_product_title()
