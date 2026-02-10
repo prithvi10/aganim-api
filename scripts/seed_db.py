@@ -8,7 +8,7 @@ import json
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from src.main.db.database import SessionLocal, engine, Base
-from src.main.db.db_models import Plan, User, Shop
+from src.main.db.db_models import Plan, User, Shop, BrandEntity
 
 def _ensure_plan_columns_exist():
     """
@@ -76,6 +76,9 @@ def _ensure_shop_columns_exist():
             add("last_plan_change_type TEXT", "last_plan_change_type")
             add("last_plan_change_at TEXT", "last_plan_change_at")
             add("last_shopify_subscription_status TEXT", "last_shopify_subscription_status")
+            # Strategic intelligence columns (Writing Studio)
+            add("strategic_intelligence TEXT", "strategic_intelligence")
+            add("strategic_intelligence_updated_at TEXT", "strategic_intelligence_updated_at")
             conn.commit()
         return
 
@@ -94,6 +97,9 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_plan_change_type VARCHAR"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_plan_change_at TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS last_shopify_subscription_status VARCHAR"))
+        # Strategic intelligence columns (Writing Studio)
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS strategic_intelligence JSONB"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS strategic_intelligence_updated_at TIMESTAMPTZ"))
         conn.commit()
 
 def seed_data():

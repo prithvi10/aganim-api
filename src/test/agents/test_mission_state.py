@@ -280,6 +280,131 @@ class TestMissionState:
         restored = MissionState.from_dict(result)
         assert restored.status == "AWAITING_APPROVAL"
 
+    # =========================================================================
+    # Tests: workflow_config (Mission Architect)
+    # =========================================================================
+
+    def test_workflow_config_default_empty(self):
+        """Test workflow_config defaults to empty list."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        
+        assert state.workflow_config == []
+
+    def test_workflow_config_to_dict(self):
+        """Test workflow_config is serialized correctly."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        
+        state.workflow_config = [
+            {"agent_name": "RewriterAgent", "has_gate": True},
+            {"agent_name": "SEOAgent", "has_gate": False},
+            {"agent_name": "PriceScoutAgent", "has_gate": True},
+        ]
+        
+        result = state.to_dict()
+        
+        assert "workflow_config" in result
+        assert len(result["workflow_config"]) == 3
+        assert result["workflow_config"][0]["agent_name"] == "RewriterAgent"
+        assert result["workflow_config"][0]["has_gate"] is True
+        assert result["workflow_config"][1]["agent_name"] == "SEOAgent"
+        assert result["workflow_config"][1]["has_gate"] is False
+
+    def test_workflow_config_from_dict(self):
+        """Test workflow_config is deserialized correctly."""
+        data = {
+            "product_id": "test",
+            "shop_id": "test-shop",
+            "plan_tier": "Standard",
+            "raw_input": {},
+            "workflow_config": [
+                {"agent_name": "PriceScoutAgent", "has_gate": True},
+                {"agent_name": "MarketingAgent", "has_gate": False},
+            ],
+        }
+        
+        state = MissionState.from_dict(data)
+        
+        assert len(state.workflow_config) == 2
+        assert state.workflow_config[0]["agent_name"] == "PriceScoutAgent"
+        assert state.workflow_config[0]["has_gate"] is True
+        assert state.workflow_config[1]["agent_name"] == "MarketingAgent"
+        assert state.workflow_config[1]["has_gate"] is False
+
+    def test_workflow_config_from_dict_missing_defaults_empty(self):
+        """Test workflow_config defaults to empty list when missing from dict."""
+        data = {
+            "product_id": "test",
+            "shop_id": "test-shop",
+            "plan_tier": "Standard",
+            "raw_input": {},
+        }
+        
+        state = MissionState.from_dict(data)
+        
+        assert state.workflow_config == []
+
+    def test_workflow_config_roundtrip(self):
+        """Test workflow_config survives roundtrip serialization."""
+        config = [
+            {"agent_name": "RewriterAgent", "has_gate": True},
+            {"agent_name": "SEOAgent", "has_gate": False},
+            {"agent_name": "MarketingAgent", "has_gate": True},
+            {"agent_name": "PriceScoutAgent", "has_gate": False},
+        ]
+        
+        original = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        original.workflow_config = config
+        
+        data = original.to_dict()
+        restored = MissionState.from_dict(data)
+        
+        assert restored.workflow_config == original.workflow_config
+        assert len(restored.workflow_config) == 4
+        assert restored.workflow_config[1]["has_gate"] is False
+        assert restored.workflow_config[2]["has_gate"] is True
+
+    def test_workflow_config_with_all_fields_roundtrip(self):
+        """Test workflow_config serializes alongside all other step journey fields."""
+        original = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Pro",
+            raw_input={"title": "Test"},
+        )
+        original.current_agent_index = 2
+        original.workflow_agents = ["RewriterAgent", "SEOAgent", "MarketingAgent"]
+        original.workflow_config = [
+            {"agent_name": "RewriterAgent", "has_gate": True},
+            {"agent_name": "SEOAgent", "has_gate": False},
+            {"agent_name": "MarketingAgent", "has_gate": True},
+        ]
+        original.agent_outputs = {"RewriterAgent": {"draft_title": "Title"}}
+        original.skipped_agents = ["SEOAgent"]
+        
+        data = original.to_dict()
+        restored = MissionState.from_dict(data)
+        
+        assert restored.current_agent_index == 2
+        assert restored.workflow_agents == original.workflow_agents
+        assert restored.workflow_config == original.workflow_config
+        assert restored.agent_outputs == original.agent_outputs
+        assert restored.skipped_agents == original.skipped_agents
+
     def test_multiple_agent_outputs(self):
         """Test storing outputs from multiple agents."""
         state = MissionState(
