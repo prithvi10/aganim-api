@@ -117,12 +117,6 @@ MARKETING_INPUTS = {
         "brand_name": "Koto-gama (古都窯)",
         "target_locale": "en",
     },
-    "marketing/blog-post": {
-        "topic": "The Art of Japanese Tableware: How Heritage Ceramics Transform Your Dining Experience",
-        "product_context": "Koto-gama's Blue Glaze Deep Plate — handcrafted 24cm dish, Shigaraki clay, natural mineral glazes, 4-day wood kiln firing.",
-        "target_locale": "en",
-        "word_count": "800",
-    },
     "marketing/ad-facebook": {
         "title": "Blue Glaze Deep Plate (24cm)",
         "category": "Tableware",

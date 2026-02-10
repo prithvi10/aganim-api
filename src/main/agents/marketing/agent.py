@@ -8,6 +8,7 @@ This agent focuses on social media marketing:
 SEO functionality has been moved to the dedicated SEOAgent.
 """
 
+import json
 from typing import List, Tuple, Optional, Dict, Any
 
 from ..base import BaseAgent
@@ -41,7 +42,6 @@ class MarketingAgent(BaseAgent):
     - Social hooks/caption generation (automatically in pipeline)
     - Seasonal campaign generation (on-demand)
     - Email marketing (launch, abandoned cart, welcome)
-    - Blog post generation
     - Ad copy generation (social, search)
     
     LLM Calls: 1 (for content generation)
@@ -49,12 +49,10 @@ class MarketingAgent(BaseAgent):
     Note: SEO functionality is handled by the dedicated SEOAgent.
     
     Supports multiple templates:
-    - marketing/social-instagram: Instagram captions (existing)
-    - marketing/social-tiktok: TikTok scripts (existing)
+    - marketing/social-tiktok: TikTok / social media hooks
     - marketing/email-launch: Product launch emails
     - marketing/email-abandoned: Abandoned cart emails
     - marketing/email-welcome: Welcome emails
-    - marketing/blog-post: Blog articles
     - marketing/ad-facebook: Facebook/Instagram ads
     - marketing/ad-google: Google Ads
     """
@@ -64,12 +62,10 @@ class MarketingAgent(BaseAgent):
     
     # Supported templates
     SUPPORTED_TEMPLATES = [
-        "marketing/social-instagram",
         "marketing/social-tiktok",
         "marketing/email-launch",
         "marketing/email-abandoned",
         "marketing/email-welcome",
-        "marketing/blog-post",
         "marketing/ad-facebook",
         "marketing/ad-google",
     ]
@@ -114,15 +110,13 @@ class MarketingAgent(BaseAgent):
         actions = []
         
         # Get template ID (default to social if not specified)
-        template_id = state.raw_input.get("template_id", "marketing/social-instagram")
+        template_id = state.raw_input.get("template_id", "marketing/social-tiktok")
         
         # Route to appropriate generator
         if template_id.startswith("marketing/social"):
             return await self._generate_social(state, context, actions, template_id)
         elif template_id.startswith("marketing/email"):
             return await self._generate_email(state, context, actions, template_id)
-        elif template_id == "marketing/blog-post":
-            return await self._generate_blog(state, context, actions)
         elif template_id.startswith("marketing/ad"):
             return await self._generate_ad(state, context, actions, template_id)
         else:
@@ -131,7 +125,7 @@ class MarketingAgent(BaseAgent):
                 "[Marketing] Unknown template_id=%s, falling back to social",
                 template_id,
             )
-            return await self._generate_social(state, context, actions, "marketing/social-instagram")
+            return await self._generate_social(state, context, actions, "marketing/social-tiktok")
 
     # -------------------------------------------------------------------------
     # FEEDBACK: Record for learning (NO LLM call)
@@ -469,7 +463,7 @@ class MarketingAgent(BaseAgent):
             )
             
             parsed = self._parse_json_result(result)
-            state.draft_content = str(parsed)  # Store email content
+            state.draft_content = json.dumps(parsed)  # Store email content as valid JSON
             state.status = "DRAFT_READY"
             
             logger.info(
@@ -486,52 +480,6 @@ class MarketingAgent(BaseAgent):
                 )
             )
             state.set_error(f"Email generation failed: {str(e)}")
-        
-        return actions, state
-    
-    async def _generate_blog(
-        self,
-        state: MissionState,
-        context: AgentContext,
-        actions: List[AgentAction],
-    ) -> Tuple[List[AgentAction], MissionState]:
-        """Generate blog post using template."""
-        system_prompt = self._build_system_prompt(state, context, "marketing/blog-post")
-        user_prompt = self._build_user_prompt(state, context, "marketing/blog-post")
-        
-        try:
-            result = await self.services.llm.generate_text(
-                prompt=user_prompt,
-                system_prompt=system_prompt,
-                model="gpt-4o",  # Use better model for long-form content
-                temperature=0.8,
-            )
-            
-            actions.append(
-                AgentAction.success_action(
-                    tool_name="llm.generate_text",
-                    output=result,
-                    input_params={"template_id": "marketing/blog-post"},
-                )
-            )
-            
-            parsed = self._parse_json_result(result)
-            state.draft_content = parsed.get("content", result)  # Store blog content
-            state.status = "DRAFT_READY"
-            
-            logger.info(
-                "[Marketing] Blog post generated shop=%s",
-                self.shop_id,
-            )
-        except Exception as e:
-            actions.append(
-                AgentAction.failure_action(
-                    tool_name="llm.generate_text",
-                    error=str(e),
-                    input_params={"template_id": "marketing/blog-post"},
-                )
-            )
-            state.set_error(f"Blog post generation failed: {str(e)}")
         
         return actions, state
     
@@ -563,7 +511,7 @@ class MarketingAgent(BaseAgent):
             )
             
             parsed = self._parse_json_result(result)
-            state.draft_content = str(parsed)  # Store ad copy
+            state.draft_content = json.dumps(parsed)  # Store ad copy as valid JSON
             state.status = "DRAFT_READY"
             
             logger.info(

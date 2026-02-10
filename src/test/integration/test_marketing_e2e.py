@@ -6,10 +6,9 @@ Simulates the complete marketing content pipeline:
 2. MarketingAgent perceive → reason → act for each template
 3. Validates output structure, brand voice, and state management
 
-Tests all 7 marketing templates:
-- Social hooks (Instagram/TikTok)
+Tests 6 marketing templates:
+- Social media hooks (TikTok)
 - Email (launch, abandoned cart, welcome)
-- Blog post
 - Ad copy (Facebook, Google)
 """
 
@@ -27,13 +26,12 @@ from src.test.fixtures.brand_soul_fixtures import (
     PRODUCT_CELADON_BOWL,
     PRODUCT_TEAPOT,
     PRODUCT_VASE,
-    MOCK_SOCIAL_HOOKS_RESPONSE,
     MOCK_EMAIL_LAUNCH_RESPONSE,
     MOCK_EMAIL_ABANDONED_RESPONSE,
     MOCK_EMAIL_WELCOME_RESPONSE,
-    MOCK_BLOG_POST_RESPONSE,
     MOCK_AD_FACEBOOK_RESPONSE,
     MOCK_AD_GOOGLE_RESPONSE,
+    MOCK_SOCIAL_HOOKS_RESPONSE,
     BRAND_VOICE_MUST_INCLUDE_KEYWORDS,
     BRAND_VOICE_BANNED_WORDS,
 )
@@ -229,67 +227,6 @@ class TestEmailPipelineE2E:
 
 
 # =============================================================================
-# Integration: Blog Post Pipeline
-# =============================================================================
-
-class TestBlogPostE2E:
-    """End-to-end tests for blog post generation."""
-
-    @pytest.mark.asyncio
-    async def test_blog_post_full_pipeline(self):
-        """Full pipeline: topic → blog post with brand voice."""
-        services = _create_mock_services(MOCK_BLOG_POST_RESPONSE)
-        agent = MarketingAgent("takumi-ceramics.myshopify.com", services)
-
-        state = _make_state(
-            PRODUCT_CELADON_BOWL,
-            template_id="marketing/blog-post",
-            topic="The 23 Steps Behind Every Takumi Bowl",
-            product_context=PRODUCT_CELADON_BOWL["description"],
-            word_count="1000",
-        )
-        result = await agent.run(state)
-
-        assert result.status == "DRAFT_READY"
-        assert result.draft_content is not None
-        # Content should have HTML structure
-        assert "<h" in result.draft_content or "<p>" in result.draft_content
-
-    @pytest.mark.asyncio
-    async def test_blog_uses_gpt4o_for_quality(self):
-        """Blog posts should use gpt-4o for long-form quality."""
-        services = _create_mock_services(MOCK_BLOG_POST_RESPONSE)
-        agent = MarketingAgent("takumi-ceramics.myshopify.com", services)
-
-        state = _make_state(
-            PRODUCT_CELADON_BOWL,
-            template_id="marketing/blog-post",
-            topic="Heritage Craft in Modern Kitchens",
-            product_context="Celadon bowl",
-            word_count="800",
-        )
-        await agent.run(state)
-
-        call_kwargs = services.llm.generate_text.call_args.kwargs
-        assert call_kwargs.get("model") == "gpt-4o"
-        assert call_kwargs.get("temperature") == 0.8
-
-    @pytest.mark.asyncio
-    async def test_blog_post_brand_voice(self):
-        """Blog content should follow brand voice."""
-        parsed = json.loads(MOCK_BLOG_POST_RESPONSE)
-        _assert_brand_voice(parsed["content"], min_keywords=3)
-
-    @pytest.mark.asyncio
-    async def test_blog_has_seo_metadata(self):
-        """Blog should include SEO-ready metadata."""
-        parsed = json.loads(MOCK_BLOG_POST_RESPONSE)
-        assert len(parsed["meta_description"]) <= 160
-        assert len(parsed["tags"]) >= 3
-        assert parsed["title"] is not None
-
-
-# =============================================================================
 # Integration: Ad Copy Pipeline
 # =============================================================================
 
@@ -382,23 +319,6 @@ class TestMarketingPromptE2E:
         assert "OPERATIONAL RULES" in prompt
         assert "artisan_master" in prompt.lower()
         assert "email" in prompt.lower()  # Template-specific prompt included
-
-    @pytest.mark.asyncio
-    async def test_blog_prompt_has_operational_rules(self):
-        """Blog system prompt should have operational rules + blog-specific prompt."""
-        services = _create_mock_services(MOCK_BLOG_POST_RESPONSE)
-        agent = MarketingAgent("takumi-ceramics.myshopify.com", services)
-
-        context = AgentContext(
-            raw_input={"title": "Test", "category": "Test"},
-            strategic_intelligence=STRATEGIC_INTELLIGENCE,
-        )
-
-        state = _make_state(PRODUCT_CELADON_BOWL, template_id="marketing/blog-post")
-        prompt = agent._build_system_prompt(state, context, "marketing/blog-post")
-
-        assert "OPERATIONAL RULES" in prompt
-        assert "blog" in prompt.lower()  # Blog-specific prompt
 
     @pytest.mark.asyncio
     async def test_ad_prompt_has_operational_rules(self):
@@ -498,15 +418,10 @@ class TestAllMarketingTemplatesE2E:
     async def test_all_templates_produce_draft_ready(self):
         """Every marketing template should produce DRAFT_READY for the celadon bowl."""
         templates = [
-            ("marketing/social-instagram", MOCK_SOCIAL_HOOKS_RESPONSE, {}),
+            ("marketing/social-tiktok", MOCK_SOCIAL_HOOKS_RESPONSE, {}),
             ("marketing/email-launch", MOCK_EMAIL_LAUNCH_RESPONSE, {"launch_date": "2026-03-15"}),
             ("marketing/email-abandoned", MOCK_EMAIL_ABANDONED_RESPONSE, {"price": "¥12,800"}),
             ("marketing/email-welcome", MOCK_EMAIL_WELCOME_RESPONSE, {"brand_name": "Takumi Ceramics"}),
-            ("marketing/blog-post", MOCK_BLOG_POST_RESPONSE, {
-                "topic": "Craft Process",
-                "product_context": PRODUCT_CELADON_BOWL["description"],
-                "word_count": "1000",
-            }),
             ("marketing/ad-facebook", MOCK_AD_FACEBOOK_RESPONSE, {"platform": "Facebook"}),
             ("marketing/ad-google", MOCK_AD_GOOGLE_RESPONSE, {"keywords": "arita porcelain"}),
         ]
@@ -526,7 +441,7 @@ class TestAllMarketingTemplatesE2E:
     async def test_all_templates_for_teapot(self):
         """Run all marketing templates for a different product (teapot)."""
         templates = [
-            ("marketing/social-instagram", MOCK_SOCIAL_HOOKS_RESPONSE, {}),
+            ("marketing/social-tiktok", MOCK_SOCIAL_HOOKS_RESPONSE, {}),
             ("marketing/email-launch", MOCK_EMAIL_LAUNCH_RESPONSE, {"launch_date": "2026-04-01"}),
             ("marketing/ad-facebook", MOCK_AD_FACEBOOK_RESPONSE, {"platform": "Instagram"}),
         ]

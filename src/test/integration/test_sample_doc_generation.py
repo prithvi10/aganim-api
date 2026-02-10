@@ -41,7 +41,6 @@ from src.test.fixtures.brand_soul_fixtures import (
     MOCK_EMAIL_LAUNCH_RESPONSE,
     MOCK_EMAIL_ABANDONED_RESPONSE,
     MOCK_EMAIL_WELCOME_RESPONSE,
-    MOCK_BLOG_POST_RESPONSE,
     MOCK_AD_FACEBOOK_RESPONSE,
     MOCK_AD_GOOGLE_RESPONSE,
     BRAND_VOICE_MUST_INCLUDE_KEYWORDS,
@@ -350,7 +349,7 @@ class TestMarketingSampleDocs:
         parsed = json.loads(MOCK_SOCIAL_HOOKS_RESPONSE)
 
         doc = f"""# Social Media Hooks — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: marketing/social-instagram
+Generated: {GENERATED_AT} | Template: marketing/social-tiktok
 
 ## Product: {PRODUCT_CELADON_BOWL['title']}
 
@@ -542,62 +541,6 @@ Generated: {GENERATED_AT} | Template: marketing/email-welcome
 """
         _assert_brand_voice(parsed["body"])
         _write_sample("marketing", "04_email_welcome.md", doc)
-
-    @pytest.mark.asyncio
-    async def test_generate_blog_post_doc(self):
-        """Generate sample blog post document."""
-        services = _create_mock_services(MOCK_BLOG_POST_RESPONSE)
-        agent = MarketingAgent("takumi-ceramics.myshopify.com", services)
-
-        state = MissionState(
-            product_id=PRODUCT_CELADON_BOWL["id"],
-            shop_id="takumi-ceramics.myshopify.com",
-            plan_tier="Pro",
-            raw_input={
-                "title": PRODUCT_CELADON_BOWL["title"],
-                "description": PRODUCT_CELADON_BOWL["description"],
-                "category": PRODUCT_CELADON_BOWL["category"],
-                "target_locale": "en",
-                "template_id": "marketing/blog-post",
-                "topic": "The 23 Steps Behind Every Takumi Bowl",
-                "product_context": PRODUCT_CELADON_BOWL["description"],
-                "word_count": "1200",
-            },
-            target_locale="en",
-        )
-
-        result = await agent.run(state)
-        assert result.status == "DRAFT_READY"
-
-        parsed = json.loads(MOCK_BLOG_POST_RESPONSE)
-
-        doc = f"""# Blog Post — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: marketing/blog-post
-
----
-
-**Title:** {parsed['title']}
-**Meta Description:** {parsed['meta_description']}
-**Tags:** {', '.join(parsed['tags'])}
-
----
-
-## Content
-
-{parsed['content']}
-
----
-
-## Stats
-- Word count: ~{len(parsed['content'].split())} words
-- Meta description: {len(parsed['meta_description'])} / 160 chars
-- Tags: {len(parsed['tags'])}
-
-## Brand Voice Validation
-✅ Educational tone | ✅ Process storytelling | ✅ Heritage emphasis | ✅ SEO-ready
-"""
-        _assert_brand_voice(parsed["content"], min_keywords=3)
-        _write_sample("marketing", "05_blog_post.md", doc)
 
     @pytest.mark.asyncio
     async def test_generate_facebook_ad_doc(self):

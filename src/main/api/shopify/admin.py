@@ -522,6 +522,32 @@ async def brand_context_status_endpoint(
     if not isinstance(brand_context, dict):
         brand_context = {}
 
+    # Auto-heal stale "running" status.
+    # If status is "running"/"accepted" but brand_context already has content and
+    # the update timestamp is >5 min old, the background task likely crashed.
+    current_status = getattr(shop, "brand_context_status", None) or "idle"
+    if current_status in ("running", "accepted"):
+        updated_at = getattr(shop, "brand_context_updated_at", None)
+        has_content = bool(brand_context.get("en") or brand_context.get("ja") or brand_context.get("summary_en"))
+        stale = False
+        if updated_at:
+            try:
+                if updated_at.tzinfo is None:
+                    updated_at = updated_at.replace(tzinfo=timezone.utc)
+                stale = (datetime.now(timezone.utc) - updated_at).total_seconds() > 300
+            except Exception:
+                stale = True
+        else:
+            stale = True  # no updated_at at all
+        if stale and has_content:
+            logger.info("[BrandStatus] Auto-healing stale '%s' status for shop=%s", current_status, shop_domain)
+            try:
+                shop.brand_context_status = "ready"
+                db.add(shop)
+                db.commit()
+            except Exception:
+                db.rollback()
+
     # Backward compatibility mapping:
     # If using new nested shape (en/ja keys), map them to top-level fields for UI.
     en = brand_context.get("en") or {}
