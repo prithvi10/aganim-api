@@ -664,9 +664,13 @@ async def generate_content_endpoint(
         body = {}
     
     # Build mission state
+    auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
+    plan_name = auth_context.get("effective_plan_name") or "Free"
+
     state = MissionState(
         product_id=body.get("product_id", ""),
         shop_id=shop,
+        plan_tier=plan_name,
         raw_input={
             "template_id": template_id,
             **body,  # Include all template inputs
