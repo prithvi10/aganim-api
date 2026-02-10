@@ -73,12 +73,6 @@ BRAND_SOUL_TEXT = """
 
 # ── Template test inputs ──
 PRODUCT_INPUTS = {
-    "product/title": {
-        "title": "蒼釉・深皿（24cm）",
-        "category": "Tableware",
-        "description": "パスタやカレーに最適な深皿です。直径24cm、高さ5cm。電子レンジ使用可。桐箱入り。",
-        "target_locale": "en",
-    },
     "product/collection": {
         "collection_name": "Everyday Tableware Collection",
         "category": "Tableware",
@@ -95,6 +89,12 @@ PRODUCT_INPUTS = {
         "title": "蒼釉・深皿（24cm）",
         "category": "Tableware",
         "description": "天然釉薬と信楽の陶土による独特の青い色合いが特徴の深皿。パスタやカレーに最適。",
+        "target_locale": "en",
+    },
+    "product/blog-post": {
+        "topic": "The Ancient Art of Wood-Kiln Firing: How 4 Days of Fire Transform Clay into Heirloom Ceramics",
+        "category": "Artisan Techniques",
+        "context": "Koto-gama fires its pieces once a month in a traditional wood kiln over 4 continuous days using Shigaraki clay and natural mineral glazes.",
         "target_locale": "en",
     },
 }
@@ -309,7 +309,7 @@ def step_list_templates(client: httpx.Client, headers: dict) -> list[dict]:
     templates = resp.json().get("templates", [])
     _log(f"✅ {len(templates)} templates available:")
     for t in templates:
-        _log(f"   [{t['category']:10}] {t['id']:30} — {t['name']} (tier: {t['tier_required']})")
+        _log(f"   [{t['category']:10}] {t['id']:30} — {t['name']}")
 
     return templates
 

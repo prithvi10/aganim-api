@@ -1,7 +1,7 @@
 """
 Unit tests for the Template Registry system.
 
-Tests template registration, filtering, tier gating, and prompt content.
+Tests template registration, filtering, and prompt content.
 """
 
 import pytest
@@ -29,8 +29,8 @@ class TestTemplateRegistration:
         # Force import to trigger registration
         import src.main.agents.templates  # noqa: F401
 
-        assert len(TEMPLATE_REGISTRY) >= 12, (
-            f"Expected at least 12 templates (5 product + 7 marketing), got {len(TEMPLATE_REGISTRY)}"
+        assert len(TEMPLATE_REGISTRY) >= 11, (
+            f"Expected at least 11 templates (4 product + 7 marketing), got {len(TEMPLATE_REGISTRY)}"
         )
 
     # --- Product templates ---
@@ -38,11 +38,10 @@ class TestTemplateRegistration:
     @pytest.mark.parametrize(
         "template_id",
         [
-            "product/description",
-            "product/title",
             "product/collection",
             "product/faq",
             "product/landing-hero",
+            "product/blog-post",
         ],
     )
     def test_product_template_exists(self, template_id):
@@ -92,13 +91,6 @@ class TestTemplateStructure:
             assert t.name, f"Template {t.id} missing name"
             assert t.description, f"Template {t.id} missing description"
 
-    def test_every_template_has_valid_tier(self):
-        valid_tiers = {"Free", "Basic", "Standard", "Pro"}
-        for t in self._all_templates():
-            assert t.tier_required in valid_tiers, (
-                f"Template {t.id} has invalid tier '{t.tier_required}'"
-            )
-
     def test_every_template_has_inputs(self):
         """Templates should declare their required inputs."""
         for t in self._all_templates():
@@ -106,17 +98,15 @@ class TestTemplateStructure:
                 f"Template {t.id} has no inputs defined"
             )
 
-    def test_product_description_is_free_tier(self):
-        """Product description should be available on Free tier."""
-        t = get_template("product/description")
+    def test_product_blog_post_exists(self):
+        """Product blog post should be registered."""
+        t = get_template("product/blog-post")
         assert t is not None
-        assert t.tier_required == "Free"
 
-    def test_blog_post_requires_pro_tier(self):
-        """Blog post should require Pro tier."""
+    def test_marketing_blog_post_exists(self):
+        """Marketing blog post should be registered."""
         t = get_template("marketing/blog-post")
         assert t is not None
-        assert t.tier_required == "Pro"
 
 
 # =============================================================================
@@ -130,7 +120,7 @@ class TestTemplateFiltering:
         import src.main.agents.templates  # noqa: F401
         results = list_templates(category=TemplateCategory.PRODUCT)
         assert all(t.category == TemplateCategory.PRODUCT for t in results)
-        assert len(results) >= 5
+        assert len(results) >= 4
 
     def test_filter_by_marketing_category(self):
         import src.main.agents.templates  # noqa: F401
@@ -148,37 +138,13 @@ class TestTemplateFiltering:
         results = list_templates(agent_type=AgentType.MARKETING)
         assert all(t.agent_type == AgentType.MARKETING for t in results)
 
-    def test_tier_filter_free_only_returns_free_templates(self):
-        import src.main.agents.templates  # noqa: F401
-        results = list_templates(tier="Free")
-        for t in results:
-            assert t.tier_required == "Free", (
-                f"Template {t.id} (tier={t.tier_required}) should not appear for Free filter"
-            )
-
-    def test_tier_filter_standard_includes_free_and_basic(self):
-        import src.main.agents.templates  # noqa: F401
-        results = list_templates(tier="Standard")
-        for t in results:
-            assert t.tier_required in ("Free", "Basic", "Standard"), (
-                f"Template {t.id} (tier={t.tier_required}) should not appear for Standard filter"
-            )
-
-    def test_tier_filter_pro_returns_all(self):
-        import src.main.agents.templates  # noqa: F401
-        all_templates = list_templates()
-        pro_templates = list_templates(tier="Pro")
-        assert len(pro_templates) == len(all_templates)
-
     def test_combined_filter(self):
         import src.main.agents.templates  # noqa: F401
         results = list_templates(
             category=TemplateCategory.MARKETING,
-            tier="Free",
         )
         for t in results:
             assert t.category == TemplateCategory.MARKETING
-            assert t.tier_required == "Free"
 
     def test_results_sorted_by_id(self):
         import src.main.agents.templates  # noqa: F401
@@ -230,10 +196,12 @@ class TestPromptContent:
         assert t is not None
         assert "800" in t.system_prompt or "1500" in t.system_prompt
 
-    def test_product_title_prompt_enforces_70_char(self):
-        t = get_template("product/title")
+    def test_product_blog_post_prompt_requests_html(self):
+        t = get_template("product/blog-post")
         assert t is not None
-        assert "70 character" in t.system_prompt.lower() or "70 char" in t.system_prompt.lower()
+        assert "html" in t.system_prompt.lower()
+        assert "body_html" in t.system_prompt.lower()
+        assert "tags" in t.system_prompt.lower()
 
     def test_all_marketing_templates_return_json(self):
         """Marketing templates should request JSON output."""

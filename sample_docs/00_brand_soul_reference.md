@@ -1,5 +1,5 @@
 # Brand Soul & Strategic Intelligence — Takumi Ceramics
-Generated: 2026-02-10 11:34
+Generated: 2026-02-10 17:08
 
 ---
 

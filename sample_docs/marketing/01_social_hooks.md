@@ -1,5 +1,5 @@
 # Social Media Hooks — Takumi Ceramics
-Generated: 2026-02-10 11:34 | Template: marketing/social-instagram
+Generated: 2026-02-10 17:08 | Template: marketing/social-instagram
 
 ## Product: Celadon Jade Rice Bowl — 翡翠茶碗
 

@@ -194,7 +194,6 @@ def register_marketing_templates():
         output_format="json",
         system_prompt="",  # Uses existing social hooks prompt
         user_prompt_template="",
-        tier_required="Free",
     ))
     
     # Email - Launch
@@ -214,7 +213,6 @@ def register_marketing_templates():
         output_format="json",
         system_prompt=EMAIL_LAUNCH_SYSTEM_PROMPT,
         user_prompt_template=EMAIL_LAUNCH_USER_PROMPT,
-        tier_required="Standard",
     ))
     
     # Email - Abandoned Cart
@@ -233,7 +231,6 @@ def register_marketing_templates():
         output_format="json",
         system_prompt=EMAIL_ABANDONED_SYSTEM_PROMPT,
         user_prompt_template=EMAIL_ABANDONED_USER_PROMPT,
-        tier_required="Standard",
     ))
     
     # Email - Welcome
@@ -250,7 +247,6 @@ def register_marketing_templates():
         output_format="json",
         system_prompt=EMAIL_WELCOME_SYSTEM_PROMPT,
         user_prompt_template=EMAIL_WELCOME_USER_PROMPT,
-        tier_required="Standard",
     ))
     
     # Blog Post
@@ -269,7 +265,6 @@ def register_marketing_templates():
         output_format="html",
         system_prompt=BLOG_POST_SYSTEM_PROMPT,
         user_prompt_template=BLOG_POST_USER_PROMPT,
-        tier_required="Pro",
     ))
     
     # Ad Copy - Social
@@ -289,7 +284,6 @@ def register_marketing_templates():
         output_format="json",
         system_prompt=AD_COPY_SOCIAL_SYSTEM_PROMPT,
         user_prompt_template=AD_COPY_SOCIAL_USER_PROMPT,
-        tier_required="Standard",
     ))
     
     # Ad Copy - Search
@@ -308,7 +302,6 @@ def register_marketing_templates():
         output_format="json",
         system_prompt=AD_COPY_SEARCH_SYSTEM_PROMPT,
         user_prompt_template=AD_COPY_SEARCH_USER_PROMPT,
-        tier_required="Standard",
     ))
 
 

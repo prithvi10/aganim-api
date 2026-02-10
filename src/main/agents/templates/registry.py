@@ -40,9 +40,8 @@ class ContentTemplate:
     - Inputs required from user
     - System and user prompts
     - Output format
-    - Tier requirements
     """
-    id: str  # e.g., "product/description", "marketing/email-launch"
+    id: str  # e.g., "product/blog-post", "marketing/email-launch"
     name: str  # "Product Description"
     category: TemplateCategory
     agent_type: AgentType
@@ -51,7 +50,6 @@ class ContentTemplate:
     output_format: str = "html"  # html, markdown, plain
     system_prompt: str = ""
     user_prompt_template: str = ""
-    tier_required: str = "Free"  # Free, Basic, Standard, Pro
 
 
 # Template registry - populated by importing template modules
@@ -71,7 +69,6 @@ def get_template(template_id: str) -> Optional[ContentTemplate]:
 def list_templates(
     category: Optional[TemplateCategory] = None,
     agent_type: Optional[AgentType] = None,
-    tier: Optional[str] = None,
 ) -> List[ContentTemplate]:
     """
     List templates with optional filtering.
@@ -79,7 +76,6 @@ def list_templates(
     Args:
         category: Filter by category (product/marketing)
         agent_type: Filter by agent type (rewriter/marketing)
-        tier: Filter by minimum tier required
     
     Returns:
         List of matching templates
@@ -91,14 +87,5 @@ def list_templates(
     
     if agent_type:
         templates = [t for t in templates if t.agent_type == agent_type]
-    
-    if tier:
-        tier_order = ["Free", "Basic", "Standard", "Pro"]
-        tier_index = tier_order.index(tier) if tier in tier_order else -1
-        if tier_index >= 0:
-            templates = [
-                t for t in templates
-                if tier_order.index(t.tier_required) <= tier_index
-            ]
     
     return sorted(templates, key=lambda t: t.id)

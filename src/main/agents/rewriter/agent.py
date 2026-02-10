@@ -45,11 +45,11 @@ class RewriterAgent(BaseAgent):
     NOTE: SEO is handled by SEOAgent for all tiers.
     
     Supports multiple templates:
-    - product/description: Product description (existing)
-    - product/title: Product title generator
+    - product/description: Product description (existing rewriter flow)
     - product/collection: Collection description
     - product/faq: Product FAQ generator
     - product/landing-hero: Landing page hero section
+    - product/blog-post: Brand blog post (manufacturing, artisan techniques, etc.)
     """
     
     role_name = "Rewriter"
@@ -58,10 +58,10 @@ class RewriterAgent(BaseAgent):
     # Supported templates
     SUPPORTED_TEMPLATES = [
         "product/description",
-        "product/title",
         "product/collection",
         "product/faq",
         "product/landing-hero",
+        "product/blog-post",
     ]
     
     # NOTE: requires_llm_reasoning = False (default)
@@ -176,14 +176,14 @@ class RewriterAgent(BaseAgent):
         if template_id == "product/description":
             # Existing product description flow
             return await self._generate_description(state, context, actions)
-        elif template_id == "product/title":
-            return await self._generate_title(state, context, actions)
         elif template_id == "product/collection":
             return await self._generate_collection(state, context, actions)
         elif template_id == "product/faq":
             return await self._generate_faq(state, context, actions)
         elif template_id == "product/landing-hero":
             return await self._generate_landing_hero(state, context, actions)
+        elif template_id == "product/blog-post":
+            return await self._generate_blog_post(state, context, actions)
         else:
             # Fallback to description
             logger.warning(
@@ -522,15 +522,15 @@ class RewriterAgent(BaseAgent):
     # Template-specific generators
     # -------------------------------------------------------------------------
     
-    async def _generate_title(
+    async def _generate_blog_post(
         self,
         state: MissionState,
         context: AgentContext,
         actions: List[AgentAction],
     ) -> Tuple[List[AgentAction], MissionState]:
-        """Generate product title using template."""
-        system_prompt = self._build_system_prompt(state, context, "product/title")
-        user_prompt = self._build_user_prompt(state, context, "product/title")
+        """Generate brand blog post using template."""
+        system_prompt = self._build_system_prompt(state, context, "product/blog-post")
+        user_prompt = self._build_user_prompt(state, context, "product/blog-post")
         
         try:
             result = await self.services.llm.generate_text(
@@ -544,28 +544,29 @@ class RewriterAgent(BaseAgent):
                 AgentAction.success_action(
                     tool_name="llm.generate_text",
                     output=result,
-                    input_params={"template_id": "product/title", "mode": "fresh"},
+                    input_params={"template_id": "product/blog-post", "mode": "fresh"},
                 )
             )
             
             parsed = self._parse_llm_result(result)
-            state.draft_title = parsed.get("title", result)
+            state.draft_title = parsed.get("title", "")
+            state.draft_content = parsed.get("body_html", result)
             state.status = "DRAFT_READY"
             
             logger.info(
-                "[Rewriter] Generated title for product=%s shop=%s",
-                state.product_id,
+                "[Rewriter] Generated blog post for shop=%s topic=%s",
                 self.shop_id,
+                state.raw_input.get("topic", ""),
             )
         except Exception as e:
             actions.append(
                 AgentAction.failure_action(
                     tool_name="llm.generate_text",
                     error=str(e),
-                    input_params={"template_id": "product/title"},
+                    input_params={"template_id": "product/blog-post"},
                 )
             )
-            state.set_error(f"Title generation failed: {str(e)}")
+            state.set_error(f"Blog post generation failed: {str(e)}")
         
         return actions, state
     

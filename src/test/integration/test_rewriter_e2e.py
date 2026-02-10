@@ -28,7 +28,6 @@ from src.test.fixtures.brand_soul_fixtures import (
     PRODUCT_TEAPOT,
     PRODUCT_VASE,
     MOCK_PRODUCT_DESCRIPTION_RESPONSE,
-    MOCK_PRODUCT_TITLE_RESPONSE,
     MOCK_COLLECTION_RESPONSE,
     MOCK_FAQ_RESPONSE,
     MOCK_LANDING_HERO_RESPONSE,
@@ -161,9 +160,15 @@ class TestRewriterAllTemplatesE2E:
     """End-to-end tests for every rewriter template."""
 
     @pytest.mark.asyncio
-    async def test_title_template_e2e(self):
-        """Title generation pipeline."""
-        services = _create_mock_services(MOCK_PRODUCT_TITLE_RESPONSE)
+    async def test_blog_post_template_e2e(self):
+        """Blog post generation pipeline."""
+        mock_blog = json.dumps({
+            "title": "The Ancient Art of Wood-Kiln Firing",
+            "meta_description": "Discover how fire transforms clay.",
+            "body_html": "<h2>A Tradition Born in Fire</h2><p>In Arita, craftsmanship meets heritage.</p>",
+            "tags": ["ceramics", "wood-kiln", "artisan"]
+        })
+        services = _create_mock_services(mock_blog)
         agent = RewriterAgent("takumi-ceramics.myshopify.com", services)
 
         state = MissionState(
@@ -171,11 +176,11 @@ class TestRewriterAllTemplatesE2E:
             shop_id="takumi-ceramics.myshopify.com",
             plan_tier="Pro",
             raw_input={
-                "title": PRODUCT_CELADON_BOWL["title"],
-                "description": PRODUCT_CELADON_BOWL["description"],
-                "category": PRODUCT_CELADON_BOWL["category"],
+                "topic": "The Ancient Art of Wood-Kiln Firing",
+                "category": "Artisan Techniques",
+                "context": "Traditional wood kiln, 4 days, Arita clay.",
                 "target_locale": "en",
-                "template_id": "product/title",
+                "template_id": "product/blog-post",
             },
             target_locale="en",
         )
@@ -183,13 +188,12 @@ class TestRewriterAllTemplatesE2E:
         result = await agent.run(state)
 
         assert result.status == "DRAFT_READY"
-        assert result.draft_title is not None
-        assert "Celadon" in result.draft_title
 
-        # Verify the LLM was called with title-specific prompt
+        # Verify the LLM was called with blog-specific prompt
         call_kwargs = services.llm.generate_text.call_args.kwargs
         system_prompt = call_kwargs.get("system_prompt", "")
-        assert "70 character" in system_prompt.lower()
+        assert "blog" in system_prompt.lower()
+        assert "html" in system_prompt.lower()
 
     @pytest.mark.asyncio
     async def test_collection_template_e2e(self):
@@ -322,7 +326,7 @@ class TestPromptConstructionE2E:
             target_locale="en",
         )
 
-        prompt = agent._build_system_prompt(state, context, "product/description")
+        prompt = agent._build_system_prompt(state, context, "product/collection")
 
         # Layer 1: Operational rules (from strategic intelligence)
         assert "OPERATIONAL RULES" in prompt
@@ -338,16 +342,19 @@ class TestPromptConstructionE2E:
         assert "Yō-no-bi" in prompt
 
     @pytest.mark.asyncio
-    async def test_title_prompt_uses_template_system_prompt(self):
-        """Title template should inject its specific system prompt."""
-        services = _create_mock_services(MOCK_PRODUCT_TITLE_RESPONSE)
+    async def test_blog_prompt_uses_template_system_prompt(self):
+        """Blog post template should inject its specific system prompt."""
+        mock_blog = json.dumps({
+            "title": "Test", "meta_description": "Test",
+            "body_html": "<p>Test</p>", "tags": ["test"]
+        })
+        services = _create_mock_services(mock_blog)
         agent = RewriterAgent("takumi-ceramics.myshopify.com", services)
 
         context = AgentContext(
             raw_input={
-                "title": PRODUCT_CELADON_BOWL["title"],
-                "description": PRODUCT_CELADON_BOWL["description"],
-                "category": "Tableware",
+                "topic": "Wood-Kiln Firing",
+                "category": "Artisan Techniques",
             },
             strategic_intelligence=STRATEGIC_INTELLIGENCE,
         )
@@ -357,19 +364,19 @@ class TestPromptConstructionE2E:
             shop_id="takumi-ceramics.myshopify.com",
             plan_tier="Pro",
             raw_input={
-                "title": PRODUCT_CELADON_BOWL["title"],
-                "description": PRODUCT_CELADON_BOWL["description"],
-                "category": "Tableware",
+                "topic": "Wood-Kiln Firing",
+                "category": "Artisan Techniques",
+                "context": "",
                 "target_locale": "en",
             },
             target_locale="en",
         )
 
-        prompt = agent._build_system_prompt(state, context, "product/title")
+        prompt = agent._build_system_prompt(state, context, "product/blog-post")
 
-        # Should have title-specific prompt
-        assert "70 character" in prompt.lower()
-        assert "seo" in prompt.lower()
+        # Should have blog-specific prompt
+        assert "blog" in prompt.lower()
+        assert "html" in prompt.lower()
         # And still have operational rules
         assert "OPERATIONAL RULES" in prompt
 
@@ -498,13 +505,16 @@ class TestMultiProductConsistency:
 
     @pytest.mark.asyncio
     async def test_all_templates_for_celadon_bowl(self):
-        """All 5 templates should produce valid output for the same product."""
+        """All 4 templates should produce valid output for the same product."""
+        mock_blog = json.dumps({
+            "title": "Test Blog", "meta_description": "Test",
+            "body_html": "<p>Blog content</p>", "tags": ["test"]
+        })
         template_responses = {
-            "product/description": MOCK_PRODUCT_DESCRIPTION_RESPONSE,
-            "product/title": MOCK_PRODUCT_TITLE_RESPONSE,
             "product/collection": MOCK_COLLECTION_RESPONSE,
             "product/faq": MOCK_FAQ_RESPONSE,
             "product/landing-hero": MOCK_LANDING_HERO_RESPONSE,
+            "product/blog-post": mock_blog,
         }
 
         for template_id, mock_response in template_responses.items():
@@ -522,6 +532,10 @@ class TestMultiProductConsistency:
             if template_id == "product/collection":
                 raw_input["collection_name"] = "Celadon Jade Collection"
                 raw_input["products"] = "Rice Bowl, Sake Cup"
+            # Add extra fields for blog-post template
+            if template_id == "product/blog-post":
+                raw_input["topic"] = "The Art of Celadon Glazing"
+                raw_input["context"] = "Traditional techniques from Arita."
 
             state = MissionState(
                 product_id=PRODUCT_CELADON_BOWL["id"],

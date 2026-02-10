@@ -17,7 +17,7 @@ Prereqs:
 
 Usage:
   python -m scripts.rag.local_template_test
-  python -m scripts.rag.local_template_test --template product/title    # single template
+  python -m scripts.rag.local_template_test --template product/blog-post    # single template
   python -m scripts.rag.local_template_test --category product          # product templates only
   python -m scripts.rag.local_template_test --category marketing        # marketing templates only
   python -m scripts.rag.local_template_test --skip-ingest               # skip brand soul ingest
@@ -207,7 +207,7 @@ def test_list_templates(shop_domain: str) -> list[dict]:
         _log(f"✅ Found {len(templates)} templates")
 
         for t in templates:
-            _log(f"   [{t['category']}] {t['id']} — {t['name']} (tier: {t['tier_required']})")
+            _log(f"   [{t['category']}] {t['id']} — {t['name']}")
 
     return templates
 
@@ -389,7 +389,7 @@ def main() -> None:
     )
     ap.add_argument("--api-base", default=os.getenv("API_BASE_URL", "http://localhost:8000"))
     ap.add_argument("--cases", default=CASES_PATH, help="Path to template test cases JSON")
-    ap.add_argument("--template", default=None, help="Run single template (e.g. product/title)")
+    ap.add_argument("--template", default=None, help="Run single template (e.g. product/blog-post)")
     ap.add_argument("--category", default=None, choices=["product", "marketing"], help="Filter by category")
     ap.add_argument("--skip-ingest", action="store_true", help="Skip brand soul ingestion")
     args = ap.parse_args()

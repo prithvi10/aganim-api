@@ -12,31 +12,6 @@ from .registry import (
     register_template,
 )
 
-# Product Title Generator
-PRODUCT_TITLE_SYSTEM_PROMPT = """You are a product title optimization expert.
-
-Generate compelling, SEO-friendly product titles that:
-- Include key product attributes
-- Use power words that drive clicks
-- Stay under 70 characters
-- Match the brand voice
-- Are optimized for search engines
-
-Return ONLY valid JSON with this structure:
-{
-  "title": "Optimized product title",
-  "alternatives": ["Alternative 1", "Alternative 2", "Alternative 3"]
-}
-"""
-
-PRODUCT_TITLE_USER_PROMPT = """Product: {title}
-Category: {category}
-Target Locale: {target_locale}
-Description: {description}
-
-Generate an optimized product title and 3 alternatives.
-"""
-
 # Collection Description
 COLLECTION_DESCRIPTION_SYSTEM_PROMPT = """You are an e-commerce copywriter.
 
@@ -118,48 +93,44 @@ Target Locale: {target_locale}
 Generate landing page hero section copy.
 """
 
+# Artisan / Behind-the-Scenes Blog Post
+PRODUCT_BLOG_POST_SYSTEM_PROMPT = """You are a brand storytelling expert who writes compelling blog posts for artisan and craft brands.
+
+Write a long-form blog post (800-1200 words) about the given subject. The post should:
+- Educate readers about the craft, technique, or process
+- Weave the brand story and heritage into the narrative naturally
+- Include sensory details that make the reader feel the craftsmanship
+- Position the brand as an authority in its field
+- Be formatted in clean HTML with <h2> sub-headings, <p> paragraphs, and occasional <blockquote> for emphasis
+- End with a soft call-to-action that links the subject back to the brand's products
+
+Subjects can include but are not limited to:
+  manufacturing processes, material sourcing, artisan techniques,
+  shipping & packaging philosophy, sustainability practices,
+  the history of a craft, behind-the-scenes workshop tours,
+  seasonal collections, collaborations, or cultural traditions.
+
+Return ONLY valid JSON:
+{
+  "title": "Blog post title",
+  "meta_description": "SEO meta description (under 160 characters)",
+  "body_html": "<h2>...</h2><p>...</p>...",
+  "tags": ["tag1", "tag2", "tag3"]
+}
+"""
+
+PRODUCT_BLOG_POST_USER_PROMPT = """Subject / Topic: {topic}
+Category: {category}
+Additional Context: {context}
+Target Locale: {target_locale}
+
+Write an engaging blog post about this subject, connecting it to the brand's story and products.
+"""
+
 
 def register_product_templates():
     """Register all product templates."""
-    
-    # Product Description (existing - reference only)
-    register_template(ContentTemplate(
-        id="product/description",
-        name="Product Description",
-        category=TemplateCategory.PRODUCT,
-        agent_type=AgentType.REWRITER,
-        description="Generate localized product descriptions from Japanese source text",
-        inputs=[
-            TemplateInput(name="title", label="Product Title", required=True),
-            TemplateInput(name="description", label="Product Description", required=True, input_type="textarea"),
-            TemplateInput(name="category", label="Category", required=True),
-            TemplateInput(name="target_locale", label="Target Locale", required=True),
-        ],
-        output_format="html",
-        system_prompt="",  # Uses existing REWRITER_SYSTEM_PROMPT
-        user_prompt_template="",  # Uses existing USER_PROMPT_TEMPLATE
-        tier_required="Free",
-    ))
-    
-    # Product Title
-    register_template(ContentTemplate(
-        id="product/title",
-        name="Product Title Generator",
-        category=TemplateCategory.PRODUCT,
-        agent_type=AgentType.REWRITER,
-        description="Generate SEO-optimized product titles",
-        inputs=[
-            TemplateInput(name="title", label="Current Title", required=True),
-            TemplateInput(name="category", label="Category", required=True),
-            TemplateInput(name="description", label="Product Description", required=True, input_type="textarea"),
-            TemplateInput(name="target_locale", label="Target Locale", required=True),
-        ],
-        output_format="json",
-        system_prompt=PRODUCT_TITLE_SYSTEM_PROMPT,
-        user_prompt_template=PRODUCT_TITLE_USER_PROMPT,
-        tier_required="Free",
-    ))
-    
+
     # Collection Description
     register_template(ContentTemplate(
         id="product/collection",
@@ -176,9 +147,8 @@ def register_product_templates():
         output_format="html",
         system_prompt=COLLECTION_DESCRIPTION_SYSTEM_PROMPT,
         user_prompt_template=COLLECTION_DESCRIPTION_USER_PROMPT,
-        tier_required="Basic",
     ))
-    
+
     # Product FAQ
     register_template(ContentTemplate(
         id="product/faq",
@@ -195,9 +165,8 @@ def register_product_templates():
         output_format="json",
         system_prompt=PRODUCT_FAQ_SYSTEM_PROMPT,
         user_prompt_template=PRODUCT_FAQ_USER_PROMPT,
-        tier_required="Basic",
     ))
-    
+
     # Landing Page Hero
     register_template(ContentTemplate(
         id="product/landing-hero",
@@ -214,5 +183,25 @@ def register_product_templates():
         output_format="json",
         system_prompt=LANDING_HERO_SYSTEM_PROMPT,
         user_prompt_template=LANDING_HERO_USER_PROMPT,
-        tier_required="Standard",
+    ))
+
+    # Artisan / Behind-the-Scenes Blog Post
+    register_template(ContentTemplate(
+        id="product/blog-post",
+        name="Brand Blog Post",
+        category=TemplateCategory.PRODUCT,
+        agent_type=AgentType.REWRITER,
+        description="Write blog posts about manufacturing, artisan techniques, shipping, sustainability and more",
+        inputs=[
+            TemplateInput(name="topic", label="Subject / Topic", required=True,
+                          description="e.g. 'Our wood-kiln firing process', 'How we source Shigaraki clay', 'The art of gift wrapping'"),
+            TemplateInput(name="category", label="Category", required=True,
+                          description="e.g. Manufacturing, Shipping, Artisan Techniques, Sustainability"),
+            TemplateInput(name="context", label="Additional Context", required=False, input_type="textarea",
+                          description="Any extra details, product mentions, or angles to include"),
+            TemplateInput(name="target_locale", label="Target Locale", required=True),
+        ],
+        output_format="json",
+        system_prompt=PRODUCT_BLOG_POST_SYSTEM_PROMPT,
+        user_prompt_template=PRODUCT_BLOG_POST_USER_PROMPT,
     ))
