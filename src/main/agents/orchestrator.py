@@ -108,6 +108,8 @@ class MissionControl:
         self.workflow_config = workflow_config or []
         self.workflow = self._build_workflow()
         self.mission_id = mission_id or uuid.uuid4().hex
+        # Pro tier gets autonomous publishing (content pushed to external systems on approval)
+        self.autonomous = (plan_tier == "Pro")
 
     def _build_workflow(self) -> List[Type[BaseAgent]]:
         """
@@ -288,6 +290,7 @@ class MissionControl:
         Yields:
             MissionState after each agent completes
         """
+        state.autonomous = self.autonomous
         state.status = "IN_PROGRESS"
         state.add_log(f"MissionControl: Starting {self.plan_tier} workflow")
         yield state
@@ -481,6 +484,9 @@ class MissionControl:
             state.raw_input.pop("template_id", None)
             state.add_log(f"MissionControl: Step {current_idx + 1}/{len(self.workflow)} - Running {agent_name}...")
         
+        # Propagate autonomous flag to state
+        state.autonomous = self.autonomous
+        
         state.status = "IN_PROGRESS"
         yield state
         
@@ -515,7 +521,8 @@ class MissionControl:
             
             # Check gate logic: auto-proceed or wait for human
             if self._should_auto_proceed(state, current_idx):
-                # Auto-proceed: advance index without waiting for human
+                # Auto-proceed: publish if autonomous, then advance
+                await self._on_step_approved(state, current_idx)
                 state.current_agent_index += 1
                 if state.current_agent_index >= len(self.workflow):
                     state.status = "COMPLETED"
@@ -622,11 +629,48 @@ class MissionControl:
         else:
             return {}
 
-    def advance_to_next_step(self, state: MissionState) -> MissionState:
+    async def _on_step_approved(self, state: MissionState, step_idx: int) -> None:
+        """
+        After a step is approved (human or auto), call its agent's publish hook.
+        
+        Only fires when state.autonomous is True.  Injects ``is_published``
+        (and optionally ``publish_error``) into the step's ``agent_outputs``
+        entry so the frontend can display a "Published" badge.
+        
+        Args:
+            state: Current mission state
+            step_idx: Index of the just-approved step
+        """
+        if not state.autonomous:
+            return
+        
+        agent_class = self.workflow[step_idx]
+        agent = agent_class(self.shop_id, services=self.services)
+        
+        wf_config = state.workflow_config or self.workflow_config
+        template_id = None
+        if wf_config and step_idx < len(wf_config):
+            template_id = wf_config[step_idx].get("template_id")
+        
+        is_published, error = await agent._maybe_publish(state, template_id)
+        
+        # Inject is_published into agent_outputs for this step
+        output_key = (
+            f"{agent_class.__name__}:{template_id}"
+            if template_id
+            else agent_class.__name__
+        )
+        if output_key in state.agent_outputs:
+            state.agent_outputs[output_key]["is_published"] = is_published
+            if error:
+                state.agent_outputs[output_key]["publish_error"] = error
+
+    async def advance_to_next_step(self, state: MissionState) -> MissionState:
         """
         Advance to the next agent in the workflow.
         
         Called when merchant clicks "Continue".
+        Publishes the just-approved step if autonomous mode is active.
         
         Args:
             state: Current mission state
@@ -634,6 +678,10 @@ class MissionControl:
         Returns:
             Updated state with incremented index
         """
+        # Publish the just-approved step before advancing
+        approved_idx = state.current_agent_index
+        await self._on_step_approved(state, approved_idx)
+        
         state.current_agent_index += 1
         state.status = "PENDING"  # Ready for next step
         

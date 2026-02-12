@@ -439,6 +439,116 @@ class TestMissionState:
         assert result["agent_outputs"]["PriceScoutAgent"]["pricing_analysis"]["recommended_price"] == 29.99
         assert result["agent_outputs"]["ComplianceAgent"]["compliance_flags"] == []
 
+    # =========================================================================
+    # Tests: Autonomous Execution Fields
+    # =========================================================================
+
+    def test_autonomous_defaults_false(self):
+        """Test that autonomous defaults to False."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Standard",
+            raw_input={},
+        )
+        assert state.autonomous is False
+
+    def test_autonomous_can_be_set_true(self):
+        """Test that autonomous can be explicitly set to True."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Pro",
+            raw_input={},
+            autonomous=True,
+        )
+        assert state.autonomous is True
+
+    def test_autonomous_to_dict(self):
+        """Test that autonomous is serialized in to_dict."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Pro",
+            raw_input={},
+            autonomous=True,
+        )
+        result = state.to_dict()
+        assert "autonomous" in result
+        assert result["autonomous"] is True
+
+    def test_autonomous_to_dict_false(self):
+        """Test that autonomous=False is serialized in to_dict."""
+        state = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Basic",
+            raw_input={},
+        )
+        result = state.to_dict()
+        assert result["autonomous"] is False
+
+    def test_autonomous_from_dict_true(self):
+        """Test that autonomous=True survives from_dict deserialization."""
+        data = {
+            "product_id": "test",
+            "shop_id": "test-shop",
+            "plan_tier": "Pro",
+            "raw_input": {},
+            "autonomous": True,
+        }
+        state = MissionState.from_dict(data)
+        assert state.autonomous is True
+
+    def test_autonomous_from_dict_missing_defaults_false(self):
+        """Test that autonomous defaults to False when missing from dict."""
+        data = {
+            "product_id": "test",
+            "shop_id": "test-shop",
+            "plan_tier": "Standard",
+            "raw_input": {},
+        }
+        state = MissionState.from_dict(data)
+        assert state.autonomous is False
+
+    def test_autonomous_roundtrip(self):
+        """Test that autonomous survives roundtrip serialization."""
+        original = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Pro",
+            raw_input={},
+            autonomous=True,
+        )
+        data = original.to_dict()
+        restored = MissionState.from_dict(data)
+        assert restored.autonomous is True
+
+    def test_autonomous_with_all_fields_roundtrip(self):
+        """Test that autonomous co-exists with all other fields during roundtrip."""
+        original = MissionState(
+            product_id="test",
+            shop_id="test-shop",
+            plan_tier="Pro",
+            raw_input={"title": "Test"},
+            autonomous=True,
+        )
+        original.current_agent_index = 1
+        original.workflow_config = [
+            {"agent_name": "RewriterAgent", "has_gate": True},
+            {"agent_name": "SEOAgent", "has_gate": False},
+        ]
+        original.workflow_agents = ["RewriterAgent", "SEOAgent"]
+        original.draft_content = "Content"
+
+        data = original.to_dict()
+        restored = MissionState.from_dict(data)
+
+        assert restored.autonomous is True
+        assert restored.current_agent_index == 1
+        assert len(restored.workflow_config) == 2
+        assert restored.draft_content == "Content"
+
 
 # =============================================================================
 # Tests: AgentContext

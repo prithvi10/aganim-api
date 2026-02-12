@@ -9,7 +9,7 @@ Implements the standard agentic loop:
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, TYPE_CHECKING
+from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from .state import MissionState
 from .context import AgentContext, AgentPlan, AgentAction
@@ -71,6 +71,10 @@ class BaseAgent(ABC):
     
     # Default tool to use in deterministic plan
     default_tool: str = "llm.generate_text"
+    
+    # Publish map: template_id → async handler(self, state, creds) -> None
+    # Override in subclasses to register autonomous publish handlers.
+    PUBLISH_MAP: Dict[str, Callable] = {}
 
     def __init__(self, shop_id: str, services: "ServiceRegistry"):
         """
@@ -376,3 +380,96 @@ class BaseAgent(ABC):
             actions: Actions that were executed
         """
         pass
+
+    # -------------------------------------------------------------------------
+    # AUTONOMOUS PUBLISH: Push approved content to external systems
+    # -------------------------------------------------------------------------
+    async def _maybe_publish(
+        self,
+        state: MissionState,
+        template_id: Optional[str] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Attempt to publish the approved content to the external system.
+        
+        Called by the orchestrator **after** the step is approved (human gate
+        or auto-proceed).  Only acts when ``state.autonomous`` is True and a
+        matching handler exists in ``PUBLISH_MAP``.
+        
+        Subclasses can override this entirely (e.g. PriceScoutAgent adds
+        guardrails validation before publishing).
+        
+        Args:
+            state: Current mission state (``draft_content`` holds the content)
+            template_id: The template that produced the content (lookup key
+                         into ``PUBLISH_MAP``)
+        
+        Returns:
+            Tuple of (is_published: bool, error: Optional[str])
+        """
+        if not state.autonomous:
+            return False, None
+
+        if not template_id:
+            return False, None
+
+        handler_ref = self.PUBLISH_MAP.get(template_id)
+        if handler_ref is None:
+            # Check for wildcard prefix matches (e.g. "marketing/email-*")
+            for pattern, h in self.PUBLISH_MAP.items():
+                if pattern.endswith("*") and template_id.startswith(pattern[:-1]):
+                    handler_ref = h
+                    break
+
+        if handler_ref is None:
+            logger.debug(
+                "[%s] No publish handler for template_id=%s",
+                self.role_name,
+                template_id,
+            )
+            return False, None
+
+        # Resolve handler: can be a method name (str) or a callable
+        if isinstance(handler_ref, str):
+            handler = getattr(self, handler_ref, None)
+            if handler is None:
+                return False, f"publish handler '{handler_ref}' not found on {self.role_name}"
+        else:
+            handler = handler_ref
+
+        # Load shop credentials
+        from src.main.services.shopify_service import get_shop_credentials
+
+        creds = {}
+        if state.db:
+            creds = get_shop_credentials(state.db, state.shop_id)
+
+        if not creds.get("access_token"):
+            state.add_log(f"{self.role_name}: Publish skipped – missing shop credentials")
+            return False, "missing_credentials"
+
+        try:
+            await handler(state, creds)
+            state.add_log(
+                f"{self.role_name}: ✅ Published via {template_id}"
+            )
+            logger.info(
+                "[%s] Published template=%s shop=%s",
+                self.role_name,
+                template_id,
+                state.shop_id,
+            )
+            return True, None
+        except Exception as e:
+            error_msg = str(e)
+            state.add_log(
+                f"{self.role_name}: ❌ Publish failed for {template_id}: {error_msg}"
+            )
+            logger.error(
+                "[%s] Publish failed template=%s shop=%s err=%s",
+                self.role_name,
+                template_id,
+                state.shop_id,
+                error_msg,
+            )
+            return False, error_msg

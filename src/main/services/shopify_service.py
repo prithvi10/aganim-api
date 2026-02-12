@@ -352,3 +352,262 @@ async def save_product_metafields(
             f"✅ Metafields saved for product {product_id} ({shop_domain}). "
             f"Count: {len(metafield_inputs)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Autonomous publishing helpers (Pro tier)
+# ---------------------------------------------------------------------------
+
+async def update_product_body(
+    shop_domain: str,
+    access_token: str,
+    product_id: int | str,
+    html: str,
+) -> None:
+    """
+    Update only the product descriptionHtml via GraphQL ``productUpdate``.
+    
+    Used by RewriterAgent autonomous publish for ``product/description`` template.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+
+    product_gid = (
+        str(product_id) if str(product_id).startswith("gid://")
+        else f"gid://shopify/Product/{product_id}"
+    )
+
+    mutation = """
+    mutation productUpdate($input: ProductInput!) {
+      productUpdate(input: $input) {
+        product { id descriptionHtml }
+        userErrors { field message }
+      }
+    }
+    """
+    variables = {"input": {"id": product_gid, "descriptionHtml": html}}
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"update_product_body failed: {resp.status_code}")
+        data = resp.json()
+        user_errors = data.get("data", {}).get("productUpdate", {}).get("userErrors", [])
+        if user_errors:
+            raise Exception(f"update_product_body user error: {user_errors[0].get('message')}")
+        logger.info("✅ Product body updated for %s (%s)", product_id, shop_domain)
+
+
+async def update_variant_price(
+    shop_domain: str,
+    access_token: str,
+    variant_id: int | str,
+    price: str,
+) -> None:
+    """
+    Update a product variant's price via GraphQL ``productVariantUpdate``.
+    
+    Used by PriceScoutAgent autonomous publish after guardrails validation.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+
+    variant_gid = (
+        str(variant_id) if str(variant_id).startswith("gid://")
+        else f"gid://shopify/ProductVariant/{variant_id}"
+    )
+
+    mutation = """
+    mutation productVariantUpdate($input: ProductVariantInput!) {
+      productVariantUpdate(input: $input) {
+        productVariant { id price }
+        userErrors { field message }
+      }
+    }
+    """
+    variables = {"input": {"id": variant_gid, "price": str(price)}}
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"update_variant_price failed: {resp.status_code}")
+        data = resp.json()
+        user_errors = (
+            data.get("data", {}).get("productVariantUpdate", {}).get("userErrors", [])
+        )
+        if user_errors:
+            raise Exception(f"update_variant_price user error: {user_errors[0].get('message')}")
+        logger.info("✅ Variant price updated for %s → %s (%s)", variant_id, price, shop_domain)
+
+
+async def create_article(
+    shop_domain: str,
+    access_token: str,
+    blog_id: int | str,
+    title: str,
+    body_html: str,
+) -> dict:
+    """
+    Create a blog article via REST API.
+    
+    Used by MarketingAgent autonomous publish for ``product/blog-post`` template.
+    
+    Returns:
+        Dict with the created article data.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    url = f"https://{shop_domain}/admin/api/{shopify_api_version}/blogs/{blog_id}/articles.json"
+    payload = {
+        "article": {
+            "title": title,
+            "body_html": body_html,
+            "published": True,
+        }
+    }
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code not in (200, 201):
+            raise Exception(f"create_article failed: {resp.status_code} {resp.text}")
+        article = resp.json().get("article", {})
+        logger.info("✅ Article created id=%s blog=%s (%s)", article.get("id"), blog_id, shop_domain)
+        return article
+
+
+async def trigger_flow_event(
+    shop_domain: str,
+    access_token: str,
+    event_topic: str,
+    payload: dict,
+) -> None:
+    """
+    Trigger a Shopify Flow event via GraphQL ``flowTriggerReceive``.
+    
+    Used by MarketingAgent autonomous publish for ``marketing/email-*`` templates.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+
+    mutation = """
+    mutation flowTriggerReceive($body: String!) {
+      flowTriggerReceive(body: $body) {
+        userErrors { field message }
+      }
+    }
+    """
+    import json as _json
+    body_str = _json.dumps({"topic": event_topic, **payload})
+    variables = {"body": body_str}
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"trigger_flow_event failed: {resp.status_code}")
+        data = resp.json()
+        user_errors = (
+            data.get("data", {}).get("flowTriggerReceive", {}).get("userErrors", [])
+        )
+        if user_errors:
+            raise Exception(f"trigger_flow_event error: {user_errors[0].get('message')}")
+        logger.info("✅ Flow event triggered topic=%s (%s)", event_topic, shop_domain)
+
+
+async def update_product_seo(
+    shop_domain: str,
+    access_token: str,
+    product_id: int | str,
+    seo_title: str,
+    seo_description: str,
+) -> None:
+    """
+    Update a product's SEO title and description via GraphQL ``productUpdate``.
+    
+    Used by the ``seo_optimize`` publish action.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+
+    product_gid = (
+        str(product_id) if str(product_id).startswith("gid://")
+        else f"gid://shopify/Product/{product_id}"
+    )
+
+    mutation = """
+    mutation productUpdate($input: ProductInput!) {
+      productUpdate(input: $input) {
+        product { id }
+        userErrors { field message }
+      }
+    }
+    """
+    variables = {
+        "input": {
+            "id": product_gid,
+            "seo": {
+                "title": seo_title,
+                "description": seo_description,
+            },
+        }
+    }
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"update_product_seo failed: {resp.status_code}")
+        data = resp.json()
+        user_errors = data.get("data", {}).get("productUpdate", {}).get("userErrors", [])
+        if user_errors:
+            raise Exception(f"update_product_seo user error: {user_errors[0].get('message')}")
+        logger.info("✅ Product SEO updated for %s (%s)", product_id, shop_domain)
+
+
+def get_shop_credentials(db, shop_domain: str) -> dict:
+    """
+    Retrieve shop credentials needed for autonomous publishing.
+    
+    Returns a dict with access_token, meta_access_token, meta_page_id,
+    and price_guardrails from the Shop model.
+    """
+    from src.main.db.db_models import Shop
+
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        return {}
+    return {
+        "access_token": shop.access_token,
+        "meta_access_token": getattr(shop, "meta_access_token", None),
+        "meta_page_id": getattr(shop, "meta_page_id", None),
+        "price_guardrails": getattr(shop, "price_guardrails", None),
+    }

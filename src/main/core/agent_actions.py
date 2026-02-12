@@ -794,3 +794,166 @@ def run_agent_action(
     raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
 
+
+# ------------------------------------------------------------------------------
+# Publish Action Map (Pro tier - called from POST /api/publish)
+# Each handler is a thin async function that calls ShopifyService/MetaService.
+# Signature: async handler(db, shop, content, product_id, context) -> dict | None
+# ------------------------------------------------------------------------------
+
+async def publish_seo_fields(*, db, shop, content, product_id, context, **kw):
+    """Push SEO title + description -> Shopify product SEO fields."""
+    from src.main.services.shopify_service import update_product_seo, get_shop_credentials
+
+    creds = get_shop_credentials(db, shop)
+    if not creds.get("access_token"):
+        raise ValueError("missing_credentials")
+
+    import json as _json
+    data = content
+    if isinstance(data, str):
+        try:
+            data = _json.loads(data)
+        except (ValueError, TypeError):
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    seo_title = data.get("seo_title") or context.get("seo_title", "")
+    seo_description = data.get("seo_description") or context.get("seo_description", "")
+    if not seo_title and not seo_description:
+        raise ValueError("seo_title or seo_description required")
+
+    await update_product_seo(
+        shop_domain=shop,
+        access_token=creds["access_token"],
+        product_id=product_id,
+        seo_title=seo_title,
+        seo_description=seo_description,
+    )
+    return None
+
+
+async def publish_variant_price(*, db, shop, content, product_id, context, **kw):
+    """Push recommended price -> Shopify variant, with guardrails check."""
+    from src.main.services.shopify_service import update_variant_price, get_shop_credentials
+
+    creds = get_shop_credentials(db, shop)
+    if not creds.get("access_token"):
+        raise ValueError("missing_credentials")
+
+    import json as _json
+    data = content
+    if isinstance(data, str):
+        try:
+            data = _json.loads(data)
+        except (ValueError, TypeError):
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    variant_id = context.get("variant_id") or data.get("variant_id")
+    recommended_price = context.get("recommended_price") or data.get("recommended_price")
+    if not variant_id or not recommended_price:
+        raise ValueError("variant_id and recommended_price required")
+
+    recommended_price = float(recommended_price)
+
+    guardrails = creds.get("price_guardrails") or {}
+    min_price = guardrails.get("min_price", 0)
+    max_price = guardrails.get("max_price", float("inf"))
+    if not (min_price <= recommended_price <= max_price):
+        raise ValueError(
+            f"price_outside_guardrails: {recommended_price} not in [{min_price}, {max_price}]"
+        )
+
+    await update_variant_price(
+        shop_domain=shop,
+        access_token=creds["access_token"],
+        variant_id=variant_id,
+        price=str(recommended_price),
+    )
+    return None
+
+
+async def publish_meta_post(*, db, shop, content, product_id, context, **kw):
+    """Push caption -> Meta Graph API."""
+    from src.main.services.shopify_service import get_shop_credentials
+    from src.main.services.meta_service import MetaService
+
+    creds = get_shop_credentials(db, shop)
+    meta_token = creds.get("meta_access_token")
+    meta_page_id = creds.get("meta_page_id")
+    if not meta_token or not meta_page_id:
+        raise ValueError("meta_credentials_missing")
+
+    caption = content if isinstance(content, str) else str(content or "")
+    image_url = context.get("image_url")
+
+    meta = MetaService()
+    success, result = await meta.post_ad(
+        page_id=meta_page_id,
+        access_token=meta_token,
+        caption=caption,
+        image_url=image_url,
+    )
+    if not success:
+        raise Exception(f"Meta post failed: {result}")
+    return None
+
+
+async def publish_flow_campaign(*, db, shop, content, product_id, context, **kw):
+    """Push campaign data -> Shopify Flow trigger."""
+    from src.main.services.shopify_service import trigger_flow_event, get_shop_credentials
+
+    creds = get_shop_credentials(db, shop)
+    if not creds.get("access_token"):
+        raise ValueError("missing_credentials")
+
+    await trigger_flow_event(
+        shop_domain=shop,
+        access_token=creds["access_token"],
+        event_topic="crossborder/seasonal-campaign",
+        payload={
+            "product_id": product_id or "",
+            "content": content if isinstance(content, str) else str(content or ""),
+        },
+    )
+    return None
+
+
+async def publish_value_metafields(*, db, shop, content, product_id, context, **kw):
+    """Push discovered values -> Shopify product metafields."""
+    from src.main.services.shopify_service import save_product_metafields, get_shop_credentials
+
+    creds = get_shop_credentials(db, shop)
+    if not creds.get("access_token"):
+        raise ValueError("missing_credentials")
+    if not product_id:
+        raise ValueError("product_id required")
+
+    import json as _json
+    value = content if isinstance(content, str) else _json.dumps(content or [])
+
+    await save_product_metafields(
+        shop_domain=shop,
+        access_token=creds["access_token"],
+        product_id=product_id,
+        metafields=[{
+            "namespace": "crossborder_agent",
+            "key": "value_discovery",
+            "value": value,
+            "type": "json",
+        }],
+    )
+    return None
+
+
+PUBLISH_ACTION_MAP: dict[str, Any] = {
+    "seo_optimize": publish_seo_fields,
+    "price_scout": publish_variant_price,
+    "social_hook_architect": publish_meta_post,
+    "seasonal_campaign_agent": publish_flow_campaign,
+    "seasonal_campaign_caption": publish_meta_post,
+    "value_discovery": publish_value_metafields,
+}

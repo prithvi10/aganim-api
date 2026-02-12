@@ -7,7 +7,7 @@ items using LLM semantic analysis, and provides data-driven pricing recommendati
 
 import json
 import statistics
-from typing import List, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any
 
 from ..base import BaseAgent
 from ..state import MissionState
@@ -43,6 +43,88 @@ class PriceScoutAgent(BaseAgent):
     default_tool = "llm.generate_structured"
     
     # NOTE: requires_llm_reasoning = False (default)
+
+    # ── Autonomous Publish: override _maybe_publish with guardrails ───
+    async def _maybe_publish(
+        self,
+        state: "MissionState",
+        template_id: Optional[str] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Publish recommended price to Shopify, validating against price_guardrails.
+        
+        Guardrails format in Shop model:
+            {"min_price": 0, "max_price": 9999}
+        """
+        if not state.autonomous:
+            return False, None
+
+        analysis = state.pricing_analysis or {}
+        recommended_price = analysis.get("recommended_price")
+        if not recommended_price or recommended_price <= 0:
+            return False, "no_recommended_price"
+
+        # Load credentials and guardrails
+        from src.main.services.shopify_service import get_shop_credentials
+
+        creds = {}
+        if state.db:
+            creds = get_shop_credentials(state.db, state.shop_id)
+
+        if not creds.get("access_token"):
+            state.add_log("PriceScout: Publish skipped – missing shop credentials")
+            return False, "missing_credentials"
+
+        # Validate against guardrails
+        guardrails = creds.get("price_guardrails") or {}
+        min_price = guardrails.get("min_price", 0)
+        max_price = guardrails.get("max_price", float("inf"))
+
+        if not (min_price <= recommended_price <= max_price):
+            state.add_log(
+                f"PriceScout: ❌ Price {recommended_price} outside guardrails "
+                f"[{min_price} - {max_price}] – not published"
+            )
+            return False, "price_outside_guardrails"
+
+        # Get variant_id from raw_input or analysis
+        variant_id = (
+            state.raw_input.get("variant_id")
+            or analysis.get("variant_id")
+        )
+        if not variant_id:
+            state.add_log("PriceScout: Publish skipped – no variant_id")
+            return False, "missing_variant_id"
+
+        try:
+            from src.main.services.shopify_service import update_variant_price
+
+            await update_variant_price(
+                shop_domain=state.shop_id,
+                access_token=creds["access_token"],
+                variant_id=variant_id,
+                price=str(recommended_price),
+            )
+            state.add_log(
+                f"PriceScout: ✅ Variant {variant_id} price → {recommended_price}"
+            )
+            logger.info(
+                "[PriceScout] Published price=%s variant=%s shop=%s",
+                recommended_price,
+                variant_id,
+                state.shop_id,
+            )
+            return True, None
+        except Exception as e:
+            error_msg = str(e)
+            state.add_log(f"PriceScout: ❌ Publish failed: {error_msg}")
+            logger.error(
+                "[PriceScout] Publish failed variant=%s shop=%s err=%s",
+                variant_id,
+                state.shop_id,
+                error_msg,
+            )
+            return False, error_msg
 
     # -------------------------------------------------------------------------
     # PERCEPTION: Gather competitor data via Google Shopping (NO LLM call)
