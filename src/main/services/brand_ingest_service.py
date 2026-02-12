@@ -14,11 +14,14 @@ import httpx
 from sqlalchemy.orm import Session
 
 from src.main.config.prompts import BRAND_CONTEXT_CLEAN_PROMPT
-from src.main.db.db_models import StoreContext, Shop
+from src.main.db.db_models import StoreContext, Shop, BrandEntity
+from sqlalchemy.orm.attributes import flag_modified
+
 from src.main.logging.logger import get_logger
 from src.main.rag.chunking import chunk_text
 from src.main.rag.embedding import embed_texts
 from src.main.utils.llm_parser import parse_llm_json
+from typing import Optional, List
 
 logger = get_logger(__name__)
 
@@ -109,6 +112,7 @@ def ingest_brand_context(
     raw_texts: list[dict],
     max_len: int = 500,
     overlap: int = 50,
+    set_status: bool = True,
 ) -> dict:
     """
     Ingest brand context into store_context.
@@ -251,7 +255,12 @@ def ingest_brand_context(
             # Store JSON blob for UI use.
             shop.brand_context = brand_context
             shop.brand_context_updated_at = now
-            shop.brand_context_status = "ready"
+            if set_status:
+                # Only set "ready" when called standalone.
+                # When called from ingest_brand_context_with_intelligence(),
+                # the caller / background task manages the status to avoid
+                # a race where status becomes "ready" before intelligence extraction.
+                shop.brand_context_status = "ready"
             shop.brand_context_last_error = None
             db.add(shop)
     except Exception as e:
@@ -263,3 +272,185 @@ def ingest_brand_context(
         "brand_context": brand_context,
         "chunk_count": len(chunks),
     }
+
+
+async def ingest_brand_context_with_intelligence(
+    db: Session,
+    *,
+    shop_id: str,
+    raw_texts: list[dict],
+    extract_intelligence: bool = True,
+    max_len: int = 500,
+    overlap: int = 50,
+    llm_service=None,
+) -> dict:
+    """
+    Enhanced brand ingestion with strategic intelligence extraction.
+    
+    Extends the base ingest_brand_context function with:
+    1. Entity extraction per chunk
+    2. Strategic intelligence extraction
+    3. Triplet building for knowledge graph
+    4. Entity metadata tagging on chunks
+    
+    Args:
+        db: SQLAlchemy database session
+        shop_id: Shop domain identifier
+        raw_texts: List of dicts with {text, source_url, source_type}
+        extract_intelligence: Whether to extract strategic intelligence (default: True)
+        max_len: Maximum chunk length
+        overlap: Chunk overlap size
+        llm_service: Optional LLMService instance (will create if not provided)
+    
+    Returns:
+        Dict with inserted count, brand_context, strategic_intelligence, triplet_count, entity_count
+    """
+    if not shop_id:
+        raise ValueError("shop_id required")
+    
+    # Step 1: Run base ingestion to get cleaned text and chunks
+    # set_status=False: don't let base ingest set "ready" prematurely —
+    # the background task wrapper sets "ready" only after intelligence extraction finishes.
+    base_result = ingest_brand_context(
+        db=db,
+        shop_id=shop_id,
+        raw_texts=raw_texts,
+        max_len=max_len,
+        overlap=overlap,
+        set_status=False,
+    )
+    
+    if not extract_intelligence:
+        return base_result
+    
+    # Step 2: Extract strategic intelligence and entities
+    try:
+        # Get LLM service if not provided
+        if llm_service is None:
+            from src.main.services.llm_service import LLMService
+            llm_service = LLMService()
+        
+        from src.main.services.intelligence_extractor import (
+            IntelligenceExtractorService,
+            Entity,
+        )
+        extractor = IntelligenceExtractorService(llm_service)
+        
+        # Get full brand text for strategic intelligence extraction
+        brand_context = base_result.get("brand_context", {})
+        full_text = brand_context.get("en", {}).get("clean_text", "")
+        existing_pillars = brand_context.get("en", {}).get("pillars", [])
+        
+        # Extract strategic intelligence
+        strategic_intel = None
+        if full_text:
+            try:
+                strategic_intel = await extractor.extract_strategic_audit(
+                    brand_text=full_text,
+                    existing_pillars=existing_pillars if existing_pillars else None,
+                )
+            except Exception as e:
+                logger.warning(
+                    "[BrandIngest] Strategic intelligence extraction failed shop=%s err=%s",
+                    shop_id,
+                    e,
+                )
+        
+        # Step 3: Extract entities from chunks and build triplets
+        all_entities: List[Entity] = []
+        chunk_id_to_entities = {}
+        
+        # Get all chunks we just inserted
+        chunks = (
+            db.query(StoreContext)
+            .filter(StoreContext.shop_id == shop_id)
+            .order_by(StoreContext.created_at.desc())
+            .limit(base_result.get("chunk_count", 0))
+            .all()
+        )
+        
+        # Extract entities from each chunk
+        for chunk_row in chunks:
+            try:
+                entities = await extractor.extract_entities_from_chunk(chunk_row.content)
+                all_entities.extend(entities)
+                chunk_id_to_entities[chunk_row.id] = entities
+                
+                # Update chunk metadata with entities.
+                # Create a NEW dict so SQLAlchemy detects the JSONB mutation.
+                metadata = dict(chunk_row.metadata_json or {})
+                entity_tags = [f"{e.type.value}:{e.entity}" for e in entities]
+                metadata["entities"] = entity_tags
+                chunk_row.metadata_json = metadata
+                flag_modified(chunk_row, "metadata_json")
+                db.add(chunk_row)
+            except Exception as e:
+                logger.warning(
+                    "[BrandIngest] Entity extraction failed chunk_id=%s err=%s",
+                    chunk_row.id,
+                    e,
+                )
+        
+        # Step 4: Build triplets from entities
+        triplets = []
+        if all_entities and full_text:
+            try:
+                triplets = await extractor.build_triplets(
+                    entities=all_entities[:50],  # Limit to top 50 for triplet building
+                    source_text=full_text[:3000],  # Limit context size
+                )
+                
+                # Store triplets in brand_entities table
+                for triplet in triplets:
+                    entity_row = BrandEntity(
+                        shop_id=shop_id,
+                        subject=triplet.subject,
+                        subject_type=triplet.subject_type.value,
+                        relation=triplet.relation,
+                        object=triplet.object,
+                        object_type=triplet.object_type.value,
+                        confidence=triplet.confidence,
+                        source_chunk_id=triplet.source_chunk_id,
+                    )
+                    db.add(entity_row)
+            except Exception as e:
+                logger.warning(
+                    "[BrandIngest] Triplet building failed shop=%s err=%s",
+                    shop_id,
+                    e,
+                )
+        
+        # Step 5: Store strategic intelligence on Shop
+        if strategic_intel:
+            try:
+                shop = db.query(Shop).filter(Shop.domain == shop_id).first()
+                if shop:
+                    shop.strategic_intelligence = strategic_intel.model_dump()
+                    shop.strategic_intelligence_updated_at = datetime.now(timezone.utc)
+                    db.add(shop)
+            except Exception as e:
+                logger.warning(
+                    "[BrandIngest] Strategic intelligence save failed shop=%s err=%s",
+                    shop_id,
+                    e,
+                )
+        
+        db.commit()
+        
+        return {
+            "inserted": base_result.get("inserted", 0),
+            "brand_context": brand_context,
+            "chunk_count": base_result.get("chunk_count", 0),
+            "strategic_intelligence": strategic_intel.model_dump() if strategic_intel else None,
+            "triplet_count": len(triplets),
+            "entity_count": len(all_entities),
+        }
+    
+    except Exception as e:
+        logger.error(
+            "[BrandIngest] Intelligence extraction pipeline failed shop=%s err=%s",
+            shop_id,
+            e,
+        )
+        # Return base result even if intelligence extraction fails
+        return base_result

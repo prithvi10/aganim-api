@@ -1,0 +1,104 @@
+{
+  "_comment": "Test cases for local_template_test.py — all template content generation with real OpenAI",
+  "brand_soul": {
+    "shop_domain": "template-test-shop.myshopify.com",
+    "brand_persona": "Koto-gama (古都窯)",
+    "core_pillars": ["1885 heritage", "Yo-no-bi philosophy", "natural materials", "Kyoto craftsmanship"],
+    "raw_text": "【ご挨拶】\n古都窯（ことがま）は、明治18年（1885年）に京都・東山で開窯しました。\n私たちは「用の美（Yo-no-bi）」―使ってこそ美しい―という哲学を大切にしています。\n飾るための器ではなく、日々の食卓で愛される器を目指しています。\n\n【素材へのこだわり】\n信楽の陶土と京都の清水焼の技法を融合させた独自の配合を用いています。\n全ての釉薬は天然鉱物から手作りし、化学合成の顔料は一切使用しません。\n窯焚きは月に一度、4日間にわたり薪窯で焼成します。\n\n【ブランドストーリー】\n創業者・古都源太郎は、陶磁器の芸術性と実用性を両立させることを生涯の使命としました。\n現在は5代目・古都修が受け継ぎ、現代のライフスタイルに合う器を提案しています。\n2019年にはミラノ・デザインウィークに出展し、欧州のシェフたちからも高い評価を受けました。",
+    "expected_keywords": ["1885", "Kyoto", "Yo-no-bi"]
+  },
+  "product_templates": {
+    "product/collection": {
+      "inputs": {
+        "collection_name": "Everyday Tableware Collection",
+        "category": "Tableware",
+        "products": "Blue Glaze Deep Plate (24cm), White Porcelain Tea Cup, Matte Black Rice Bowl, Celadon Soy Sauce Dish",
+        "target_locale": "en"
+      },
+      "expected_keys": ["description"],
+      "expected_keywords": []
+    },
+    "product/faq": {
+      "inputs": {
+        "title": "蒼釉・深皿（24cm）",
+        "category": "Tableware",
+        "description": "パスタやカレーに最適な深皿です。直径24cm、高さ5cm。電子レンジ使用可、食洗機は推奨しません。桐箱に入れてお届けします。",
+        "target_locale": "en"
+      },
+      "expected_keys": ["faqs"],
+      "expected_keywords": []
+    },
+    "product/landing-hero": {
+      "inputs": {
+        "title": "蒼釉・深皿（24cm）",
+        "category": "Tableware",
+        "description": "パスタやカレーに最適な深皿です。天然釉薬と信楽の陶土による独特の青い色合いが特徴。",
+        "target_locale": "en"
+      },
+      "expected_keys": ["headline", "subheadline", "cta_text"],
+      "expected_keywords": []
+    },
+    "product/blog-post": {
+      "inputs": {
+        "topic": "The Ancient Art of Wood-Kiln Firing: How 4 Days of Fire Transform Clay into Heirloom Ceramics",
+        "category": "Artisan Techniques",
+        "context": "Koto-gama fires its pieces once a month in a traditional wood kiln (薪窯) over 4 continuous days. The process uses Shigaraki clay and natural mineral glazes — no synthetic pigments. Each firing yields unique variations in color and texture.",
+        "target_locale": "en"
+      },
+      "expected_keys": ["title", "body_html", "tags"],
+      "expected_keywords": []
+    }
+  },
+  "marketing_templates": {
+    "marketing/email-launch": {
+      "inputs": {
+        "title": "蒼釉・深皿（24cm）- Blue Glaze Deep Plate",
+        "category": "Tableware",
+        "description": "A 24cm deep plate fired in a wood kiln using Shigaraki clay and natural mineral glazes. Perfect for pasta, curry, and salads.",
+        "launch_date": "2026-03-15",
+        "target_locale": "en"
+      },
+      "expected_keys": ["subject", "body", "cta_text"],
+      "expected_keywords": []
+    },
+    "marketing/email-abandoned": {
+      "inputs": {
+        "title": "蒼釉・深皿（24cm）- Blue Glaze Deep Plate",
+        "category": "Tableware",
+        "price": "¥12,800",
+        "target_locale": "en"
+      },
+      "expected_keys": ["subject", "body", "cta_text"],
+      "expected_keywords": []
+    },
+    "marketing/email-welcome": {
+      "inputs": {
+        "brand_name": "Koto-gama (古都窯)",
+        "target_locale": "en"
+      },
+      "expected_keys": ["subject", "body"],
+      "expected_keywords": []
+    },
+    "marketing/ad-facebook": {
+      "inputs": {
+        "title": "Blue Glaze Deep Plate (24cm)",
+        "category": "Tableware",
+        "description": "Handcrafted in Kyoto since 1885. Shigaraki clay, natural mineral glazes, 4-day wood kiln firing.",
+        "platform": "Facebook",
+        "target_locale": "en"
+      },
+      "expected_keys": ["primary_text", "headline"],
+      "expected_keywords": []
+    },
+    "marketing/ad-google": {
+      "inputs": {
+        "title": "Blue Glaze Deep Plate (24cm)",
+        "category": "Tableware",
+        "keywords": "Japanese ceramics, handmade tableware, Kyoto pottery, artisan plates",
+        "target_locale": "en"
+      },
+      "expected_keys": ["headlines", "descriptions"],
+      "expected_keywords": []
+    }
+  }
+}

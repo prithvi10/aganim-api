@@ -151,9 +151,26 @@ class BaseAgent(ABC):
         # Base perception: get learned rules from memory
         learned_rules = await self.memory.get_learned_preferences(self.role_name)
         
+        # Get strategic intelligence if available
+        strategic_intel = None
+        if state.db:
+            try:
+                strategic_intel = await self.services.rag._get_strategic_intelligence(
+                    state.db,
+                    self.shop_id,
+                )
+            except Exception as e:
+                logger.warning(
+                    "[%s] Failed to load strategic intelligence shop=%s err=%s",
+                    self.role_name,
+                    self.shop_id,
+                    e,
+                )
+        
         context = AgentContext(
             raw_input=state.raw_input,
             learned_rules=learned_rules,
+            strategic_intelligence=strategic_intel,
         )
         
         # Let subclasses add domain-specific perception (RAG, SERP, etc.)

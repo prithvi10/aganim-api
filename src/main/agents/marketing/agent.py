@@ -8,6 +8,7 @@ This agent focuses on social media marketing:
 SEO functionality has been moved to the dedicated SEOAgent.
 """
 
+import json
 from typing import List, Tuple, Optional, Dict, Any
 
 from ..base import BaseAgent
@@ -40,14 +41,34 @@ class MarketingAgent(BaseAgent):
     Responsibilities:
     - Social hooks/caption generation (automatically in pipeline)
     - Seasonal campaign generation (on-demand)
+    - Email marketing (launch, abandoned cart, welcome)
+    - Ad copy generation (social, search)
     
-    LLM Calls: 1 (for social hooks generation)
+    LLM Calls: 1 (for content generation)
     
     Note: SEO functionality is handled by the dedicated SEOAgent.
+    
+    Supports multiple templates:
+    - marketing/social-tiktok: TikTok / social media hooks
+    - marketing/email-launch: Product launch emails
+    - marketing/email-abandoned: Abandoned cart emails
+    - marketing/email-welcome: Welcome emails
+    - marketing/ad-facebook: Facebook/Instagram ads
+    - marketing/ad-google: Google Ads
     """
     
     role_name = "Marketing"
     default_tool = "llm.generate_text"
+    
+    # Supported templates
+    SUPPORTED_TEMPLATES = [
+        "marketing/social-tiktok",
+        "marketing/email-launch",
+        "marketing/email-abandoned",
+        "marketing/email-welcome",
+        "marketing/ad-facebook",
+        "marketing/ad-google",
+    ]
     
     # NOTE: requires_llm_reasoning = False (default)
     # Reasoning phase uses deterministic plan - NO LLM call
@@ -82,61 +103,29 @@ class MarketingAgent(BaseAgent):
         plan: AgentPlan,
     ) -> Tuple[List[AgentAction], MissionState]:
         """
-        Execute marketing actions:
-        1. Generate social hooks/captions (1 LLM call)
+        Execute marketing actions with template routing.
+        
+        Routes to appropriate generator based on template_id.
         """
         actions = []
         
-        # Get product data
-        title = context.get_product_title()
-        category = context.get_category()
+        # Get template ID (default to social if not specified)
+        template_id = state.raw_input.get("template_id", "marketing/social-tiktok")
         
-        # -----------------------------------------------------------------
-        # Generate social hooks/captions (1 LLM call)
-        # -----------------------------------------------------------------
-        try:
-            # Get product tags if available
-            product_tags = state.raw_input.get("tags", [])
-            if isinstance(product_tags, str):
-                product_tags = [t.strip() for t in product_tags.split(",") if t.strip()]
-            
-            hooks_result = await self.generate_social_hooks(
-                product_title=title,
-                category=category,
-                tags=product_tags,
-                focus="Instagram Reels",
+        # Route to appropriate generator
+        if template_id.startswith("marketing/social"):
+            return await self._generate_social(state, context, actions, template_id)
+        elif template_id.startswith("marketing/email"):
+            return await self._generate_email(state, context, actions, template_id)
+        elif template_id.startswith("marketing/ad"):
+            return await self._generate_ad(state, context, actions, template_id)
+        else:
+            # Fallback to social
+            logger.warning(
+                "[Marketing] Unknown template_id=%s, falling back to social",
+                template_id,
             )
-            
-            actions.append(
-                AgentAction.success_action(
-                    tool_name="llm.generate_text",
-                    output=f"Generated {len(hooks_result.get('hooks', []))} social hooks",
-                    input_params={"step": "social_hooks"},
-                )
-            )
-            
-            # Store hooks in state
-            state.social_hooks = hooks_result.get("hooks", [])
-            
-            logger.info(
-                "[Marketing] Social hooks generated count=%d product=%s",
-                len(state.social_hooks or []),
-                state.product_id,
-            )
-            
-        except Exception as e:
-            actions.append(
-                AgentAction.failure_action(
-                    tool_name="llm.generate_text",
-                    error=str(e),
-                    input_params={"step": "social_hooks"},
-                )
-            )
-            logger.error("[Marketing] Social hooks generation failed: %s", e)
-            # Non-critical - continue without social hooks
-            state.social_hooks = []
-        
-        return actions, state
+            return await self._generate_social(state, context, actions, "marketing/social-tiktok")
 
     # -------------------------------------------------------------------------
     # FEEDBACK: Record for learning (NO LLM call)
@@ -311,3 +300,251 @@ class MarketingAgent(BaseAgent):
             logger.warning("[Marketing] Failed to parse JSON: %s", e)
         
         return {}
+    
+    # -------------------------------------------------------------------------
+    # Template-specific generators
+    # -------------------------------------------------------------------------
+    
+    def _build_system_prompt(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        template_id: str,
+    ) -> str:
+        """Build system prompt with operational rules and template-specific prompt."""
+        prompt_parts = []
+        
+        # NEW: Inject operational rules FIRST (highest priority)
+        operational_rules = context.get_operational_rules_prompt()
+        if operational_rules:
+            prompt_parts.append(operational_rules)
+        
+        # Get template-specific system prompt
+        from src.main.agents.templates import get_template
+        template = get_template(template_id)
+        if template and template.system_prompt:
+            prompt_parts.append(template.system_prompt)
+        else:
+            # Fallback to social hooks prompt for social templates
+            if template_id.startswith("marketing/social"):
+                prompt_parts.append(SOCIAL_HOOKS_SYSTEM_PROMPT)
+        
+        return "\n\n".join(prompt_parts)
+    
+    def _build_user_prompt(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        template_id: str,
+    ) -> str:
+        """Build user prompt from template."""
+        from src.main.agents.templates import get_template
+        template = get_template(template_id)
+        
+        if template and template.user_prompt_template:
+            # Build format dict
+            title = context.get_product_title()
+            category = context.get_category()
+            description = context.get_product_description()
+            target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+            
+            # Derive shop/brand name from shop_id for welcome emails, etc.
+            shop_name = (
+                state.shop_id.replace(".myshopify.com", "").replace("-", " ").title()
+                if state.shop_id else "Our Brand"
+            )
+            
+            # Smart defaults for mission-mode (when template fields aren't
+            # explicitly provided via the Content Templates page).
+            smart_defaults = {
+                "brand_name": shop_name,                 # email-welcome
+                "price": "See product page",             # email-abandoned
+                "launch_date": "Coming Soon",            # email-launch
+                "platform": "Facebook/Instagram",        # ad-facebook
+                "keywords": f"{title}, {category}",      # ad-google
+            }
+            
+            # Build: smart defaults → standard fields → raw_input overrides
+            format_dict = {
+                **smart_defaults,
+                "title": title,
+                "product_title": title,  # Alias
+                "category": category,
+                "description": description,
+                "target_locale": target_locale,
+                **state.raw_input,  # Explicit inputs always win
+            }
+            
+            try:
+                return template.user_prompt_template.format(**format_dict)
+            except KeyError as e:
+                logger.warning(
+                    "[Marketing] Missing template variable %s, using defaults",
+                    e,
+                )
+                # Robust fallback: extract all {var} names and default to ""
+                import re
+                var_names = re.findall(r"\{(\w+)\}", template.user_prompt_template)
+                safe_dict = {v: "" for v in var_names}
+                safe_dict.update(format_dict)
+                return template.user_prompt_template.format(**safe_dict)
+        
+        # Fallback for social hooks
+        if template_id.startswith("marketing/social"):
+            product_tags = state.raw_input.get("tags", [])
+            if isinstance(product_tags, str):
+                product_tags = [t.strip() for t in product_tags.split(",") if t.strip()]
+            tags_str = ", ".join(product_tags[:10]) if product_tags else ""
+            
+            return SOCIAL_HOOKS_USER_PROMPT_TEMPLATE.format(
+                focus="Instagram Reels",
+                product_title=context.get_product_title(),
+                category=context.get_category(),
+                tags=tags_str,
+            )
+        
+        return ""
+    
+    async def _generate_social(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+        template_id: str,
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """Generate social media content (existing flow)."""
+        try:
+            product_tags = state.raw_input.get("tags", [])
+            if isinstance(product_tags, str):
+                product_tags = [t.strip() for t in product_tags.split(",") if t.strip()]
+            
+            hooks_result = await self.generate_social_hooks(
+                product_title=context.get_product_title(),
+                category=context.get_category(),
+                tags=product_tags,
+                focus="Instagram Reels" if "instagram" in template_id else "TikTok",
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=f"Generated {len(hooks_result.get('hooks', []))} social hooks",
+                    input_params={"template_id": template_id},
+                )
+            )
+            
+            state.social_hooks = hooks_result.get("hooks", [])
+            state.status = "DRAFT_READY"
+            
+            logger.info(
+                "[Marketing] Social content generated template=%s product=%s",
+                template_id,
+                state.product_id,
+            )
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"template_id": template_id},
+                )
+            )
+            state.set_error(f"Social content generation failed: {str(e)}")
+        
+        return actions, state
+    
+    async def _generate_email(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+        template_id: str,
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """Generate email content using template."""
+        system_prompt = self._build_system_prompt(state, context, template_id)
+        user_prompt = self._build_user_prompt(state, context, template_id)
+        
+        try:
+            result = await self.services.llm.generate_text(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model="gpt-4o",
+                temperature=0.7,
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=result,
+                    input_params={"template_id": template_id},
+                )
+            )
+            
+            parsed = self._parse_json_result(result)
+            state.draft_content = json.dumps(parsed)  # Store email content as valid JSON
+            state.status = "DRAFT_READY"
+            
+            logger.info(
+                "[Marketing] Email generated template=%s shop=%s",
+                template_id,
+                self.shop_id,
+            )
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"template_id": template_id},
+                )
+            )
+            state.set_error(f"Email generation failed: {str(e)}")
+        
+        return actions, state
+    
+    async def _generate_ad(
+        self,
+        state: MissionState,
+        context: AgentContext,
+        actions: List[AgentAction],
+        template_id: str,
+    ) -> Tuple[List[AgentAction], MissionState]:
+        """Generate ad copy using template."""
+        system_prompt = self._build_system_prompt(state, context, template_id)
+        user_prompt = self._build_user_prompt(state, context, template_id)
+        
+        try:
+            result = await self.services.llm.generate_text(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model="gpt-4o-mini",  # Cheaper model for ad copy
+                temperature=0.7,
+            )
+            
+            actions.append(
+                AgentAction.success_action(
+                    tool_name="llm.generate_text",
+                    output=result,
+                    input_params={"template_id": template_id},
+                )
+            )
+            
+            parsed = self._parse_json_result(result)
+            state.draft_content = json.dumps(parsed)  # Store ad copy as valid JSON
+            state.status = "DRAFT_READY"
+            
+            logger.info(
+                "[Marketing] Ad copy generated template=%s shop=%s",
+                template_id,
+                self.shop_id,
+            )
+        except Exception as e:
+            actions.append(
+                AgentAction.failure_action(
+                    tool_name="llm.generate_text",
+                    error=str(e),
+                    input_params={"template_id": template_id},
+                )
+            )
+            state.set_error(f"Ad copy generation failed: {str(e)}")
+        
+        return actions, state

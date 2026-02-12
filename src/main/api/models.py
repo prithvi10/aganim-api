@@ -96,6 +96,10 @@ class MissionRequest(BaseModel):
     # Ad-hoc agent selection: specify agent names to run only those agents
     # e.g., ["CopywriterAgent"], ["MarketingAgent"], ["PriceScoutAgent", "ComplianceAgent"]
     requested_agents: list[str] | None = None
+    # Mission Architect: custom pipeline config with per-step human gates
+    # e.g., [{"agent_name": "PriceScoutAgent", "has_gate": true}, {"agent_name": "RewriterAgent", "has_gate": false}]
+    # When provided, overrides both requested_agents and tier-based workflow.
+    workflow_config: list[dict[str, Any]] | None = None
 
 
 class CorrectionRequest(BaseModel):
