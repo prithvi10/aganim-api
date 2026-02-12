@@ -355,6 +355,161 @@ async def save_product_metafields(
 
 
 # ---------------------------------------------------------------------------
+# Product body read / template-section injection helpers
+# ---------------------------------------------------------------------------
+
+async def get_product_body(
+    shop_domain: str,
+    access_token: str,
+    product_id: int | str,
+) -> str | None:
+    """
+    Fetch the current ``descriptionHtml`` for a product via GraphQL.
+
+    Returns the HTML string, or ``None`` if the product can't be read.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    product_gid = (
+        str(product_id)
+        if str(product_id).startswith("gid://")
+        else f"gid://shopify/Product/{product_id}"
+    )
+    query = """
+    query getProductBody($id: ID!) {
+      product(id: $id) { descriptionHtml }
+    }
+    """
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json",
+            headers=headers,
+            json={"query": query, "variables": {"id": product_gid}},
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "get_product_body failed: %s %s (%s)",
+                resp.status_code, resp.text, shop_domain,
+            )
+            return None
+        data = resp.json()
+        product = data.get("data", {}).get("product")
+        if not product:
+            return None
+        return product.get("descriptionHtml") or ""
+
+
+import re as _re
+import json as _json
+
+
+def faq_json_to_html(faq_json: str) -> str:
+    """
+    Convert FAQ JSON → collapsible ``<details>`` HTML wrapped with markers.
+
+    Expected input format::
+
+        {"faqs": [{"question": "…", "answer": "…"}, …]}
+
+    Returns empty string if the input can't be parsed or has no FAQs.
+    """
+    try:
+        data = _json.loads(faq_json) if isinstance(faq_json, str) else faq_json
+        faqs = data.get("faqs", []) if isinstance(data, dict) else data
+    except (_json.JSONDecodeError, TypeError):
+        return ""
+    if not faqs:
+        return ""
+    parts = [
+        "<!-- cba-faq-start -->",
+        '<div class="cba-faq">',
+        "<h3>Frequently Asked Questions</h3>",
+    ]
+    for faq in faqs:
+        q = faq.get("question", "")
+        a = faq.get("answer", "")
+        if q:
+            parts.append(f"<details><summary>{q}</summary><p>{a}</p></details>")
+    parts.append("</div>")
+    parts.append("<!-- cba-faq-end -->")
+    return "\n".join(parts)
+
+
+def hero_json_to_html(hero_json: str) -> str:
+    """
+    Convert Hero JSON → semantic HTML wrapped with markers.
+
+    Expected input format::
+
+        {"headline": "…", "subheadline": "…",
+         "hero_description": "…", "cta_text": "…"}
+    """
+    try:
+        data = _json.loads(hero_json) if isinstance(hero_json, str) else hero_json
+    except (_json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    headline = data.get("headline", "")
+    sub = data.get("subheadline", "")
+    desc = data.get("hero_description", "")
+    cta = data.get("cta_text", "")
+    if not any([headline, sub, desc]):
+        return ""
+    parts = [
+        "<!-- cba-hero-start -->",
+        '<div class="cba-hero">',
+    ]
+    if headline:
+        parts.append(f"<h1>{headline}</h1>")
+    if sub:
+        parts.append(f"<p><strong>{sub}</strong></p>")
+    if desc:
+        parts.append(f"<p>{desc}</p>")
+    if cta:
+        parts.append(f"<p><em>{cta}</em></p>")
+    parts.append("</div>")
+    parts.append("<!-- cba-hero-end -->")
+    return "\n".join(parts)
+
+
+def inject_section(
+    body_html: str,
+    section_html: str,
+    marker_start: str,
+    marker_end: str,
+    position: str = "append",
+) -> str:
+    """
+    Replace an existing marker-delimited block, or inject at *position*.
+
+    Args:
+        body_html: Current product description HTML.
+        section_html: The new section (including its own markers).
+        marker_start: Opening marker comment, e.g. ``<!-- cba-faq-start -->``.
+        marker_end: Closing marker comment.
+        position: ``"append"`` (bottom) or ``"prepend"`` (top) when no
+                  existing markers are found.
+
+    Returns:
+        Updated HTML.
+    """
+    pattern = _re.compile(
+        _re.escape(marker_start) + r".*?" + _re.escape(marker_end),
+        _re.DOTALL,
+    )
+    if pattern.search(body_html):
+        return pattern.sub(section_html, body_html)
+    body_html = body_html.strip() if body_html else ""
+    if position == "prepend":
+        return section_html + "\n" + body_html if body_html else section_html
+    return body_html + "\n" + section_html if body_html else section_html
+
+
+# ---------------------------------------------------------------------------
 # Autonomous publishing helpers (Pro tier)
 # ---------------------------------------------------------------------------
 
