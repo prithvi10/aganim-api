@@ -106,10 +106,16 @@ class RewriterAgent(BaseAgent):
 
     async def _publish_article(self, state, creds):
         """Push blog-post draft_content → Shopify article."""
-        from src.main.services.shopify_service import create_article
+        from src.main.services.shopify_service import create_article, get_default_blog_id
         blog_id = state.raw_input.get("blog_id", "")
         if not blog_id:
-            raise ValueError("blog_id is required for blog post publishing")
+            # Auto-fetch the shop's default blog (usually "News")
+            blog_id = await get_default_blog_id(
+                shop_domain=state.shop_id,
+                access_token=creds["access_token"],
+            )
+        if not blog_id:
+            raise ValueError("No blog found on this Shopify store – cannot create article")
         title = state.draft_title or "Untitled Post"
         body_html = state.draft_content or ""
         # If body is JSON, extract the body_html field

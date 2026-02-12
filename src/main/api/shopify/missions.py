@@ -765,40 +765,112 @@ async def continue_step(
         
         # === Save to Shopify on completion ===
         from src.main.db.db_transactions import get_shop_access_token
-        from src.main.services.shopify_service import save_product_content_with_locale, save_product_metafields
+        from src.main.services.shopify_service import (
+            save_product_content_with_locale,
+            save_product_metafields,
+            create_article,
+            get_default_blog_id,
+        )
         import json
         
         access_token = get_shop_access_token(db, shop)
         product_id = state.product_id
         
+        # ── Resolve the correct product title/description from agent_outputs ──
+        # When a blog-post step ran last, state.draft_content holds blog JSON
+        # instead of the product description.  Look through agent_outputs for
+        # the product/description step or the base RewriterAgent output.
+        product_title = None
+        product_desc = None
+        blog_post_outputs = []  # Collect all blog-post step outputs
+        
+        outputs = state.agent_outputs or {}
+        wf_config = state.workflow_config or []
+        
+        for key, out in outputs.items():
+            tmpl = out.get("template_id") if isinstance(out, dict) else None
+            if tmpl == "product/blog-post":
+                blog_post_outputs.append(out)
+            elif tmpl == "product/description" or tmpl is None:
+                # product/description template step OR base RewriterAgent output
+                if isinstance(out, dict):
+                    if out.get("draft_content"):
+                        product_desc = out["draft_content"]
+                    if out.get("draft_title"):
+                        product_title = out["draft_title"]
+        
+        # Fallback: use state.draft_* only when there are NO blog-post steps
+        # (i.e. the values can't be blog-post content)
+        if not product_title and not blog_post_outputs:
+            product_title = state.draft_title
+        if not product_desc and not blog_post_outputs:
+            product_desc = state.draft_content
+        
+        raw_input = state.raw_input or {}
+        product_title = product_title or raw_input.get("product_name", "")
+        
         # Save product title and description
-        if access_token and product_id and (state.draft_title or state.draft_content):
+        if access_token and product_id and product_title and product_desc:
             try:
-                # Get locales from state
-                raw_input = state.raw_input or {}
                 primary_locale = raw_input.get("primary_locale", "en")
                 target_locale = state.target_locale or "en"
                 
-                title_to_save = state.draft_title or raw_input.get("product_name", "")
-                desc_to_save = state.draft_content or ""
-                
-                if title_to_save and desc_to_save:
-                    await save_product_content_with_locale(
-                        shop_domain=shop,
-                        access_token=access_token,
-                        product_id=product_id,
-                        title=title_to_save,
-                        description=desc_to_save,
-                        target_locale=target_locale,
-                        shop_primary_locale=primary_locale,
-                    )
-                    logger.info(
-                        "[MissionStep] saved_to_shopify rid=%s shop=%s product_id=%s",
-                        rid, shop, product_id
-                    )
+                await save_product_content_with_locale(
+                    shop_domain=shop,
+                    access_token=access_token,
+                    product_id=product_id,
+                    title=product_title,
+                    description=product_desc,
+                    target_locale=target_locale,
+                    shop_primary_locale=primary_locale,
+                )
+                logger.info(
+                    "[MissionStep] saved_to_shopify rid=%s shop=%s product_id=%s",
+                    rid, shop, product_id
+                )
             except Exception as e:
                 logger.error(
                     "[MissionStep] shopify_save_failed rid=%s shop=%s err=%s",
+                    rid, shop, str(e)
+                )
+        
+        # ── Create blog articles for any product/blog-post steps ──────────
+        if access_token and blog_post_outputs:
+            try:
+                blog_id = raw_input.get("blog_id", "")
+                if not blog_id:
+                    blog_id = await get_default_blog_id(shop, access_token)
+                if blog_id:
+                    for bp_out in blog_post_outputs:
+                        bp_title = bp_out.get("draft_title") or "Untitled Post"
+                        bp_body = bp_out.get("draft_content") or ""
+                        # Parse JSON body if needed
+                        try:
+                            parsed = json.loads(bp_body)
+                            if isinstance(parsed, dict):
+                                bp_body = parsed.get("body_html", parsed.get("content", bp_body))
+                                bp_title = parsed.get("title", bp_title)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                        await create_article(
+                            shop_domain=shop,
+                            access_token=access_token,
+                            blog_id=blog_id,
+                            title=bp_title,
+                            body_html=bp_body,
+                        )
+                        logger.info(
+                            "[MissionStep] blog_article_created rid=%s shop=%s blog_id=%s",
+                            rid, shop, blog_id
+                        )
+                else:
+                    logger.warning(
+                        "[MissionStep] blog_post_skipped rid=%s shop=%s reason=no_blog_found",
+                        rid, shop,
+                    )
+            except Exception as e:
+                logger.error(
+                    "[MissionStep] blog_article_failed rid=%s shop=%s err=%s",
                     rid, shop, str(e)
                 )
         
@@ -1064,16 +1136,44 @@ async def skip_step(
         
         # === Save to Shopify on completion (if we have content) ===
         from src.main.db.db_transactions import get_shop_access_token
-        from src.main.services.shopify_service import save_product_content_with_locale, save_product_metafields
+        from src.main.services.shopify_service import (
+            save_product_content_with_locale,
+            save_product_metafields,
+            create_article,
+            get_default_blog_id,
+        )
         import json
         
         access_token = get_shop_access_token(db, shop)
         product_id = state.product_id
         
-        # Only save if we have generated content (copywriter ran)
-        if access_token and product_id and state.draft_title and state.draft_content:
+        # ── Resolve the correct product title/description from agent_outputs ──
+        product_title = None
+        product_desc = None
+        blog_post_outputs = []
+        
+        outputs = state.agent_outputs or {}
+        for key, out in outputs.items():
+            tmpl = out.get("template_id") if isinstance(out, dict) else None
+            if tmpl == "product/blog-post":
+                blog_post_outputs.append(out)
+            elif tmpl == "product/description" or tmpl is None:
+                if isinstance(out, dict):
+                    if out.get("draft_content"):
+                        product_desc = out["draft_content"]
+                    if out.get("draft_title"):
+                        product_title = out["draft_title"]
+        
+        if not product_title and not blog_post_outputs:
+            product_title = state.draft_title
+        if not product_desc and not blog_post_outputs:
+            product_desc = state.draft_content
+        
+        raw_input = state.raw_input or {}
+        product_title = product_title or raw_input.get("product_name", "")
+        
+        if access_token and product_id and product_title and product_desc:
             try:
-                raw_input = state.raw_input or {}
                 primary_locale = raw_input.get("primary_locale", "en")
                 target_locale = state.target_locale or "en"
                 
@@ -1081,8 +1181,8 @@ async def skip_step(
                     shop_domain=shop,
                     access_token=access_token,
                     product_id=product_id,
-                    title=state.draft_title,
-                    description=state.draft_content,
+                    title=product_title,
+                    description=product_desc,
                     target_locale=target_locale,
                     shop_primary_locale=primary_locale,
                 )
@@ -1093,6 +1193,45 @@ async def skip_step(
             except Exception as e:
                 logger.error(
                     "[MissionStep] shopify_save_failed rid=%s shop=%s err=%s (via skip)",
+                    rid, shop, str(e)
+                )
+        
+        # ── Create blog articles for any product/blog-post steps ──────────
+        if access_token and blog_post_outputs:
+            try:
+                blog_id = raw_input.get("blog_id", "")
+                if not blog_id:
+                    blog_id = await get_default_blog_id(shop, access_token)
+                if blog_id:
+                    for bp_out in blog_post_outputs:
+                        bp_title = bp_out.get("draft_title") or "Untitled Post"
+                        bp_body = bp_out.get("draft_content") or ""
+                        try:
+                            parsed = json.loads(bp_body)
+                            if isinstance(parsed, dict):
+                                bp_body = parsed.get("body_html", parsed.get("content", bp_body))
+                                bp_title = parsed.get("title", bp_title)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                        await create_article(
+                            shop_domain=shop,
+                            access_token=access_token,
+                            blog_id=blog_id,
+                            title=bp_title,
+                            body_html=bp_body,
+                        )
+                        logger.info(
+                            "[MissionStep] blog_article_created rid=%s shop=%s blog_id=%s (via skip)",
+                            rid, shop, blog_id
+                        )
+                else:
+                    logger.warning(
+                        "[MissionStep] blog_post_skipped rid=%s shop=%s reason=no_blog_found (via skip)",
+                        rid, shop,
+                    )
+            except Exception as e:
+                logger.error(
+                    "[MissionStep] blog_article_failed rid=%s shop=%s err=%s (via skip)",
                     rid, shop, str(e)
                 )
         
