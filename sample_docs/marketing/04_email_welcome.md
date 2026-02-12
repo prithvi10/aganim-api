@@ -1,5 +1,5 @@
 # Welcome Email — Takumi Ceramics
-Generated: 2026-02-10 17:08 | Template: marketing/email-welcome
+Generated: 2026-02-12 14:53 | Template: marketing/email-welcome
 
 ---
 

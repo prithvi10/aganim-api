@@ -174,6 +174,8 @@ async def create_mission(
         "workflow_agents": workflow_agents,
         # Mission Architect pipeline config
         "workflow_config": workflow_config or [],
+        # Autonomous execution (Pro tier)
+        "autonomous": plan_tier == "Pro",
     }
     
     mission = Mission(
@@ -750,7 +752,7 @@ async def continue_step(
         workflow_config=wf_config,
     )
     
-    state = mission_control.advance_to_next_step(state)
+    state = await mission_control.advance_to_next_step(state)
     
     # Update mission record
     mission.current_state = state.to_dict()

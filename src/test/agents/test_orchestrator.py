@@ -819,7 +819,8 @@ async def test_execute_single_step_handles_error(mock_services, mission_state):
 # Tests: Step-by-Step Journey - advance_to_next_step
 # =============================================================================
 
-def test_advance_to_next_step_increments_index(mock_services, mission_state):
+@pytest.mark.asyncio
+async def test_advance_to_next_step_increments_index(mock_services, mission_state):
     """Test that advance_to_next_step increments current_agent_index."""
     mission = MissionControl(
         plan_tier="Standard",
@@ -830,13 +831,14 @@ def test_advance_to_next_step_increments_index(mock_services, mission_state):
     mission_state.current_agent_index = 0
     mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
-    result = mission.advance_to_next_step(mission_state)
+    result = await mission.advance_to_next_step(mission_state)
     
     assert result.current_agent_index == 1
     assert result.status == "PENDING"
 
 
-def test_advance_to_next_step_logs_next_agent(mock_services, mission_state):
+@pytest.mark.asyncio
+async def test_advance_to_next_step_logs_next_agent(mock_services, mission_state):
     """Test that advance_to_next_step logs the next agent."""
     mission = MissionControl(
         plan_tier="Standard",
@@ -847,12 +849,13 @@ def test_advance_to_next_step_logs_next_agent(mock_services, mission_state):
     mission_state.current_agent_index = 0
     mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
-    result = mission.advance_to_next_step(mission_state)
+    result = await mission.advance_to_next_step(mission_state)
     
     assert "SEOAgent" in "\n".join(result.logs)
 
 
-def test_advance_to_next_step_completes_at_end(mock_services, mission_state):
+@pytest.mark.asyncio
+async def test_advance_to_next_step_completes_at_end(mock_services, mission_state):
     """Test that advance_to_next_step marks COMPLETED at end."""
     mission = MissionControl(
         plan_tier="Standard",
@@ -863,7 +866,7 @@ def test_advance_to_next_step_completes_at_end(mock_services, mission_state):
     mission_state.current_agent_index = 3  # Last agent
     mission_state.workflow_agents = ["CopywriterAgent", "SEOAgent", "MarketingAgent", "PriceScoutAgent"]
     
-    result = mission.advance_to_next_step(mission_state)
+    result = await mission.advance_to_next_step(mission_state)
     
     assert result.current_agent_index == 4
     assert result.status == "COMPLETED"
@@ -1531,3 +1534,247 @@ def test_get_workflow_info_with_workflow_config(mock_services):
     assert info["agent_count"] == 2
     assert "RewriterAgent" in info["agents"]
     assert "SEOAgent" in info["agents"]
+
+
+# =============================================================================
+# Tests: Autonomous Execution Flag
+# =============================================================================
+
+def test_autonomous_flag_set_for_pro_tier(mock_services):
+    """Test that autonomous flag is True for Pro tier."""
+    mission = MissionControl(
+        plan_tier="Pro",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    assert mission.autonomous is True
+
+
+def test_autonomous_flag_false_for_standard_tier(mock_services):
+    """Test that autonomous flag is False for Standard tier."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    assert mission.autonomous is False
+
+
+def test_autonomous_flag_false_for_basic_tier(mock_services):
+    """Test that autonomous flag is False for Basic tier."""
+    mission = MissionControl(
+        plan_tier="Basic",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    assert mission.autonomous is False
+
+
+def test_autonomous_flag_false_for_free_tier(mock_services):
+    """Test that autonomous flag is False for Free tier."""
+    mission = MissionControl(
+        plan_tier="Free",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    assert mission.autonomous is False
+
+
+# =============================================================================
+# Tests: Autonomous flag propagation into state
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_execute_propagates_autonomous_to_state(mock_services, mission_state):
+    """Test that execute() sets state.autonomous from self.autonomous."""
+    mission = MissionControl(
+        plan_tier="Pro",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+
+    states = []
+    async for state in mission.execute(mission_state):
+        states.append(state)
+
+    # Every yielded state should have autonomous=True
+    for s in states:
+        assert s.autonomous is True, f"Expected autonomous=True, got {s.autonomous}"
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_propagates_autonomous(mock_services, mission_state):
+    """Test that execute_single_step sets state.autonomous before running agent."""
+    received_autonomous = [None]
+
+    async def mock_capture_autonomous(self, state):
+        received_autonomous[0] = state.autonomous
+        state.draft_content = "ok"
+        return state
+
+    with patch.object(CopywriterAgent, 'run', mock_capture_autonomous):
+        mission = MissionControl(
+            plan_tier="Pro",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+
+    assert received_autonomous[0] is True
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_non_pro_autonomous_false(mock_services, mission_state):
+    """Test that non-Pro tier does NOT set state.autonomous."""
+    received_autonomous = [None]
+
+    async def mock_capture(self, state):
+        received_autonomous[0] = state.autonomous
+        return state
+
+    with patch.object(CopywriterAgent, 'run', mock_capture):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+
+        async for _ in mission.execute_single_step(mission_state):
+            pass
+
+    assert received_autonomous[0] is False
+
+
+# =============================================================================
+# Tests: _on_step_approved calls _maybe_publish
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_on_step_approved_calls_maybe_publish_for_pro(mock_services, mission_state):
+    """Test that _on_step_approved calls agent._maybe_publish when autonomous=True."""
+    mission_state.autonomous = True
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": True, "template_id": "product/description"},
+    ]
+    mission_state.workflow_config = config
+    mission_state.agent_outputs["RewriterAgent:product/description"] = {"draft_content": "Test"}
+
+    mission = MissionControl(
+        plan_tier="Pro",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+
+    with patch.object(RewriterAgent, '_maybe_publish', new_callable=AsyncMock, return_value=(True, None)) as mock_pub:
+        await mission._on_step_approved(mission_state, 0)
+        mock_pub.assert_called_once()
+        # Verify is_published was injected into agent_outputs
+        assert mission_state.agent_outputs["RewriterAgent:product/description"]["is_published"] is True
+
+
+@pytest.mark.asyncio
+async def test_on_step_approved_skips_when_not_autonomous(mock_services, mission_state):
+    """Test that _on_step_approved does nothing when autonomous=False."""
+    mission_state.autonomous = False
+
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+
+    with patch.object(RewriterAgent, '_maybe_publish', new_callable=AsyncMock) as mock_pub:
+        await mission._on_step_approved(mission_state, 0)
+        mock_pub.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_on_step_approved_records_publish_error(mock_services, mission_state):
+    """Test that _on_step_approved records publish_error in agent_outputs."""
+    mission_state.autonomous = True
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": True, "template_id": "product/faq"},
+    ]
+    mission_state.workflow_config = config
+    mission_state.agent_outputs["RewriterAgent:product/faq"] = {"draft_content": "FAQ data"}
+
+    mission = MissionControl(
+        plan_tier="Pro",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+
+    with patch.object(RewriterAgent, '_maybe_publish', new_callable=AsyncMock, return_value=(False, "missing_credentials")):
+        await mission._on_step_approved(mission_state, 0)
+        outputs = mission_state.agent_outputs["RewriterAgent:product/faq"]
+        assert outputs["is_published"] is False
+        assert outputs["publish_error"] == "missing_credentials"
+
+
+# =============================================================================
+# Tests: advance_to_next_step triggers _on_step_approved
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_advance_to_next_step_triggers_on_step_approved(mock_services, mission_state):
+    """Test that advance_to_next_step calls _on_step_approved before advancing."""
+    on_step_calls = []
+
+    async def mock_on_step(state, step_idx):
+        on_step_calls.append(step_idx)
+
+    mission = MissionControl(
+        plan_tier="Pro",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    mission._on_step_approved = mock_on_step
+
+    mission_state.current_agent_index = 1
+    result = await mission.advance_to_next_step(mission_state)
+
+    assert on_step_calls == [1]
+    assert result.current_agent_index == 2
+
+
+# =============================================================================
+# Tests: execute_single_step auto-proceed calls _on_step_approved
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_auto_proceed_triggers_on_step_approved(mock_services, mission_state):
+    """Test that auto-proceed path calls _on_step_approved."""
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": False},
+        {"agent_name": "SEOAgent", "has_gate": True},
+    ]
+    mission_state.workflow_config = config
+
+    async def mock_pass(self, state):
+        state.draft_content = "content"
+        return state
+
+    on_step_calls = []
+
+    async def capture_on_step(state, step_idx):
+        on_step_calls.append(step_idx)
+
+    with patch.object(CopywriterAgent, 'run', mock_pass):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            workflow_config=config,
+        )
+        mission._on_step_approved = capture_on_step
+
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+
+    assert 0 in on_step_calls

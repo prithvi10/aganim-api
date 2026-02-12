@@ -8,7 +8,7 @@ NOTE: SEO generation is handled by SEOAgent for all tiers.
 """
 
 import json
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..base import BaseAgent
 from ..state import MissionState
@@ -67,6 +67,66 @@ class RewriterAgent(BaseAgent):
     
     # NOTE: requires_llm_reasoning = False (default)
     # Reasoning phase uses deterministic plan - NO LLM call
+
+    # ── Autonomous Publish Map ────────────────────────────────────────
+    # Maps template_id → async handler(self, state, creds) for autonomous publishing.
+    PUBLISH_MAP: Dict[str, "Callable"] = {
+        "product/description": "_publish_product_body",
+        "product/faq": "_publish_metafields",
+        "product/landing-hero": "_publish_metafields",
+        "product/blog-post": "_publish_article",
+    }
+
+    async def _publish_product_body(self, state, creds):
+        """Push draft_content → Shopify descriptionHtml."""
+        from src.main.services.shopify_service import update_product_body
+        await update_product_body(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            html=state.draft_content or "",
+        )
+
+    async def _publish_metafields(self, state, creds):
+        """Push draft_content → Shopify product metafields."""
+        from src.main.services.shopify_service import save_product_metafields
+        template_id = state.raw_input.get("template_id", "unknown")
+        key = template_id.replace("/", "_")  # product/faq → product_faq
+        await save_product_metafields(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            metafields=[{
+                "namespace": "crossborder_agent",
+                "key": key,
+                "value": state.draft_content or "",
+                "type": "json",
+            }],
+        )
+
+    async def _publish_article(self, state, creds):
+        """Push blog-post draft_content → Shopify article."""
+        from src.main.services.shopify_service import create_article
+        blog_id = state.raw_input.get("blog_id", "")
+        if not blog_id:
+            raise ValueError("blog_id is required for blog post publishing")
+        title = state.draft_title or "Untitled Post"
+        body_html = state.draft_content or ""
+        # If body is JSON, extract the body_html field
+        try:
+            parsed = json.loads(body_html)
+            if isinstance(parsed, dict):
+                body_html = parsed.get("body_html", parsed.get("content", body_html))
+                title = parsed.get("title", title)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        await create_article(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            blog_id=blog_id,
+            title=title,
+            body_html=body_html,
+        )
 
     # -------------------------------------------------------------------------
     # PERCEPTION: Gather brand context (NO LLM call)
