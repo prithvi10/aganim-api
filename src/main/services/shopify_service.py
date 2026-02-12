@@ -454,6 +454,40 @@ async def update_variant_price(
         logger.info("✅ Variant price updated for %s → %s (%s)", variant_id, price, shop_domain)
 
 
+async def get_default_blog_id(
+    shop_domain: str,
+    access_token: str,
+) -> str | None:
+    """
+    Fetch the first (default) blog ID for a shop via REST API.
+
+    Shopify stores always have at least one blog (usually called "News").
+    Returns the blog ID as a string, or ``None`` if no blogs exist.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    url = f"https://{shop_domain}/admin/api/{shopify_api_version}/blogs.json?limit=1"
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.get(url, headers=headers)
+        if resp.status_code != 200:
+            logger.warning(
+                "get_default_blog_id failed: %s %s (%s)",
+                resp.status_code, resp.text, shop_domain,
+            )
+            return None
+        blogs = resp.json().get("blogs", [])
+        if not blogs:
+            logger.warning("No blogs found for shop=%s", shop_domain)
+            return None
+        blog_id = str(blogs[0]["id"])
+        logger.info("Default blog_id=%s for shop=%s", blog_id, shop_domain)
+        return blog_id
+
+
 async def create_article(
     shop_domain: str,
     access_token: str,

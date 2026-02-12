@@ -475,6 +475,11 @@ class MissionControl:
         
         if step_template_id:
             state.raw_input["template_id"] = step_template_id
+            # Clear shared draft fields so previous step output doesn't leak
+            # into this step.  Each step captures its own output in agent_outputs
+            # via _extract_agent_output().
+            state.draft_content = None
+            state.draft_title = None
             state.add_log(
                 f"MissionControl: Step {current_idx + 1}/{len(self.workflow)} - "
                 f"Running {agent_name} with template '{step_template_id}'..."
@@ -637,6 +642,11 @@ class MissionControl:
         (and optionally ``publish_error``) into the step's ``agent_outputs``
         entry so the frontend can display a "Published" badge.
         
+        Before publishing, restores ``state.draft_content`` / ``draft_title``
+        from the step's captured ``agent_outputs`` entry so that publish
+        handlers always read the *correct* content even when a later step
+        has already overwritten the shared field.
+        
         Args:
             state: Current mission state
             step_idx: Index of the just-approved step
@@ -652,7 +662,30 @@ class MissionControl:
         if wf_config and step_idx < len(wf_config):
             template_id = wf_config[step_idx].get("template_id")
         
+        # ── Restore draft_content for the approved step ──────────────────
+        # When multiple template steps share the same agent (e.g. two
+        # RewriterAgent steps: product/description + product/faq), the
+        # shared state.draft_content will hold the *last* step's output.
+        # We must restore the correct content before calling the publish
+        # handler so it pushes the right data.
+        output_key = (
+            f"{agent_class.__name__}:{template_id}"
+            if template_id
+            else agent_class.__name__
+        )
+        step_output = state.agent_outputs.get(output_key, {})
+        if step_output:
+            saved_content = state.draft_content
+            saved_title = state.draft_title
+            state.draft_content = step_output.get("draft_content", state.draft_content)
+            state.draft_title = step_output.get("draft_title", state.draft_title)
+        
         is_published, error = await agent._maybe_publish(state, template_id)
+        
+        # Restore previous draft_content so later steps are not affected
+        if step_output:
+            state.draft_content = saved_content
+            state.draft_title = saved_title
         
         # Inject is_published into agent_outputs for this step
         output_key = (

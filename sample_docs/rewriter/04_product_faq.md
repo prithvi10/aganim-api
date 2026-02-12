@@ -1,5 +1,5 @@
 # Product FAQ — Takumi Ceramics
-Generated: 2026-02-12 14:53 | Template: product/faq
+Generated: 2026-02-12 16:21 | Template: product/faq
 
 ## Product: Celadon Jade Rice Bowl — 翡翠茶碗
 

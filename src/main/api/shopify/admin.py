@@ -137,6 +137,90 @@ async def get_usage(
 
 
 # =============================================================================
+# Plan Sync (From UI to API — called when Shopify has a subscription the DB
+# doesn't know about, e.g. the subscription-activated webhook failed)
+# =============================================================================
+
+@router.post("/api/admin/sync-plan")
+async def sync_plan(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Idempotent plan sync: the UI calls this when it detects the merchant
+    already has an ACTIVE Shopify subscription that doesn't match the DB.
+    Updates current_plan_name, last_plan_name, user.plan_id, and clears
+    any stale pending-downgrade fields.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    shop_domain = str(payload.get("shop") or "").strip()
+    plan_name = str(payload.get("plan_name") or "").strip()
+    sub_status = str(payload.get("subscription_status") or "").strip().upper()
+
+    if not shop_domain or not plan_name:
+        raise HTTPException(status_code=400, detail="Missing shop or plan_name")
+
+    logger.info("[SyncPlan] shop=%s plan=%s status=%s", shop_domain, plan_name, sub_status)
+
+    from src.main.db.db_transactions import get_plan_by_name, get_user_by_username
+
+    shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop_rec:
+        logger.warning("[SyncPlan] shop not found: %s", shop_domain)
+        return {"synced": False, "reason": "shop_not_found"}
+
+    now = datetime.now(timezone.utc)
+
+    # Only sync if the Shopify subscription is ACTIVE
+    if sub_status != "ACTIVE":
+        return {"synced": False, "reason": "not_active"}
+
+    # Already in sync — nothing to do
+    if (shop_rec.current_plan_name or "").strip() == plan_name:
+        return {"synced": False, "reason": "already_synced"}
+
+    # Update Shop record
+    shop_rec.current_plan_name = plan_name
+    shop_rec.last_plan_name = plan_name
+    shop_rec.last_shopify_subscription_status = "ACTIVE"
+    shop_rec.last_plan_change_type = "upgrade"
+    shop_rec.last_plan_change_at = now
+    # Clear any stale pending downgrade
+    shop_rec.pending_plan_name = None
+    shop_rec.pending_plan_effective_at = None
+    # Reset usage counters for the new billing cycle
+    shop_rec.monthly_rewrites_used = 0
+    shop_rec.monthly_cost_accumulated = 0
+    shop_rec.reset_anchor_date = now
+    from datetime import timedelta
+    shop_rec.next_reset_date = now + timedelta(days=30)
+    # Extend access window
+    shop_rec.access_expires_at = now + timedelta(days=30)
+    db.add(shop_rec)
+
+    # Update User.plan_id to match
+    user = get_user_by_username(db, shop_domain)
+    plan_obj = get_plan_by_name(db, plan_name)
+    if user and plan_obj:
+        user.plan_id = plan_obj.id
+        db.add(user)
+
+    try:
+        db.commit()
+        logger.info("[SyncPlan] ✅ synced %s → %s", shop_domain, plan_name)
+    except Exception as e:
+        db.rollback()
+        logger.error("[SyncPlan] DB error: %s", e)
+        raise HTTPException(status_code=500, detail="DB commit failed")
+
+    return {"synced": True, "plan_name": plan_name}
+
+
+# =============================================================================
 # Onboarding Endpoints
 # =============================================================================
 
