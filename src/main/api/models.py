@@ -100,6 +100,9 @@ class MissionRequest(BaseModel):
     # e.g., [{"agent_name": "PriceScoutAgent", "has_gate": true}, {"agent_name": "RewriterAgent", "has_gate": false}]
     # When provided, overrides both requested_agents and tier-based workflow.
     workflow_config: list[dict[str, Any]] | None = None
+    # Extra context from the Mission Wizard (blog topic, collection info, etc.)
+    # Merged into raw_input so agents can access it via state.raw_input.
+    extra_context: dict[str, Any] | None = None
 
 
 class CorrectionRequest(BaseModel):

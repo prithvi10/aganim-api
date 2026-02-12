@@ -72,8 +72,8 @@ class RewriterAgent(BaseAgent):
     # Maps template_id → async handler(self, state, creds) for autonomous publishing.
     PUBLISH_MAP: Dict[str, "Callable"] = {
         "product/description": "_publish_product_body",
-        "product/faq": "_publish_metafields",
-        "product/landing-hero": "_publish_metafields",
+        "product/faq": "_publish_faq_append",
+        "product/landing-hero": "_publish_hero_overwrite",
         "product/blog-post": "_publish_article",
     }
 
@@ -87,21 +87,50 @@ class RewriterAgent(BaseAgent):
             html=state.draft_content or "",
         )
 
-    async def _publish_metafields(self, state, creds):
-        """Push draft_content → Shopify product metafields."""
-        from src.main.services.shopify_service import save_product_metafields
-        template_id = state.raw_input.get("template_id", "unknown")
-        key = template_id.replace("/", "_")  # product/faq → product_faq
-        await save_product_metafields(
+    async def _publish_faq_append(self, state, creds):
+        """Convert FAQ JSON → HTML and append to product description."""
+        from src.main.services.shopify_service import (
+            faq_json_to_html, inject_section, update_product_body, get_product_body,
+        )
+        faq_html = faq_json_to_html(state.draft_content or "")
+        if not faq_html:
+            return
+        current_body = (
+            await get_product_body(state.shop_id, creds["access_token"], state.product_id)
+        ) or ""
+        new_body = inject_section(
+            current_body, faq_html,
+            "<!-- cba-faq-start -->", "<!-- cba-faq-end -->",
+            position="append",
+        )
+        await update_product_body(
             shop_domain=state.shop_id,
             access_token=creds["access_token"],
             product_id=state.product_id,
-            metafields=[{
-                "namespace": "crossborder_agent",
-                "key": key,
-                "value": state.draft_content or "",
-                "type": "json",
-            }],
+            html=new_body,
+        )
+
+    async def _publish_hero_overwrite(self, state, creds):
+        """Convert Hero JSON → HTML and overwrite hero section in product description."""
+        from src.main.services.shopify_service import (
+            hero_json_to_html, inject_section, update_product_body, get_product_body,
+        )
+        hero_html = hero_json_to_html(state.draft_content or "")
+        if not hero_html:
+            return
+        current_body = (
+            await get_product_body(state.shop_id, creds["access_token"], state.product_id)
+        ) or ""
+        new_body = inject_section(
+            current_body, hero_html,
+            "<!-- cba-hero-start -->", "<!-- cba-hero-end -->",
+            position="prepend",
+        )
+        await update_product_body(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            html=new_body,
         )
 
     async def _publish_article(self, state, creds):

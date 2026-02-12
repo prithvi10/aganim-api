@@ -81,6 +81,8 @@ async def list_missions(
                 "error_message": m.error_message,
                 # Extract product name from current_state if available
                 "product_name": (m.current_state or {}).get("raw_input", {}).get("product_name"),
+                # Mission title: preset name or agent names (set by wizard via extra_context)
+                "mission_title": (m.current_state or {}).get("raw_input", {}).get("mission_title"),
             }
             for m in missions
         ],
@@ -146,11 +148,8 @@ async def create_mission(
     )
     workflow_agents = [a.__name__ for a in temp_mission_control.workflow]
     
-    initial_state = {
-        "product_id": mission_req.product_id,
-        "shop_id": shop,
-        "plan_tier": plan_tier,
-        "raw_input": {
+    # Build raw_input — base product fields + any extra wizard context
+    raw_input = {
             "product_id": mission_req.product_id,
             "title": mission_req.product_name,
             "product_name": mission_req.product_name,
@@ -160,7 +159,15 @@ async def create_mission(
             "tone": mission_req.tone_profile,
             "target_locale": mission_req.target_locale,
             "brand_soul_enabled": mission_req.brand_soul_enabled,
-        },
+    }
+    if mission_req.extra_context:
+        raw_input.update(mission_req.extra_context)
+    
+    initial_state = {
+        "product_id": mission_req.product_id,
+        "shop_id": shop,
+        "plan_tier": plan_tier,
+        "raw_input": raw_input,
         "target_locale": mission_req.target_locale,
         "status": "PENDING",
         "logs": [],
@@ -770,28 +777,43 @@ async def continue_step(
             save_product_metafields,
             create_article,
             get_default_blog_id,
+            get_product_body,
+            update_product_body,
+            faq_json_to_html,
+            hero_json_to_html,
+            inject_section,
         )
         import json
         
         access_token = get_shop_access_token(db, shop)
         product_id = state.product_id
         
-        # ── Resolve the correct product title/description from agent_outputs ──
-        # When a blog-post step ran last, state.draft_content holds blog JSON
-        # instead of the product description.  Look through agent_outputs for
-        # the product/description step or the base RewriterAgent output.
+        # ── Classify every agent_output by its template type ──────────────
+        # Template-specific outputs need special save semantics:
+        #   product/description  → overwrite product body
+        #   product/faq          → append FAQ HTML to product body
+        #   product/landing-hero → prepend/overwrite hero HTML in product body
+        #   product/blog-post    → create a new Shopify blog article
+        #   (no template)        → base RewriterAgent → same as product/description
+        TEMPLATE_TEMPLATES = {"product/faq", "product/landing-hero", "product/blog-post", "product/collection"}
+        
         product_title = None
         product_desc = None
-        blog_post_outputs = []  # Collect all blog-post step outputs
+        blog_post_outputs = []
+        faq_outputs = []
+        hero_outputs = []
         
         outputs = state.agent_outputs or {}
-        wf_config = state.workflow_config or []
         
         for key, out in outputs.items():
             tmpl = out.get("template_id") if isinstance(out, dict) else None
             if tmpl == "product/blog-post":
                 blog_post_outputs.append(out)
-            elif tmpl == "product/description" or tmpl is None:
+            elif tmpl == "product/faq":
+                faq_outputs.append(out)
+            elif tmpl == "product/landing-hero":
+                hero_outputs.append(out)
+            elif tmpl not in TEMPLATE_TEMPLATES:
                 # product/description template step OR base RewriterAgent output
                 if isinstance(out, dict):
                     if out.get("draft_content"):
@@ -799,17 +821,18 @@ async def continue_step(
                     if out.get("draft_title"):
                         product_title = out["draft_title"]
         
-        # Fallback: use state.draft_* only when there are NO blog-post steps
-        # (i.e. the values can't be blog-post content)
-        if not product_title and not blog_post_outputs:
+        # Fallback: use state.draft_* only when there are NO template steps
+        # that could have overwritten them.
+        has_template_steps = bool(blog_post_outputs or faq_outputs or hero_outputs)
+        if not product_title and not has_template_steps:
             product_title = state.draft_title
-        if not product_desc and not blog_post_outputs:
+        if not product_desc and not has_template_steps:
             product_desc = state.draft_content
         
         raw_input = state.raw_input or {}
         product_title = product_title or raw_input.get("product_name", "")
         
-        # Save product title and description
+        # 1️⃣ Save product title and description
         if access_token and product_id and product_title and product_desc:
             try:
                 primary_locale = raw_input.get("primary_locale", "en")
@@ -834,7 +857,52 @@ async def continue_step(
                     rid, shop, str(e)
                 )
         
-        # ── Create blog articles for any product/blog-post steps ──────────
+        # 2️⃣ Inject FAQ / Hero sections into product description HTML
+        if access_token and product_id and (faq_outputs or hero_outputs):
+            try:
+                # Fetch the current body (may have just been updated above)
+                current_body = await get_product_body(shop, access_token, product_id) or ""
+                body_changed = False
+                
+                # Hero: overwrite (keep only 1), prepend at top
+                for hero_out in hero_outputs:
+                    hero_html = hero_json_to_html(hero_out.get("draft_content", ""))
+                    if hero_html:
+                        current_body = inject_section(
+                            current_body, hero_html,
+                            "<!-- cba-hero-start -->", "<!-- cba-hero-end -->",
+                            position="prepend",
+                        )
+                        body_changed = True
+                        logger.info(
+                            "[MissionStep] hero_injected rid=%s shop=%s product_id=%s",
+                            rid, shop, product_id,
+                        )
+                
+                # FAQ: append at bottom (replace existing if markers present)
+                for faq_out in faq_outputs:
+                    faq_html = faq_json_to_html(faq_out.get("draft_content", ""))
+                    if faq_html:
+                        current_body = inject_section(
+                            current_body, faq_html,
+                            "<!-- cba-faq-start -->", "<!-- cba-faq-end -->",
+                            position="append",
+                        )
+                        body_changed = True
+                        logger.info(
+                            "[MissionStep] faq_injected rid=%s shop=%s product_id=%s",
+                            rid, shop, product_id,
+                        )
+                
+                if body_changed:
+                    await update_product_body(shop, access_token, product_id, current_body)
+            except Exception as e:
+                logger.error(
+                    "[MissionStep] section_inject_failed rid=%s shop=%s err=%s",
+                    rid, shop, str(e),
+                )
+        
+        # 3️⃣ Create blog articles for any product/blog-post steps
         if access_token and blog_post_outputs:
             try:
                 blog_id = raw_input.get("blog_id", "")
@@ -844,7 +912,6 @@ async def continue_step(
                     for bp_out in blog_post_outputs:
                         bp_title = bp_out.get("draft_title") or "Untitled Post"
                         bp_body = bp_out.get("draft_content") or ""
-                        # Parse JSON body if needed
                         try:
                             parsed = json.loads(bp_body)
                             if isinstance(parsed, dict):
@@ -874,7 +941,7 @@ async def continue_step(
                     rid, shop, str(e)
                 )
         
-        # Save agent data to metafields
+        # 4️⃣ Save agent data to metafields
         if access_token and product_id:
             metafields_to_save = []
             
@@ -1141,37 +1208,52 @@ async def skip_step(
             save_product_metafields,
             create_article,
             get_default_blog_id,
+            get_product_body,
+            update_product_body,
+            faq_json_to_html,
+            hero_json_to_html,
+            inject_section,
         )
         import json
         
         access_token = get_shop_access_token(db, shop)
         product_id = state.product_id
         
-        # ── Resolve the correct product title/description from agent_outputs ──
+        # ── Classify agent_outputs by template type ───────────────────────
+        TEMPLATE_TEMPLATES = {"product/faq", "product/landing-hero", "product/blog-post", "product/collection"}
+        
         product_title = None
         product_desc = None
         blog_post_outputs = []
+        faq_outputs = []
+        hero_outputs = []
         
         outputs = state.agent_outputs or {}
         for key, out in outputs.items():
             tmpl = out.get("template_id") if isinstance(out, dict) else None
             if tmpl == "product/blog-post":
                 blog_post_outputs.append(out)
-            elif tmpl == "product/description" or tmpl is None:
+            elif tmpl == "product/faq":
+                faq_outputs.append(out)
+            elif tmpl == "product/landing-hero":
+                hero_outputs.append(out)
+            elif tmpl not in TEMPLATE_TEMPLATES:
                 if isinstance(out, dict):
                     if out.get("draft_content"):
                         product_desc = out["draft_content"]
                     if out.get("draft_title"):
                         product_title = out["draft_title"]
         
-        if not product_title and not blog_post_outputs:
+        has_template_steps = bool(blog_post_outputs or faq_outputs or hero_outputs)
+        if not product_title and not has_template_steps:
             product_title = state.draft_title
-        if not product_desc and not blog_post_outputs:
+        if not product_desc and not has_template_steps:
             product_desc = state.draft_content
         
         raw_input = state.raw_input or {}
         product_title = product_title or raw_input.get("product_name", "")
         
+        # 1️⃣ Save product title and description
         if access_token and product_id and product_title and product_desc:
             try:
                 primary_locale = raw_input.get("primary_locale", "en")
@@ -1196,7 +1278,45 @@ async def skip_step(
                     rid, shop, str(e)
                 )
         
-        # ── Create blog articles for any product/blog-post steps ──────────
+        # 2️⃣ Inject FAQ / Hero sections into product description HTML
+        if access_token and product_id and (faq_outputs or hero_outputs):
+            try:
+                current_body = await get_product_body(shop, access_token, product_id) or ""
+                body_changed = False
+                
+                for hero_out in hero_outputs:
+                    hero_html = hero_json_to_html(hero_out.get("draft_content", ""))
+                    if hero_html:
+                        current_body = inject_section(
+                            current_body, hero_html,
+                            "<!-- cba-hero-start -->", "<!-- cba-hero-end -->",
+                            position="prepend",
+                        )
+                        body_changed = True
+                
+                for faq_out in faq_outputs:
+                    faq_html = faq_json_to_html(faq_out.get("draft_content", ""))
+                    if faq_html:
+                        current_body = inject_section(
+                            current_body, faq_html,
+                            "<!-- cba-faq-start -->", "<!-- cba-faq-end -->",
+                            position="append",
+                        )
+                        body_changed = True
+                
+                if body_changed:
+                    await update_product_body(shop, access_token, product_id, current_body)
+                    logger.info(
+                        "[MissionStep] sections_injected rid=%s shop=%s product_id=%s (via skip)",
+                        rid, shop, product_id,
+                    )
+            except Exception as e:
+                logger.error(
+                    "[MissionStep] section_inject_failed rid=%s shop=%s err=%s (via skip)",
+                    rid, shop, str(e),
+                )
+        
+        # 3️⃣ Create blog articles for any product/blog-post steps
         if access_token and blog_post_outputs:
             try:
                 blog_id = raw_input.get("blog_id", "")

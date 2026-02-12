@@ -342,8 +342,8 @@ async def test_rewriter_publish_product_body():
 
 
 @pytest.mark.asyncio
-async def test_rewriter_publish_metafields_faq():
-    """Test RewriterAgent publishes FAQ to metafields."""
+async def test_rewriter_publish_faq_appends_to_body():
+    """Test RewriterAgent appends FAQ HTML to product description body."""
     mock_services = MagicMock()
 
     state = MissionState(
@@ -353,25 +353,30 @@ async def test_rewriter_publish_metafields_faq():
         raw_input={"template_id": "product/faq"},
         autonomous=True,
     )
-    state.draft_content = '{"q1": "What is it?", "a1": "A ceramic bowl."}'
+    state.draft_content = '{"faqs": [{"question": "What is it?", "answer": "A ceramic bowl."}]}'
 
     mock_db = MagicMock()
     state.db = mock_db
 
     with patch('src.main.services.shopify_service.get_shop_credentials', return_value={
         "access_token": "shpat_test",
-    }), patch('src.main.services.shopify_service.save_product_metafields', new_callable=AsyncMock) as mock_save:
+    }), \
+    patch('src.main.services.shopify_service.get_product_body', new_callable=AsyncMock, return_value="<p>Existing desc</p>") as mock_get, \
+    patch('src.main.services.shopify_service.update_product_body', new_callable=AsyncMock) as mock_update:
         agent = RewriterAgent("shop.myshopify.com", services=mock_services)
         is_published, error = await agent._maybe_publish(state, "product/faq")
 
     assert is_published is True
     assert error is None
-    mock_save.assert_called_once()
-    # Verify the metafield key is derived from template_id
-    call_kwargs = mock_save.call_args.kwargs
-    metafield = call_kwargs["metafields"][0]
-    assert metafield["key"] == "product_faq"
-    assert metafield["namespace"] == "crossborder_agent"
+    mock_get.assert_called_once()
+    mock_update.assert_called_once()
+    # Verify FAQ HTML was appended (body should contain both existing desc and FAQ markers)
+    saved_html = mock_update.call_args.kwargs["html"]
+    assert "<p>Existing desc</p>" in saved_html
+    assert "<!-- cba-faq-start -->" in saved_html
+    assert "What is it?" in saved_html
+    assert "A ceramic bowl." in saved_html
+    assert "<!-- cba-faq-end -->" in saved_html
 
 
 # =============================================================================
