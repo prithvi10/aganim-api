@@ -28,6 +28,7 @@ class AgentContext:
     brand_context: List[Dict] = field(default_factory=list)
     learned_rules: List[Dict] = field(default_factory=list)
     external_data: Dict[str, Any] = field(default_factory=dict)
+    strategic_intelligence: Optional[Dict] = None  # Strategic intelligence JSON from brand analysis
 
     def get_product_title(self) -> str:
         """Extract product title from raw input."""
@@ -78,6 +79,50 @@ class AgentContext:
                 rules.append(f"- {rule_text}")
         
         return "\n".join(rules)
+    
+    def get_operational_rules_prompt(self) -> str:
+        """
+        Format strategic intelligence as operational rules for system prompt.
+        
+        Returns a formatted string that can be injected into agent system prompts
+        to enforce brand voice, tone, and linguistic rules.
+        
+        Returns:
+            Formatted operational rules string, or empty string if no intelligence available
+        """
+        if not self.strategic_intelligence:
+            return ""
+        
+        intel = self.strategic_intelligence
+        
+        rules = f"""
+### OPERATIONAL RULES (Brand Intelligence)
+
+**ARCHETYPE:** {intel.get('archetype', 'Not defined')}
+This brand embodies the {intel.get('archetype', '')} archetype.
+
+**TONAL GUARDRAILS:**
+- Formality: {intel.get('tonal_guardrails', {}).get('formality_level', 'professional')}
+- Energy: {intel.get('tonal_guardrails', {}).get('energy_level', 'measured')}
+- Emotion: {intel.get('tonal_guardrails', {}).get('emotional_register', 'trust')}
+
+**LINGUISTIC RULES:**
+- Sentence style: {intel.get('linguistic_rules', {}).get('sentence_style', 'balanced')}
+- Voice: {intel.get('linguistic_rules', {}).get('person_voice', 'second_person')}
+
+**MUST USE (Power Words):**
+{', '.join(intel.get('power_words', [])[:10])}
+
+**NEVER USE (Banned Phrases):**
+{', '.join(intel.get('banned_phrases', [])[:10])}
+
+**VALUE PROPOSITIONS TO WEAVE IN:**
+{chr(10).join(['- ' + v for v in intel.get('core_value_props', [])])}
+
+**CULTURAL TOUCHPOINTS:**
+{chr(10).join(['- ' + c for c in intel.get('cultural_touchpoints', [])])}
+"""
+        return rules.strip()
 
 
 @dataclass

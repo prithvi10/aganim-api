@@ -172,8 +172,36 @@ TONE PROFILE: Modern/Minimalist
     "playful": """
 TONE PROFILE: Playful/Energetic
 - Warm, conversational, and relatable.
-- Use contractions (it’s, you’ll) and a friendly American personality.
+- Use contractions (it's, you'll) and a friendly American personality.
 - Great for gifts and lifestyle items; keep it upbeat but not cheesy.
+""".strip(),
+    "friendly": """
+TONE PROFILE: Friendly/Approachable
+- Warm and approachable language.
+- Use conversational tone, address reader as "you".
+- Include light humor when appropriate.
+- Build trust through relatability.
+""".strip(),
+    "authoritative": """
+TONE PROFILE: Authoritative/Expert
+- Expert and confident voice.
+- Use industry terminology appropriately.
+- Back claims with specifics and data.
+- Project confidence without arrogance.
+""".strip(),
+    "urgent": """
+TONE PROFILE: Urgent/Action-Oriented
+- Create FOMO without being pushy.
+- Use time-sensitive language.
+- Emphasize limited availability or deadlines.
+- Drive immediate action.
+""".strip(),
+    "storytelling": """
+TONE PROFILE: Storytelling/Narrative-Driven
+- Lead with a story or scenario.
+- Create emotional connection.
+- Paint vivid pictures with words.
+- Use narrative structure to engage readers.
 """.strip(),
 }
 

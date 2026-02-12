@@ -96,6 +96,10 @@ class Shop(Base):
     brand_context_status = Column(String, nullable=True)
     brand_context_last_error = Column(Text, nullable=True)
     brand_context_job_id = Column(String, nullable=True)
+    
+    # Strategic Intelligence (extracted from brand context)
+    strategic_intelligence = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    strategic_intelligence_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     # -----------------------------------------------------------------------------
     # Plan change scheduling (DB is the source of truth)
@@ -241,4 +245,29 @@ class AgentCorrection(Base):
     context_metadata = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     
     # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class BrandEntity(Base):
+    """
+    Knowledge graph triplets for brand intelligence.
+    
+    Stores Subject -> Relation -> Object triplets extracted from brand text
+    to enable recursive retrieval and entity-based context expansion.
+    """
+    __tablename__ = "brand_entities"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    shop_id = Column(String, ForeignKey("shops.domain"), index=True, nullable=False)
+    
+    # Triplet: Subject -> Relation -> Object
+    subject = Column(String, nullable=False)
+    subject_type = Column(String, nullable=False)  # material, technique, region, etc.
+    relation = Column(String, nullable=False)  # uses, originates_from, trained_in, etc.
+    object = Column(String, nullable=False)
+    object_type = Column(String, nullable=False)
+    
+    # Metadata
+    confidence = Column(Numeric(3, 2), default=1.0)
+    source_chunk_id = Column(Integer, ForeignKey("store_context.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -91,6 +91,11 @@ class MissionState:
     agent_outputs: Dict[str, Any] = field(default_factory=dict)  # Each agent's output stored separately
     regeneration_feedback: Optional[str] = None  # Merchant feedback for regeneration
     workflow_agents: List[str] = field(default_factory=list)  # List of agent names in workflow order
+    
+    # Mission Architect: merchant-defined pipeline config
+    # Each entry: {"agent_name": "RewriterAgent", "has_gate": True}
+    # When non-empty, overrides tier-based workflow and controls human gates per step.
+    workflow_config: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -138,6 +143,8 @@ class MissionState:
             "agent_outputs": self.agent_outputs,
             "regeneration_feedback": self.regeneration_feedback,
             "workflow_agents": self.workflow_agents,
+            # Mission Architect pipeline config
+            "workflow_config": self.workflow_config,
         }
 
     @classmethod
@@ -191,6 +198,8 @@ class MissionState:
             agent_outputs=data.get("agent_outputs", {}),
             regeneration_feedback=data.get("regeneration_feedback"),
             workflow_agents=data.get("workflow_agents", []),
+            # Mission Architect pipeline config
+            workflow_config=data.get("workflow_config", []),
         )
 
     def add_log(self, message: str) -> None:

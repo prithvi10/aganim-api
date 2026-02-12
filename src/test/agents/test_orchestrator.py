@@ -1087,3 +1087,447 @@ def test_extract_agent_output_unknown_agent(mock_services, mission_state):
     output = mission._extract_agent_output(mission_state, "UnknownAgent")
     
     assert output == {}
+
+
+# =============================================================================
+# Tests: workflow_config (Mission Architect)
+# =============================================================================
+
+def test_workflow_config_builds_custom_workflow(mock_services):
+    """Test that workflow_config builds a custom agent workflow."""
+    config = [
+        {"agent_name": "PriceScoutAgent", "has_gate": True},
+        {"agent_name": "RewriterAgent", "has_gate": False},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    
+    assert len(mission.workflow) == 2
+    assert mission.workflow[0] == PriceScoutAgent
+    assert mission.workflow[1] == RewriterAgent
+
+
+def test_workflow_config_preserves_order(mock_services):
+    """Test that workflow_config preserves agent order."""
+    config = [
+        {"agent_name": "MarketingAgent", "has_gate": False},
+        {"agent_name": "SEOAgent", "has_gate": True},
+        {"agent_name": "RewriterAgent", "has_gate": False},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    
+    assert mission.workflow == [MarketingAgent, SEOAgent, RewriterAgent]
+
+
+def test_workflow_config_overrides_requested_agents(mock_services):
+    """Test that workflow_config takes priority over requested_agents."""
+    config = [
+        {"agent_name": "PriceScoutAgent", "has_gate": True},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        requested_agents=["MarketingAgent", "SEOAgent"],
+        workflow_config=config,
+    )
+    
+    # workflow_config should override requested_agents
+    assert len(mission.workflow) == 1
+    assert mission.workflow[0] == PriceScoutAgent
+
+
+def test_workflow_config_overrides_tier_workflow(mock_services):
+    """Test that workflow_config overrides tier-based workflow."""
+    config = [
+        {"agent_name": "SEOAgent", "has_gate": True},
+    ]
+    mission = MissionControl(
+        plan_tier="Pro",  # Pro normally gets 4 agents
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    
+    assert len(mission.workflow) == 1
+    assert mission.workflow[0] == SEOAgent
+
+
+def test_workflow_config_skips_unknown_agents(mock_services):
+    """Test that unknown agents in workflow_config are skipped."""
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": True},
+        {"agent_name": "FakeAgent", "has_gate": False},
+        {"agent_name": "SEOAgent", "has_gate": True},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    
+    assert len(mission.workflow) == 2
+    assert mission.workflow[0] == RewriterAgent
+    assert mission.workflow[1] == SEOAgent
+
+
+def test_workflow_config_all_unknown_falls_back(mock_services):
+    """Test that all-unknown workflow_config falls back to tier workflow."""
+    config = [
+        {"agent_name": "FakeAgent1", "has_gate": True},
+        {"agent_name": "FakeAgent2", "has_gate": False},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    
+    # Should fall back to Standard tier (4 agents)
+    assert len(mission.workflow) == 4
+
+
+def test_workflow_config_empty_list_uses_tier(mock_services):
+    """Test that empty workflow_config list uses tier workflow."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=[],
+    )
+    
+    assert len(mission.workflow) == 4
+
+
+def test_workflow_config_none_uses_tier(mock_services):
+    """Test that None workflow_config uses tier workflow."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=None,
+    )
+    
+    assert len(mission.workflow) == 4
+
+
+def test_workflow_config_backward_compat_alias(mock_services):
+    """Test that CopywriterAgent alias works in workflow_config."""
+    config = [
+        {"agent_name": "CopywriterAgent", "has_gate": True},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    
+    assert len(mission.workflow) == 1
+    assert mission.workflow[0] == CopywriterAgent  # Which is RewriterAgent
+
+
+def test_workflow_config_single_agent_no_gate(mock_services):
+    """Test workflow_config with single ungated agent."""
+    config = [
+        {"agent_name": "PriceScoutAgent", "has_gate": False},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    
+    assert len(mission.workflow) == 1
+    assert mission.workflow[0] == PriceScoutAgent
+
+
+# =============================================================================
+# Tests: _should_auto_proceed gate logic
+# =============================================================================
+
+def test_should_auto_proceed_no_config(mock_services, mission_state):
+    """Test _should_auto_proceed defaults to False with no config."""
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+    )
+    
+    assert mission._should_auto_proceed(mission_state, 0) is False
+
+
+def test_should_auto_proceed_gated_step(mock_services, mission_state):
+    """Test _should_auto_proceed returns False for gated step."""
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": True},
+        {"agent_name": "SEOAgent", "has_gate": False},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    mission_state.workflow_config = config
+    
+    assert mission._should_auto_proceed(mission_state, 0) is False  # Gated
+
+
+def test_should_auto_proceed_ungated_step(mock_services, mission_state):
+    """Test _should_auto_proceed returns True for ungated step."""
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": True},
+        {"agent_name": "SEOAgent", "has_gate": False},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    mission_state.workflow_config = config
+    
+    assert mission._should_auto_proceed(mission_state, 1) is True  # Ungated
+
+
+def test_should_auto_proceed_out_of_bounds(mock_services, mission_state):
+    """Test _should_auto_proceed returns False for out-of-bounds index."""
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": False},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    mission_state.workflow_config = config
+    
+    assert mission._should_auto_proceed(mission_state, 5) is False
+
+
+def test_should_auto_proceed_default_to_gated(mock_services, mission_state):
+    """Test _should_auto_proceed defaults to gated when has_gate is missing."""
+    config = [
+        {"agent_name": "RewriterAgent"},  # Missing has_gate
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    mission_state.workflow_config = config
+    
+    # Default to gated for safety
+    assert mission._should_auto_proceed(mission_state, 0) is False
+
+
+# =============================================================================
+# Tests: execute_single_step with workflow_config gate logic
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_execute_single_step_gated_awaits_approval(mock_services, mission_state):
+    """Test that gated step sets AWAITING_APPROVAL status."""
+    async def mock_pass_through(self, state):
+        state.draft_content = "Test"
+        return state
+    
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": True},
+        {"agent_name": "SEOAgent", "has_gate": True},
+    ]
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            workflow_config=config,
+        )
+        mission_state.workflow_config = config
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert final_state.status == "AWAITING_APPROVAL"
+        assert final_state.current_agent_index == 0  # Not advanced
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_ungated_auto_proceeds(mock_services, mission_state):
+    """Test that ungated step sets PENDING and advances index."""
+    async def mock_pass_through(self, state):
+        state.draft_content = "Test"
+        return state
+    
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": False},
+        {"agent_name": "SEOAgent", "has_gate": True},
+    ]
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            workflow_config=config,
+        )
+        mission_state.workflow_config = config
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert final_state.status == "PENDING"
+        assert final_state.current_agent_index == 1  # Auto-advanced
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_ungated_last_agent_completes(mock_services, mission_state):
+    """Test that ungated last agent completes mission."""
+    async def mock_pass_through(self, state):
+        state.draft_content = "Test"
+        return state
+    
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": False},
+    ]
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            workflow_config=config,
+        )
+        mission_state.workflow_config = config
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert final_state.status == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_no_config_defaults_gated(mock_services, mission_state):
+    """Test that steps without workflow_config default to gated (AWAITING_APPROVAL)."""
+    async def mock_pass_through(self, state):
+        state.draft_content = "Test"
+        return state
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+        )
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert final_state.status == "AWAITING_APPROVAL"
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_auto_proceed_logs(mock_services, mission_state):
+    """Test that auto-proceeded steps log the gate status."""
+    async def mock_pass_through(self, state):
+        state.draft_content = "Test"
+        return state
+    
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": False},
+        {"agent_name": "SEOAgent", "has_gate": True},
+    ]
+    
+    with patch.object(CopywriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            workflow_config=config,
+        )
+        mission_state.workflow_config = config
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        all_logs = "\n".join(states[-1].logs)
+        assert "auto-approved" in all_logs.lower() or "no gate" in all_logs.lower()
+
+
+@pytest.mark.asyncio
+async def test_execute_single_step_stores_output_with_config(mock_services, mission_state):
+    """Test that agent outputs are stored even with workflow_config."""
+    async def mock_pass_through(self, state):
+        state.draft_content = "Generated content"
+        state.draft_title = "Generated title"
+        return state
+    
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": True},
+    ]
+    
+    with patch.object(RewriterAgent, 'run', mock_pass_through):
+        mission = MissionControl(
+            plan_tier="Standard",
+            shop_id="test-shop.myshopify.com",
+            services=mock_services,
+            workflow_config=config,
+        )
+        mission_state.workflow_config = config
+        
+        states = []
+        async for state in mission.execute_single_step(mission_state):
+            states.append(state)
+        
+        final_state = states[-1]
+        assert "RewriterAgent" in final_state.agent_outputs
+        assert final_state.agent_outputs["RewriterAgent"]["draft_content"] == "Generated content"
+
+
+# =============================================================================
+# Tests: get_workflow_info with workflow_config
+# =============================================================================
+
+def test_get_workflow_info_with_workflow_config(mock_services):
+    """Test get_workflow_info includes workflow_config info."""
+    config = [
+        {"agent_name": "RewriterAgent", "has_gate": True},
+        {"agent_name": "SEOAgent", "has_gate": False},
+    ]
+    mission = MissionControl(
+        plan_tier="Standard",
+        shop_id="test-shop.myshopify.com",
+        services=mock_services,
+        workflow_config=config,
+    )
+    
+    info = mission.get_workflow_info()
+    
+    assert info["agent_count"] == 2
+    assert "RewriterAgent" in info["agents"]
+    assert "SEOAgent" in info["agents"]

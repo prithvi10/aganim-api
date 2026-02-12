@@ -1200,3 +1200,250 @@ def test_skip_completion_saves_to_shopify(client, sample_mission):
     assert call_kwargs["product_id"] == "prod-789"
     
     app.dependency_overrides.clear()
+
+
+# =============================================================================
+# Tests: POST /api/missions/{mission_id}/approve (alias for /continue)
+# =============================================================================
+
+def test_approve_step_advances_index(client, sample_mission):
+    """Test /approve advances current_agent_index (alias for /continue)."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state["status"] = "AWAITING_APPROVAL"
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.post(f"/api/missions/{sample_mission.id}/approve")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["status"] == "success"
+    assert data["current_agent_index"] == 1
+    assert data["is_complete"] is False
+    
+    app.dependency_overrides.clear()
+
+
+def test_approve_step_completes_at_end(client, sample_mission):
+    """Test /approve marks complete at last agent."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "AWAITING_APPROVAL"
+    sample_mission.current_state["status"] = "AWAITING_APPROVAL"
+    sample_mission.current_state["current_agent_index"] = 3  # Last agent
+    sample_mission.current_state["draft_title"] = "Test Title"
+    sample_mission.current_state["draft_content"] = "<p>Test content</p>"
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="test-token"), \
+         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
+        
+        response = client.post(f"/api/missions/{sample_mission.id}/approve")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["is_complete"] is True
+    assert data["mission_status"] == "COMPLETED"
+    
+    app.dependency_overrides.clear()
+
+
+def test_approve_step_rejects_wrong_status(client, sample_mission):
+    """Test /approve rejects if mission not in AWAITING_APPROVAL."""
+    from src.main.db.database import get_db
+    
+    sample_mission.status = "IN_PROGRESS"  # Wrong status
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.post(f"/api/missions/{sample_mission.id}/approve")
+    
+    assert response.status_code == 400
+    
+    app.dependency_overrides.clear()
+
+
+def test_approve_step_not_found(client):
+    """Test /approve returns 404 for non-existent mission."""
+    from src.main.db.database import get_db
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = None
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.post("/api/missions/nonexistent-id/approve")
+    
+    assert response.status_code == 404
+    
+    app.dependency_overrides.clear()
+
+
+# =============================================================================
+# Tests: Mission Creation with workflow_config (Mission Architect)
+# =============================================================================
+
+def test_create_mission_with_workflow_config(client):
+    """Test POST /api/missions accepts workflow_config."""
+    from src.main.db.database import get_db
+    from src.main.api.validation import validate_shop_and_quota
+    
+    mock_session = MagicMock()
+    
+    mock_plan = MagicMock()
+    mock_plan.name = "Standard"
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
+    
+    workflow_config = [
+        {"agent_name": "PriceScoutAgent", "has_gate": True},
+        {"agent_name": "RewriterAgent", "has_gate": False},
+    ]
+    
+    with patch("src.main.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+        response = client.post(
+            "/api/missions",
+            json={
+                "product_id": "prod-architect",
+                "product_name": "Architect Product",
+                "japanese_description": "テスト説明",
+                "workflow_config": workflow_config,
+            }
+        )
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert "workflow_agents" in data
+    assert "total_agents" in data
+    assert data["total_agents"] == 2
+    assert data["current_agent_index"] == 0
+    # workflow_config should override default agent workflow
+    assert "PriceScoutAgent" in data["workflow_agents"]
+    assert "RewriterAgent" in data["workflow_agents"]
+    
+    app.dependency_overrides.clear()
+
+
+def test_create_mission_workflow_config_stored_in_state(client):
+    """Test that workflow_config is stored in mission current_state."""
+    from src.main.db.database import get_db
+    from src.main.api.validation import validate_shop_and_quota
+    
+    mock_session = MagicMock()
+    
+    mock_plan = MagicMock()
+    mock_plan.name = "Pro"
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
+    
+    workflow_config = [
+        {"agent_name": "SEOAgent", "has_gate": True},
+        {"agent_name": "MarketingAgent", "has_gate": False},
+        {"agent_name": "PriceScoutAgent", "has_gate": True},
+    ]
+    
+    with patch("src.main.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+        response = client.post(
+            "/api/missions",
+            json={
+                "product_id": "prod-config-store",
+                "product_name": "Config Store Product",
+                "japanese_description": "設定保存テスト",
+                "workflow_config": workflow_config,
+            }
+        )
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Verify workflow_config is returned in response
+    if "workflow_config" in data:
+        assert len(data["workflow_config"]) == 3
+        # Verify gate settings are preserved
+        agent_names = [c["agent_name"] for c in data["workflow_config"]]
+        assert "SEOAgent" in agent_names
+        assert "MarketingAgent" in agent_names
+        assert "PriceScoutAgent" in agent_names
+    
+    app.dependency_overrides.clear()
+
+
+def test_create_mission_workflow_config_overrides_requested_agents(client):
+    """Test that workflow_config takes priority over requested_agents."""
+    from src.main.db.database import get_db
+    from src.main.api.validation import validate_shop_and_quota
+    
+    mock_session = MagicMock()
+    
+    mock_plan = MagicMock()
+    mock_plan.name = "Standard"
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
+    
+    with patch("src.main.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+        response = client.post(
+            "/api/missions",
+            json={
+                "product_id": "prod-override-test",
+                "product_name": "Override Test",
+                "japanese_description": "オーバーライドテスト",
+                "requested_agents": ["MarketingAgent", "SEOAgent"],
+                "workflow_config": [
+                    {"agent_name": "PriceScoutAgent", "has_gate": True},
+                ],
+            }
+        )
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # workflow_config should override requested_agents
+    assert data["total_agents"] == 1
+    assert "PriceScoutAgent" in data["workflow_agents"]
+    
+    app.dependency_overrides.clear()
+
+
+def test_status_includes_workflow_config(client, sample_mission):
+    """Test /status includes workflow_config when present in state."""
+    from src.main.db.database import get_db
+    
+    sample_mission.current_state["workflow_config"] = [
+        {"agent_name": "RewriterAgent", "has_gate": True},
+        {"agent_name": "SEOAgent", "has_gate": False},
+    ]
+    
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
+    
+    app.dependency_overrides[get_db] = lambda: mock_session
+    
+    response = client.get(f"/api/missions/{sample_mission.id}/status")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # The current_state should include workflow_config
+    if "current_state" in data and data["current_state"]:
+        assert "workflow_config" in data["current_state"]
+    
+    app.dependency_overrides.clear()

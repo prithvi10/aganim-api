@@ -129,7 +129,10 @@ async def create_mission(
     requested_agents = mission_req.requested_agents
     is_adhoc = requested_agents is not None and len(requested_agents) > 0
     
-    # Determine workflow agents based on tier or ad-hoc selection
+    # Mission Architect workflow_config takes priority
+    workflow_config = mission_req.workflow_config
+    
+    # Determine workflow agents based on workflow_config, ad-hoc selection, or tier
     from src.main.agents import MissionControl
     from src.main.services import ServiceRegistry
     
@@ -139,6 +142,7 @@ async def create_mission(
         shop_id=shop,
         services=temp_services,
         requested_agents=requested_agents,
+        workflow_config=workflow_config,
     )
     workflow_agents = [a.__name__ for a in temp_mission_control.workflow]
     
@@ -168,6 +172,8 @@ async def create_mission(
         "skipped_agents": [],
         "agent_outputs": {},
         "workflow_agents": workflow_agents,
+        # Mission Architect pipeline config
+        "workflow_config": workflow_config or [],
     }
     
     mission = Mission(
@@ -327,8 +333,9 @@ async def stream_mission(
             services = ServiceRegistry.create_default(db=db, shop_domain=shop)
             plan_tier = mission.plan_tier or "Basic"
             
-            # Check for ad-hoc agent selection
+            # Check for ad-hoc agent selection and workflow_config
             requested_agents = initial_state_dict.get("requested_agents")
+            wf_config = initial_state_dict.get("workflow_config")
             
             mission_control = MissionControl(
                 plan_tier=plan_tier,
@@ -336,6 +343,7 @@ async def stream_mission(
                 services=services,
                 requested_agents=requested_agents,
                 mission_id=mission_id,  # Pass DB mission_id to ensure consistent logging
+                workflow_config=wf_config,
             )
             
             # Send initial heartbeat
@@ -565,6 +573,7 @@ async def run_step(
             services = ServiceRegistry.create_default(db=db, shop_domain=shop)
             plan_tier = mission.plan_tier or "Basic"
             requested_agents = state_dict.get("requested_agents")
+            wf_config = state_dict.get("workflow_config")
             
             mission_control = MissionControl(
                 plan_tier=plan_tier,
@@ -572,39 +581,75 @@ async def run_step(
                 services=services,
                 requested_agents=requested_agents,
                 mission_id=mission_id,  # Pass DB mission_id for consistent logging
+                workflow_config=wf_config,
             )
-            # Execute single step and yield events
-            async for updated_state in mission_control.execute_single_step(state):
-                # Update mission record in DB
-                try:
-                    mission.current_state = updated_state.to_dict()
-                    mission.status = updated_state.status
-                    mission.logs = updated_state.logs
-                    if updated_state.status == "COMPLETED":
-                        from datetime import datetime, timezone
-                        mission.completed_at = datetime.now(timezone.utc)
-                    if updated_state.error_message:
-                        mission.error_message = updated_state.error_message
-                    db.add(mission)
-                    db.commit()
-                except Exception as e:
-                    logger.warning("[MissionStep] DB update failed: %s", e)
+            # Execute single step and chain auto-proceed steps
+            while True:
+                async for updated_state in mission_control.execute_single_step(state):
+                    # Update mission record in DB
                     try:
-                        db.rollback()
-                    except Exception:
-                        pass
+                        mission.current_state = updated_state.to_dict()
+                        mission.status = updated_state.status
+                        mission.logs = updated_state.logs
+                        if updated_state.status == "COMPLETED":
+                            from datetime import datetime, timezone
+                            mission.completed_at = datetime.now(timezone.utc)
+                        if updated_state.error_message:
+                            mission.error_message = updated_state.error_message
+                        db.add(mission)
+                        db.commit()
+                    except Exception as e:
+                        logger.warning("[MissionStep] DB update failed: %s", e)
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+                    
+                    # Yield SSE event
+                    state_json = json.dumps(updated_state.to_dict())
+                    yield f"event: state_update\ndata: {state_json}\n\n"
+                    
+                    # Keep state reference updated for potential chaining
+                    state = updated_state
+                    
+                    await asyncio.sleep(0.1)
                 
-                # Yield SSE event
-                state_json = json.dumps(updated_state.to_dict())
-                yield f"event: state_update\ndata: {state_json}\n\n"
-                
-                await asyncio.sleep(0.1)
+                # Check if auto-proceeded (status PENDING means no gate, keep running)
+                if state.status == "PENDING" and state.current_agent_index < len(mission_control.workflow):
+                    # Emit auto-proceed event so frontend can update UI
+                    auto_data = {
+                        "mission_id": mission_id,
+                        "auto_proceeded_from": state.current_agent_index - 1,
+                        "next_agent_index": state.current_agent_index,
+                        "next_agent": state.workflow_agents[state.current_agent_index] if state.current_agent_index < len(state.workflow_agents) else None,
+                    }
+                    yield f"event: step_auto_proceeded\ndata: {json.dumps(auto_data)}\n\n"
+                    # Continue the loop to run the next agent immediately
+                    continue
+                else:
+                    # Gated (AWAITING_APPROVAL), completed, or error – break
+                    break
             
             # Get final state info
             final_state = mission.current_state or {}
             current_idx = final_state.get("current_agent_index", 0)
             workflow_agents = final_state.get("workflow_agents", [])
             current_agent = workflow_agents[current_idx] if current_idx < len(workflow_agents) else None
+            
+            # Resolve template_id for this step (if any)
+            wf_config = final_state.get("workflow_config", [])
+            step_template_id = None
+            if wf_config and current_idx < len(wf_config):
+                step_template_id = wf_config[current_idx].get("template_id")
+            
+            # Look up agent output — template steps use composite key
+            agent_outputs = final_state.get("agent_outputs", {})
+            if step_template_id and current_agent:
+                agent_output = agent_outputs.get(f"{current_agent}:{step_template_id}") or agent_outputs.get(current_agent)
+            elif current_agent:
+                agent_output = agent_outputs.get(current_agent)
+            else:
+                agent_output = None
             
             # Determine step response
             step_data = {
@@ -613,11 +658,13 @@ async def run_step(
                 "current_agent_index": current_idx,
                 "total_agents": len(workflow_agents),
                 "status": mission.status,
-                "agent_output": final_state.get("agent_outputs", {}).get(current_agent) if current_agent else None,
+                "agent_output": agent_output,
+                "template_id": step_template_id,
                 "can_continue": current_idx < len(workflow_agents) - 1,
                 "can_skip": current_idx < len(workflow_agents),
                 "is_final": mission.status == "COMPLETED",
                 "workflow_agents": workflow_agents,
+                "workflow_config": wf_config,
                 "skipped_agents": final_state.get("skipped_agents", []),
             }
             
@@ -692,6 +739,7 @@ async def continue_step(
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)
     requested_agents = state_dict.get("requested_agents")
+    wf_config = state_dict.get("workflow_config")
     
     mission_control = MissionControl(
         plan_tier=mission.plan_tier or "Basic",
@@ -699,6 +747,7 @@ async def continue_step(
         services=services,
         requested_agents=requested_agents,
         mission_id=mission_id,  # Pass DB mission_id for consistent logging
+        workflow_config=wf_config,
     )
     
     state = mission_control.advance_to_next_step(state)
@@ -840,6 +889,22 @@ async def continue_step(
     }
 
 
+@router.post("/api/missions/{mission_id}/approve")
+async def approve_step(
+    mission_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Approve the current agent's output (alias for /continue).
+    
+    This is the Mission Architect-friendly name for the continue action.
+    Functionally identical to POST /api/missions/{mission_id}/continue.
+    """
+    return await continue_step(mission_id=mission_id, request=request, db=db, shop=shop)
+
+
 @router.post("/api/missions/{mission_id}/regenerate")
 async def regenerate_step(
     mission_id: str,
@@ -890,6 +955,7 @@ async def regenerate_step(
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)
     requested_agents = state_dict.get("requested_agents")
+    wf_config = state_dict.get("workflow_config")
     
     mission_control = MissionControl(
         plan_tier=mission.plan_tier or "Basic",
@@ -897,6 +963,7 @@ async def regenerate_step(
         services=services,
         requested_agents=requested_agents,
         mission_id=mission_id,  # Pass DB mission_id for consistent logging
+        workflow_config=wf_config,
     )
     
     state = mission_control.prepare_regeneration(state, feedback=regen_req.feedback)
@@ -966,6 +1033,7 @@ async def skip_step(
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)
     requested_agents = state_dict.get("requested_agents")
+    wf_config = state_dict.get("workflow_config")
     
     mission_control = MissionControl(
         plan_tier=mission.plan_tier or "Basic",
@@ -973,6 +1041,7 @@ async def skip_step(
         services=services,
         requested_agents=requested_agents,
         mission_id=mission_id,  # Pass DB mission_id for consistent logging
+        workflow_config=wf_config,
     )
     
     # Record which agent was skipped
