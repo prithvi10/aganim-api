@@ -408,13 +408,15 @@ import json as _json
 
 def faq_json_to_html(faq_json: str) -> str:
     """
-    Convert FAQ JSON → collapsible ``<details>`` HTML wrapped with markers.
+    Convert FAQ JSON → styled card-based HTML wrapped with markers.
 
     Expected input format::
 
         {"faqs": [{"question": "…", "answer": "…"}, …]}
 
     Returns empty string if the input can't be parsed or has no FAQs.
+    Each FAQ is rendered as a bordered card with a bold numbered question
+    heading and answer paragraph, matching the Writing Studio preview style.
     """
     try:
         data = _json.loads(faq_json) if isinstance(faq_json, str) else faq_json
@@ -426,13 +428,18 @@ def faq_json_to_html(faq_json: str) -> str:
     parts = [
         "<!-- cba-faq-start -->",
         '<div class="cba-faq">',
-        "<h3>Frequently Asked Questions</h3>",
+        '<p style="margin:0 0 10px;font-size:12px;font-weight:600;color:#6d7175;text-transform:uppercase;letter-spacing:0.5px">Frequently Asked Questions</p>',
     ]
-    for faq in faqs:
+    for idx, faq in enumerate(faqs, 1):
         q = faq.get("question", "")
         a = faq.get("answer", "")
         if q:
-            parts.append(f"<details><summary>{q}</summary><p>{a}</p></details>")
+            parts.append(
+                f'<div style="border:1px solid #e1e3e5;border-radius:8px;padding:14px 18px;margin-bottom:10px">'
+                f'<h4 style="margin:0 0 6px;font-size:15px;font-weight:600">Q{idx}: {q}</h4>'
+                f'<p style="margin:0;font-size:14px;line-height:1.5;color:#303030">{a}</p>'
+                f'</div>'
+            )
     parts.append("</div>")
     parts.append("<!-- cba-faq-end -->")
     return "\n".join(parts)
