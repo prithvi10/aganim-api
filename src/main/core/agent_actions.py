@@ -794,7 +794,6 @@ def run_agent_action(
     raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
 
-
 # ------------------------------------------------------------------------------
 # Publish Action Map (Pro tier - called from POST /api/publish)
 # Each handler is a thin async function that calls ShopifyService/MetaService.
@@ -802,13 +801,14 @@ def run_agent_action(
 # ------------------------------------------------------------------------------
 
 async def publish_seo_fields(*, db, shop, content, product_id, context, **kw):
-    """Push SEO title + description -> Shopify product SEO fields."""
+    """Push SEO title + description → Shopify product SEO fields."""
     from src.main.services.shopify_service import update_product_seo, get_shop_credentials
 
     creds = get_shop_credentials(db, shop)
     if not creds.get("access_token"):
         raise ValueError("missing_credentials")
 
+    # content can be a JSON string or dict
     import json as _json
     data = content
     if isinstance(data, str):
@@ -835,7 +835,7 @@ async def publish_seo_fields(*, db, shop, content, product_id, context, **kw):
 
 
 async def publish_variant_price(*, db, shop, content, product_id, context, **kw):
-    """Push recommended price -> Shopify variant, with guardrails check."""
+    """Push recommended price → Shopify variant, with guardrails check."""
     from src.main.services.shopify_service import update_variant_price, get_shop_credentials
 
     creds = get_shop_credentials(db, shop)
@@ -859,13 +859,12 @@ async def publish_variant_price(*, db, shop, content, product_id, context, **kw)
 
     recommended_price = float(recommended_price)
 
+    # Validate against guardrails
     guardrails = creds.get("price_guardrails") or {}
     min_price = guardrails.get("min_price", 0)
     max_price = guardrails.get("max_price", float("inf"))
     if not (min_price <= recommended_price <= max_price):
-        raise ValueError(
-            f"price_outside_guardrails: {recommended_price} not in [{min_price}, {max_price}]"
-        )
+        raise ValueError(f"price_outside_guardrails: {recommended_price} not in [{min_price}, {max_price}]")
 
     await update_variant_price(
         shop_domain=shop,
@@ -877,7 +876,7 @@ async def publish_variant_price(*, db, shop, content, product_id, context, **kw)
 
 
 async def publish_meta_post(*, db, shop, content, product_id, context, **kw):
-    """Push caption -> Meta Graph API."""
+    """Push caption → Meta Graph API."""
     from src.main.services.shopify_service import get_shop_credentials
     from src.main.services.meta_service import MetaService
 
@@ -903,7 +902,7 @@ async def publish_meta_post(*, db, shop, content, product_id, context, **kw):
 
 
 async def publish_flow_campaign(*, db, shop, content, product_id, context, **kw):
-    """Push campaign data -> Shopify Flow trigger."""
+    """Push campaign data → Shopify Flow trigger."""
     from src.main.services.shopify_service import trigger_flow_event, get_shop_credentials
 
     creds = get_shop_credentials(db, shop)
@@ -923,7 +922,7 @@ async def publish_flow_campaign(*, db, shop, content, product_id, context, **kw)
 
 
 async def publish_value_metafields(*, db, shop, content, product_id, context, **kw):
-    """Push discovered values -> Shopify product metafields."""
+    """Push discovered values → Shopify product metafields."""
     from src.main.services.shopify_service import save_product_metafields, get_shop_credentials
 
     creds = get_shop_credentials(db, shop)
