@@ -75,6 +75,7 @@ class RewriterAgent(BaseAgent):
         "product/faq": "_publish_faq_append",
         "product/landing-hero": "_publish_hero_overwrite",
         "product/blog-post": "_publish_article",
+        "product/collection": "_publish_collection",
     }
 
     async def _publish_product_body(self, state, creds):
@@ -161,6 +162,40 @@ class RewriterAgent(BaseAgent):
             blog_id=blog_id,
             title=title,
             body_html=body_html,
+        )
+
+    async def _publish_collection(self, state, creds):
+        """Create a Shopify collection from draft_content."""
+        from src.main.services.shopify_service import create_collection
+
+        raw = state.raw_input or {}
+        collection_name = (
+            raw.get("collection_name")
+            or raw.get("product_name")
+            or "Untitled Collection"
+        )
+
+        # Parse description from LLM output
+        desc_html = state.draft_content or ""
+        try:
+            parsed = json.loads(desc_html)
+            if isinstance(parsed, dict):
+                desc_html = parsed.get(
+                    "description_html",
+                    parsed.get("description", parsed.get("content", desc_html)),
+                )
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Product IDs from extra_context
+        product_ids = raw.get("product_ids") or []
+
+        await create_collection(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            title=collection_name,
+            description_html=desc_html,
+            product_ids=product_ids,
         )
 
     # -------------------------------------------------------------------------

@@ -782,6 +782,122 @@ async def update_product_seo(
         logger.info("✅ Product SEO updated for %s (%s)", product_id, shop_domain)
 
 
+async def create_collection(
+    shop_domain: str,
+    access_token: str,
+    title: str,
+    description_html: str,
+    product_ids: list[str] | None = None,
+) -> dict:
+    """
+    Create a Custom Collection via GraphQL and optionally add products.
+
+    Args:
+        shop_domain: Shop domain
+        access_token: Shopify access token
+        title: Collection title
+        description_html: Collection description HTML
+        product_ids: Optional list of product GIDs to add
+
+    Returns:
+        Dict with the created collection data.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    graphql_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json"
+
+    create_mutation = """
+    mutation collectionCreate($input: CollectionInput!) {
+      collectionCreate(input: $input) {
+        collection { id title descriptionHtml }
+        userErrors { field message }
+      }
+    }
+    """
+    variables = {
+        "input": {
+            "title": title,
+            "descriptionHtml": description_html,
+        }
+    }
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            graphql_url,
+            headers=headers,
+            json={"query": create_mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"collectionCreate failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+        user_errors = (
+            data.get("data", {}).get("collectionCreate", {}).get("userErrors", [])
+        )
+        if user_errors:
+            raise Exception(f"collectionCreate error: {user_errors[0].get('message')}")
+
+        collection = (
+            data.get("data", {}).get("collectionCreate", {}).get("collection", {})
+        )
+        collection_id = collection.get("id")
+        logger.info(
+            "✅ Collection created id=%s title=%s (%s)",
+            collection_id, title, shop_domain,
+        )
+
+        # Add products if provided
+        if product_ids and collection_id:
+            gids = [
+                pid if pid.startswith("gid://") else f"gid://shopify/Product/{pid}"
+                for pid in product_ids
+            ]
+            add_mutation = """
+            mutation collectionAddProducts($id: ID!, $productIds: [ID!]!) {
+              collectionAddProducts(id: $id, productIds: $productIds) {
+                collection { id }
+                userErrors { field message }
+              }
+            }
+            """
+            add_resp = await client.post(
+                graphql_url,
+                headers=headers,
+                json={
+                    "query": add_mutation,
+                    "variables": {"id": collection_id, "productIds": gids},
+                },
+            )
+            if add_resp.status_code == 200:
+                add_data = add_resp.json()
+                add_errors = (
+                    add_data.get("data", {})
+                    .get("collectionAddProducts", {})
+                    .get("userErrors", [])
+                )
+                if add_errors:
+                    logger.warning(
+                        "collectionAddProducts partial error: %s (%s)",
+                        add_errors[0].get("message"),
+                        shop_domain,
+                    )
+                else:
+                    logger.info(
+                        "✅ Added %d products to collection %s (%s)",
+                        len(gids), collection_id, shop_domain,
+                    )
+            else:
+                logger.warning(
+                    "collectionAddProducts HTTP error: %s (%s)",
+                    add_resp.status_code, shop_domain,
+                )
+
+        return collection
+
+
 def get_shop_credentials(db, shop_domain: str) -> dict:
     """
     Retrieve shop credentials needed for autonomous publishing.
