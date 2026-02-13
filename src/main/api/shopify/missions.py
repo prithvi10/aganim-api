@@ -782,6 +782,7 @@ async def continue_step(
             faq_json_to_html,
             hero_json_to_html,
             inject_section,
+            create_collection,
         )
         import json
         
@@ -794,6 +795,7 @@ async def continue_step(
         #   product/faq          → append FAQ HTML to product body
         #   product/landing-hero → prepend/overwrite hero HTML in product body
         #   product/blog-post    → create a new Shopify blog article
+        #   product/collection   → create a new Shopify collection
         #   (no template)        → base RewriterAgent → same as product/description
         TEMPLATE_TEMPLATES = {"product/faq", "product/landing-hero", "product/blog-post", "product/collection"}
         
@@ -802,8 +804,32 @@ async def continue_step(
         blog_post_outputs = []
         faq_outputs = []
         hero_outputs = []
+        collection_outputs = []
         
         outputs = state.agent_outputs or {}
+        logger.debug(
+            "[MissionStep] classifying agent_outputs rid=%s keys=%s",
+            rid, list(outputs.keys()),
+        )
+        
+        def _is_template_json(text: str) -> str | None:
+            """Sniff whether *text* is template-specific JSON.
+            
+            Returns the detected template_id or None.
+            """
+            try:
+                obj = json.loads(text)
+            except (json.JSONDecodeError, TypeError):
+                return None
+            if not isinstance(obj, dict):
+                return None
+            if "faqs" in obj:
+                return "product/faq"
+            if "headline" in obj and ("hero_description" in obj or "subheadline" in obj):
+                return "product/landing-hero"
+            if "body_html" in obj and "title" in obj:
+                return "product/blog-post"
+            return None
         
         for key, out in outputs.items():
             tmpl = out.get("template_id") if isinstance(out, dict) else None
@@ -813,21 +839,65 @@ async def continue_step(
                 faq_outputs.append(out)
             elif tmpl == "product/landing-hero":
                 hero_outputs.append(out)
+            elif tmpl == "product/collection":
+                collection_outputs.append(out)
             elif tmpl not in TEMPLATE_TEMPLATES:
                 # product/description template step OR base RewriterAgent output
                 if isinstance(out, dict):
-                    if out.get("draft_content"):
-                        product_desc = out["draft_content"]
+                    dc = out.get("draft_content")
+                    if dc:
+                        # Guard: if draft_content is template-specific JSON
+                        # (FAQ / Hero / Blog), reclassify it instead of
+                        # treating it as a product description.
+                        sniffed = _is_template_json(dc)
+                        if sniffed == "product/faq":
+                            logger.warning(
+                                "[MissionStep] reclassified draft_content as FAQ rid=%s key=%s",
+                                rid, key,
+                            )
+                            faq_outputs.append({**out, "template_id": "product/faq"})
+                        elif sniffed == "product/landing-hero":
+                            logger.warning(
+                                "[MissionStep] reclassified draft_content as Hero rid=%s key=%s",
+                                rid, key,
+                            )
+                            hero_outputs.append({**out, "template_id": "product/landing-hero"})
+                        elif sniffed == "product/blog-post":
+                            logger.warning(
+                                "[MissionStep] reclassified draft_content as BlogPost rid=%s key=%s",
+                                rid, key,
+                            )
+                            blog_post_outputs.append({**out, "template_id": "product/blog-post"})
+                        else:
+                            product_desc = dc
                     if out.get("draft_title"):
                         product_title = out["draft_title"]
         
         # Fallback: use state.draft_* only when there are NO template steps
         # that could have overwritten them.
-        has_template_steps = bool(blog_post_outputs or faq_outputs or hero_outputs)
+        has_template_steps = bool(blog_post_outputs or faq_outputs or hero_outputs or collection_outputs)
         if not product_title and not has_template_steps:
             product_title = state.draft_title
         if not product_desc and not has_template_steps:
-            product_desc = state.draft_content
+            # Final guard: only use state.draft_content if it is NOT
+            # template-specific JSON (FAQ/Hero/Blog).
+            fallback_desc = state.draft_content
+            if fallback_desc and _is_template_json(fallback_desc):
+                logger.warning(
+                    "[MissionStep] fallback draft_content is template JSON, skipping rid=%s sniffed=%s",
+                    rid, _is_template_json(fallback_desc),
+                )
+                # Reclassify the fallback content
+                sniffed = _is_template_json(fallback_desc)
+                reclassified = {"draft_content": fallback_desc, "template_id": sniffed}
+                if sniffed == "product/faq":
+                    faq_outputs.append(reclassified)
+                elif sniffed == "product/landing-hero":
+                    hero_outputs.append(reclassified)
+                elif sniffed == "product/blog-post":
+                    blog_post_outputs.append(reclassified)
+            else:
+                product_desc = fallback_desc
         
         raw_input = state.raw_input or {}
         product_title = product_title or raw_input.get("product_name", "")
@@ -866,6 +936,8 @@ async def continue_step(
                 
                 # Hero: overwrite (keep only 1), prepend at top
                 for hero_out in hero_outputs:
+                    if hero_out.get("is_published"):
+                        continue
                     hero_html = hero_json_to_html(hero_out.get("draft_content", ""))
                     if hero_html:
                         current_body = inject_section(
@@ -881,6 +953,8 @@ async def continue_step(
                 
                 # FAQ: append at bottom (replace existing if markers present)
                 for faq_out in faq_outputs:
+                    if faq_out.get("is_published"):
+                        continue
                     faq_html = faq_json_to_html(faq_out.get("draft_content", ""))
                     if faq_html:
                         current_body = inject_section(
@@ -910,6 +984,13 @@ async def continue_step(
                     blog_id = await get_default_blog_id(shop, access_token)
                 if blog_id:
                     for bp_out in blog_post_outputs:
+                        # Skip if autonomous publish already created this article
+                        if bp_out.get("is_published"):
+                            logger.info(
+                                "[MissionStep] blog_article_already_published rid=%s shop=%s (autonomous)",
+                                rid, shop,
+                            )
+                            continue
                         bp_title = bp_out.get("draft_title") or "Untitled Post"
                         bp_body = bp_out.get("draft_content") or ""
                         try:
@@ -940,6 +1021,45 @@ async def continue_step(
                     "[MissionStep] blog_article_failed rid=%s shop=%s err=%s",
                     rid, shop, str(e)
                 )
+        
+        # 3.5️⃣ Create collections for any product/collection steps
+        if access_token and collection_outputs:
+            for coll_out in collection_outputs:
+                if coll_out.get("is_published"):
+                    logger.info(
+                        "[MissionStep] collection_already_published rid=%s shop=%s (autonomous)",
+                        rid, shop,
+                    )
+                    continue
+                coll_name = raw_input.get("collection_name") or "Untitled Collection"
+                coll_desc = coll_out.get("draft_content") or ""
+                try:
+                    parsed = json.loads(coll_desc)
+                    if isinstance(parsed, dict):
+                        coll_desc = parsed.get(
+                            "description_html",
+                            parsed.get("description", parsed.get("content", coll_desc)),
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                coll_product_ids = raw_input.get("product_ids") or []
+                try:
+                    await create_collection(
+                        shop_domain=shop,
+                        access_token=access_token,
+                        title=coll_name,
+                        description_html=coll_desc,
+                        product_ids=coll_product_ids,
+                    )
+                    logger.info(
+                        "[MissionStep] collection_created rid=%s shop=%s name=%s",
+                        rid, shop, coll_name,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "[MissionStep] collection_create_failed rid=%s shop=%s err=%s",
+                        rid, shop, str(e),
+                    )
         
         # 4️⃣ Save agent data to metafields
         if access_token and product_id:
@@ -1213,6 +1333,7 @@ async def skip_step(
             faq_json_to_html,
             hero_json_to_html,
             inject_section,
+            create_collection,
         )
         import json
         
@@ -1227,8 +1348,30 @@ async def skip_step(
         blog_post_outputs = []
         faq_outputs = []
         hero_outputs = []
+        collection_outputs = []
         
         outputs = state.agent_outputs or {}
+        logger.debug(
+            "[MissionStep] classifying agent_outputs (skip) rid=%s keys=%s",
+            rid, list(outputs.keys()),
+        )
+        
+        def _is_template_json(text: str) -> str | None:
+            """Sniff whether *text* is template-specific JSON."""
+            try:
+                obj = json.loads(text)
+            except (json.JSONDecodeError, TypeError):
+                return None
+            if not isinstance(obj, dict):
+                return None
+            if "faqs" in obj:
+                return "product/faq"
+            if "headline" in obj and ("hero_description" in obj or "subheadline" in obj):
+                return "product/landing-hero"
+            if "body_html" in obj and "title" in obj:
+                return "product/blog-post"
+            return None
+        
         for key, out in outputs.items():
             tmpl = out.get("template_id") if isinstance(out, dict) else None
             if tmpl == "product/blog-post":
@@ -1237,18 +1380,56 @@ async def skip_step(
                 faq_outputs.append(out)
             elif tmpl == "product/landing-hero":
                 hero_outputs.append(out)
+            elif tmpl == "product/collection":
+                collection_outputs.append(out)
             elif tmpl not in TEMPLATE_TEMPLATES:
                 if isinstance(out, dict):
-                    if out.get("draft_content"):
-                        product_desc = out["draft_content"]
+                    dc = out.get("draft_content")
+                    if dc:
+                        sniffed = _is_template_json(dc)
+                        if sniffed == "product/faq":
+                            logger.warning(
+                                "[MissionStep] reclassified draft_content as FAQ (skip) rid=%s key=%s",
+                                rid, key,
+                            )
+                            faq_outputs.append({**out, "template_id": "product/faq"})
+                        elif sniffed == "product/landing-hero":
+                            logger.warning(
+                                "[MissionStep] reclassified draft_content as Hero (skip) rid=%s key=%s",
+                                rid, key,
+                            )
+                            hero_outputs.append({**out, "template_id": "product/landing-hero"})
+                        elif sniffed == "product/blog-post":
+                            logger.warning(
+                                "[MissionStep] reclassified draft_content as BlogPost (skip) rid=%s key=%s",
+                                rid, key,
+                            )
+                            blog_post_outputs.append({**out, "template_id": "product/blog-post"})
+                        else:
+                            product_desc = dc
                     if out.get("draft_title"):
                         product_title = out["draft_title"]
         
-        has_template_steps = bool(blog_post_outputs or faq_outputs or hero_outputs)
+        has_template_steps = bool(blog_post_outputs or faq_outputs or hero_outputs or collection_outputs)
         if not product_title and not has_template_steps:
             product_title = state.draft_title
         if not product_desc and not has_template_steps:
-            product_desc = state.draft_content
+            fallback_desc = state.draft_content
+            if fallback_desc and _is_template_json(fallback_desc):
+                logger.warning(
+                    "[MissionStep] fallback draft_content is template JSON (skip), skipping rid=%s sniffed=%s",
+                    rid, _is_template_json(fallback_desc),
+                )
+                sniffed = _is_template_json(fallback_desc)
+                reclassified = {"draft_content": fallback_desc, "template_id": sniffed}
+                if sniffed == "product/faq":
+                    faq_outputs.append(reclassified)
+                elif sniffed == "product/landing-hero":
+                    hero_outputs.append(reclassified)
+                elif sniffed == "product/blog-post":
+                    blog_post_outputs.append(reclassified)
+            else:
+                product_desc = fallback_desc
         
         raw_input = state.raw_input or {}
         product_title = product_title or raw_input.get("product_name", "")
@@ -1285,6 +1466,8 @@ async def skip_step(
                 body_changed = False
                 
                 for hero_out in hero_outputs:
+                    if hero_out.get("is_published"):
+                        continue
                     hero_html = hero_json_to_html(hero_out.get("draft_content", ""))
                     if hero_html:
                         current_body = inject_section(
@@ -1295,6 +1478,8 @@ async def skip_step(
                         body_changed = True
                 
                 for faq_out in faq_outputs:
+                    if faq_out.get("is_published"):
+                        continue
                     faq_html = faq_json_to_html(faq_out.get("draft_content", ""))
                     if faq_html:
                         current_body = inject_section(
@@ -1324,6 +1509,13 @@ async def skip_step(
                     blog_id = await get_default_blog_id(shop, access_token)
                 if blog_id:
                     for bp_out in blog_post_outputs:
+                        # Skip if autonomous publish already created this article
+                        if bp_out.get("is_published"):
+                            logger.info(
+                                "[MissionStep] blog_article_already_published rid=%s shop=%s (autonomous, via skip)",
+                                rid, shop,
+                            )
+                            continue
                         bp_title = bp_out.get("draft_title") or "Untitled Post"
                         bp_body = bp_out.get("draft_content") or ""
                         try:
@@ -1353,6 +1545,45 @@ async def skip_step(
                 logger.error(
                     "[MissionStep] blog_article_failed rid=%s shop=%s err=%s (via skip)",
                     rid, shop, str(e)
+                )
+        
+        # 3.5️⃣ Create collections for any product/collection steps
+        if access_token and collection_outputs:
+            for coll_out in collection_outputs:
+                if coll_out.get("is_published"):
+                    logger.info(
+                        "[MissionStep] collection_already_published rid=%s shop=%s (autonomous, via skip)",
+                        rid, shop,
+                    )
+                    continue
+                coll_name = raw_input.get("collection_name") or "Untitled Collection"
+                coll_desc = coll_out.get("draft_content") or ""
+                try:
+                    parsed = json.loads(coll_desc)
+                    if isinstance(parsed, dict):
+                        coll_desc = parsed.get(
+                            "description_html",
+                            parsed.get("description", parsed.get("content", coll_desc)),
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                coll_product_ids = raw_input.get("product_ids") or []
+                try:
+                    await create_collection(
+                        shop_domain=shop,
+                        access_token=access_token,
+                        title=coll_name,
+                        description_html=coll_desc,
+                        product_ids=coll_product_ids,
+                    )
+                    logger.info(
+                        "[MissionStep] collection_created rid=%s shop=%s name=%s (via skip)",
+                        rid, shop, coll_name,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "[MissionStep] collection_create_failed rid=%s shop=%s err=%s (via skip)",
+                        rid, shop, str(e),
                 )
         
         # Save metafields if we have any data
