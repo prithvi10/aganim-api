@@ -1,5 +1,5 @@
 # Abandoned Cart Email — Takumi Ceramics
-Generated: 2026-02-15 22:17 | Template: marketing/email-abandoned
+Generated: 2026-02-15 23:20 | Template: marketing/email-abandoned
 
 ---
 

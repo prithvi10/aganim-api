@@ -135,92 +135,60 @@ def _ensure_plan_columns_exist():
 
 def _ensure_agentic_tables_exist():
     """
-    Create tables for the agentic architecture if they don't exist.
-    
-    Tables:
-    - missions: Tracks long-running agent missions
-    - agent_corrections: Stores user corrections for learning
+    Best-effort creation of agentic tables (missions, agent_corrections).
+
+    On SQLite the tables are fully defined by the SQLAlchemy models
+    (agentic_core.db.models) so ``Base.metadata.create_all()`` already
+    handles them — we just return early.
+
+    On PostgreSQL we keep the raw-SQL ``CREATE TABLE IF NOT EXISTS`` as a
+    belt-and-suspenders fallback for the very first deployment.  Column
+    names match the canonical model: ``tenant_id``, ``resource_id``, ``tier``.
     """
     dialect = engine.dialect.name
-    
-    # Missions table
+
     if dialect == "sqlite":
-        with engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS missions (
-                    id TEXT PRIMARY KEY,
-                    shop_id TEXT NOT NULL,
-                    product_id TEXT NOT NULL,
-                    status TEXT DEFAULT 'PENDING',
-                    current_state TEXT,
-                    logs TEXT,
-                    plan_tier TEXT,
-                    error_message TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TEXT,
-                    FOREIGN KEY (shop_id) REFERENCES shops(domain)
-                )
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS missions_shop_id_idx ON missions(shop_id)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS missions_product_id_idx ON missions(product_id)"))
-            
-            # Agent corrections table
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS agent_corrections (
-                    id TEXT PRIMARY KEY,
-                    shop_id TEXT NOT NULL,
-                    agent_role TEXT NOT NULL,
-                    original_output TEXT NOT NULL,
-                    user_correction TEXT NOT NULL,
-                    embedding TEXT,
-                    product_id TEXT,
-                    context_metadata TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_shop_id_idx ON agent_corrections(shop_id)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_product_id_idx ON agent_corrections(product_id)"))
-            conn.commit()
+        # Tables are created by Base.metadata.create_all() from the
+        # SQLAlchemy models — nothing else to do.
         return
 
-    # PostgreSQL
+    # PostgreSQL ----------------------------------------------------------
     with engine.connect() as conn:
         # Missions table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS missions (
                 id VARCHAR PRIMARY KEY,
-                shop_id VARCHAR NOT NULL REFERENCES shops(domain),
-                product_id VARCHAR NOT NULL,
+                tenant_id VARCHAR NOT NULL,
+                resource_id VARCHAR NOT NULL,
                 status VARCHAR DEFAULT 'PENDING',
                 current_state JSONB,
                 logs JSONB,
-                plan_tier VARCHAR,
+                tier VARCHAR,
                 error_message TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW(),
                 completed_at TIMESTAMPTZ
             )
         """))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS missions_shop_id_idx ON missions(shop_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS missions_product_id_idx ON missions(product_id)"))
-        
+        conn.execute(text("CREATE INDEX IF NOT EXISTS missions_tenant_id_idx ON missions(tenant_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS missions_resource_id_idx ON missions(resource_id)"))
+
         # Agent corrections table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS agent_corrections (
                 id VARCHAR PRIMARY KEY,
-                shop_id VARCHAR NOT NULL,
+                tenant_id VARCHAR NOT NULL,
                 agent_role VARCHAR NOT NULL,
                 original_output TEXT NOT NULL,
                 user_correction TEXT NOT NULL,
                 embedding vector(1536),
-                product_id VARCHAR,
+                resource_id VARCHAR,
                 context_metadata JSONB,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_shop_id_idx ON agent_corrections(shop_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_product_id_idx ON agent_corrections(product_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_tenant_id_idx ON agent_corrections(tenant_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_resource_id_idx ON agent_corrections(resource_id)"))
         # Embedding similarity index for learning
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS agent_corrections_embedding_idx 
