@@ -1,5 +1,5 @@
 # Landing Page Hero — Takumi Ceramics
-Generated: 2026-02-15 23:36 | Template: product/landing-hero
+Generated: 2026-02-16 00:22 | Template: product/landing-hero
 
 ---
 

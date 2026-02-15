@@ -302,7 +302,7 @@ class RewriterAgent(BaseAgent):
             source_description=context.get_product_description()[:3000],  # Limit length
         )
         
-        user_prompt = REFINE_USER_PROMPT
+        user_prompt = REFINE_USER_PROMPT.format(user_feedback=feedback)
         
         try:
             # === REFINEMENT LLM CALL ===

@@ -1,5 +1,5 @@
 # Google Ads — Takumi Ceramics
-Generated: 2026-02-15 23:36 | Template: marketing/ad-google
+Generated: 2026-02-16 00:22 | Template: marketing/ad-google
 
 ---
 

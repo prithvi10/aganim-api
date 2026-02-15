@@ -88,5 +88,9 @@ Return the refined version in the same JSON structure. Only modify what the user
 """.strip()
 
 
-# Refinement user prompt (minimal, since system prompt has everything)
-REFINE_USER_PROMPT = """Apply the user feedback to refine the draft. Return valid JSON only.""".strip()
+# Refinement user prompt — include the actual feedback so the LLM prioritises it
+REFINE_USER_PROMPT = """Apply the following user feedback to refine the draft.
+Make ONLY the changes the feedback requests. Preserve everything else. Return valid JSON only.
+
+### USER FEEDBACK:
+{user_feedback}""".strip()
