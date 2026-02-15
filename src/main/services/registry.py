@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Optional
 from .llm_service import LLMService
 from .serp_service import SerpService
 from .rag_service import RAGService
+from .meta_service import MetaService
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -47,6 +48,7 @@ class ServiceRegistry:
     llm: LLMService
     serp: SerpService
     rag: RAGService
+    meta: Optional[MetaService] = None
     # Future services can be added here:
     # shopify: ShopifyService
     # analytics: AnalyticsService
@@ -78,6 +80,7 @@ class ServiceRegistry:
             ),
             serp=SerpService(api_key=os.getenv("SERP_API_KEY")),
             rag=RAGService(),
+            meta=MetaService(),
         )
 
     @classmethod

@@ -374,3 +374,233 @@ def test_agent_plan_confidence_clamping():
         reasoning="test",
     )
     assert plan.confidence == 0.75
+
+
+# =============================================================================
+# Mock Agent with PUBLISH_MAP for autonomous testing
+# =============================================================================
+
+class MockPublishAgent(BaseAgent):
+    """Agent with PUBLISH_MAP for testing _maybe_publish."""
+
+    role_name = "MockPublishAgent"
+    default_tool = "test.tool"
+
+    _publish_called_with = None  # Track handler calls
+
+    PUBLISH_MAP = {
+        "product/description": "_handle_description",
+        "marketing/email-*": "_handle_email",
+    }
+
+    async def _handle_description(self, state, creds):
+        MockPublishAgent._publish_called_with = ("description", state, creds)
+
+    async def _handle_email(self, state, creds):
+        MockPublishAgent._publish_called_with = ("email", state, creds)
+
+    async def _perceive_domain(self, state, context):
+        return context
+
+    async def _act_domain(self, state, context, plan):
+        return [AgentAction.success_action("test", "ok")], state
+
+
+class MockPublishFailAgent(BaseAgent):
+    """Agent where publish handler raises an error."""
+
+    role_name = "MockPublishFailAgent"
+    default_tool = "test.tool"
+
+    PUBLISH_MAP = {
+        "product/faq": "_handle_faq",
+    }
+
+    async def _handle_faq(self, state, creds):
+        raise Exception("Shopify API timeout")
+
+    async def _perceive_domain(self, state, context):
+        return context
+
+    async def _act_domain(self, state, context, plan):
+        return [AgentAction.success_action("test", "ok")], state
+
+
+# =============================================================================
+# Tests: _maybe_publish
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_maybe_publish_returns_false_when_not_autonomous(mock_services, mission_state):
+    """Test _maybe_publish returns (False, None) when state.autonomous is False."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = False
+
+    is_published, error = await agent._maybe_publish(mission_state, "product/description")
+
+    assert is_published is False
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_returns_false_when_no_template(mock_services, mission_state):
+    """Test _maybe_publish returns (False, None) when template_id is None."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+
+    is_published, error = await agent._maybe_publish(mission_state, None)
+
+    assert is_published is False
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_returns_false_for_unknown_template(mock_services, mission_state):
+    """Test _maybe_publish returns (False, None) for unregistered template."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+
+    is_published, error = await agent._maybe_publish(mission_state, "unknown/template")
+
+    assert is_published is False
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_exact_match_calls_handler(mock_services, mission_state):
+    """Test _maybe_publish dispatches via exact template_id match."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+    mission_state.db = MagicMock()  # Need db so get_shop_credentials is called
+    MockPublishAgent._publish_called_with = None
+
+    # Mock get_shop_credentials to return valid creds
+    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={"access_token": "shpat_xxx"}):
+        is_published, error = await agent._maybe_publish(mission_state, "product/description")
+
+    assert is_published is True
+    assert error is None
+    assert MockPublishAgent._publish_called_with is not None
+    assert MockPublishAgent._publish_called_with[0] == "description"
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_wildcard_match_calls_handler(mock_services, mission_state):
+    """Test _maybe_publish dispatches via wildcard prefix match (e.g. 'marketing/email-*')."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+    mission_state.db = MagicMock()
+    MockPublishAgent._publish_called_with = None
+
+    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={"access_token": "shpat_xxx"}):
+        is_published, error = await agent._maybe_publish(mission_state, "marketing/email-launch")
+
+    assert is_published is True
+    assert error is None
+    assert MockPublishAgent._publish_called_with[0] == "email"
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_wildcard_no_match(mock_services, mission_state):
+    """Test that wildcard pattern does NOT match unrelated templates."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+
+    is_published, error = await agent._maybe_publish(mission_state, "marketing/social-instagram")
+
+    assert is_published is False
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_missing_credentials(mock_services, mission_state):
+    """Test _maybe_publish returns error when access_token is missing."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+    mission_state.db = MagicMock()
+
+    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={}):
+        is_published, error = await agent._maybe_publish(mission_state, "product/description")
+
+    assert is_published is False
+    assert error == "missing_credentials"
+    assert any("missing shop credentials" in log for log in mission_state.logs)
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_handler_error_returns_error(mock_services, mission_state):
+    """Test _maybe_publish returns error message when handler raises."""
+    agent = MockPublishFailAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+    mission_state.db = MagicMock()
+
+    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={"access_token": "shpat_xxx"}):
+        is_published, error = await agent._maybe_publish(mission_state, "product/faq")
+
+    assert is_published is False
+    assert "Shopify API timeout" in error
+    assert any("Publish failed" in log for log in mission_state.logs)
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_success_logs_published(mock_services, mission_state):
+    """Test _maybe_publish logs success message on successful publish."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+    mission_state.db = MagicMock()
+
+    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={"access_token": "shpat_xxx"}):
+        is_published, error = await agent._maybe_publish(mission_state, "product/description")
+
+    assert is_published is True
+    assert any("Published via product/description" in log for log in mission_state.logs)
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_no_db_session_returns_error(mock_services, mission_state):
+    """Test _maybe_publish handles missing db session gracefully."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+    mission_state.db = None  # No db session
+
+    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={}):
+        is_published, error = await agent._maybe_publish(mission_state, "product/description")
+
+    # Should still attempt but fail gracefully on missing creds
+    assert is_published is False
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_base_agent_empty_publish_map(mock_services, mission_state):
+    """Test that BaseAgent with empty PUBLISH_MAP returns (False, None)."""
+    agent = MockAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+
+    is_published, error = await agent._maybe_publish(mission_state, "product/description")
+
+    assert is_published is False
+    assert error is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_publish_handler_receives_correct_creds(mock_services, mission_state):
+    """Test that the publish handler receives the correct credentials dict."""
+    agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
+    mission_state.autonomous = True
+    mission_state.db = MagicMock()
+    MockPublishAgent._publish_called_with = None
+
+    test_creds = {
+        "access_token": "shpat_test123",
+        "meta_access_token": "EAA_test",
+        "meta_page_id": "page_123",
+        "price_guardrails": {"min_price": 5, "max_price": 500},
+    }
+
+    with patch('src.main.services.shopify_service.get_shop_credentials', return_value=test_creds):
+        await agent._maybe_publish(mission_state, "product/description")
+
+    assert MockPublishAgent._publish_called_with is not None
+    received_creds = MockPublishAgent._publish_called_with[2]
+    assert received_creds["access_token"] == "shpat_test123"
+    assert received_creds["meta_access_token"] == "EAA_test"

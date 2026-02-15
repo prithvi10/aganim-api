@@ -137,6 +137,90 @@ async def get_usage(
 
 
 # =============================================================================
+# Plan Sync (From UI to API — called when Shopify has a subscription the DB
+# doesn't know about, e.g. the subscription-activated webhook failed)
+# =============================================================================
+
+@router.post("/api/admin/sync-plan")
+async def sync_plan(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Idempotent plan sync: the UI calls this when it detects the merchant
+    already has an ACTIVE Shopify subscription that doesn't match the DB.
+    Updates current_plan_name, last_plan_name, user.plan_id, and clears
+    any stale pending-downgrade fields.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    shop_domain = str(payload.get("shop") or "").strip()
+    plan_name = str(payload.get("plan_name") or "").strip()
+    sub_status = str(payload.get("subscription_status") or "").strip().upper()
+
+    if not shop_domain or not plan_name:
+        raise HTTPException(status_code=400, detail="Missing shop or plan_name")
+
+    logger.info("[SyncPlan] shop=%s plan=%s status=%s", shop_domain, plan_name, sub_status)
+
+    from src.main.db.db_transactions import get_plan_by_name, get_user_by_username
+
+    shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop_rec:
+        logger.warning("[SyncPlan] shop not found: %s", shop_domain)
+        return {"synced": False, "reason": "shop_not_found"}
+
+    now = datetime.now(timezone.utc)
+
+    # Only sync if the Shopify subscription is ACTIVE
+    if sub_status != "ACTIVE":
+        return {"synced": False, "reason": "not_active"}
+
+    # Already in sync — nothing to do
+    if (shop_rec.current_plan_name or "").strip() == plan_name:
+        return {"synced": False, "reason": "already_synced"}
+
+    # Update Shop record
+    shop_rec.current_plan_name = plan_name
+    shop_rec.last_plan_name = plan_name
+    shop_rec.last_shopify_subscription_status = "ACTIVE"
+    shop_rec.last_plan_change_type = "upgrade"
+    shop_rec.last_plan_change_at = now
+    # Clear any stale pending downgrade
+    shop_rec.pending_plan_name = None
+    shop_rec.pending_plan_effective_at = None
+    # Reset usage counters for the new billing cycle
+    shop_rec.monthly_rewrites_used = 0
+    shop_rec.monthly_cost_accumulated = 0
+    shop_rec.reset_anchor_date = now
+    from datetime import timedelta
+    shop_rec.next_reset_date = now + timedelta(days=30)
+    # Extend access window
+    shop_rec.access_expires_at = now + timedelta(days=30)
+    db.add(shop_rec)
+
+    # Update User.plan_id to match
+    user = get_user_by_username(db, shop_domain)
+    plan_obj = get_plan_by_name(db, plan_name)
+    if user and plan_obj:
+        user.plan_id = plan_obj.id
+        db.add(user)
+
+    try:
+        db.commit()
+        logger.info("[SyncPlan] ✅ synced %s → %s", shop_domain, plan_name)
+    except Exception as e:
+        db.rollback()
+        logger.error("[SyncPlan] DB error: %s", e)
+        raise HTTPException(status_code=500, detail="DB commit failed")
+
+    return {"synced": True, "plan_name": plan_name}
+
+
+# =============================================================================
 # Onboarding Endpoints
 # =============================================================================
 
@@ -823,4 +907,156 @@ async def get_brand_intelligence_endpoint(
     return {
         "intelligence": strategic_intel,
         "updated_at": updated_at.isoformat() if updated_at else None,
+    }
+
+
+# =============================================================================
+# Autonomous Publishing Endpoint (Pro tier)
+# =============================================================================
+
+@router.post("/api/publish")
+async def publish_content(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Two-step publish: user generated content first, reviewed it, now publishes.
+    Accepts either template_id (BaseAgent path) or action (legacy path).
+    Pro tier only.
+    """
+    rid = _rid(request)
+    body = await request.json()
+    auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
+    plan_name = auth_context.get("effective_plan_name") or "Free"
+
+    if plan_name != "Pro":
+        raise HTTPException(403, "Autonomous publishing requires Pro tier")
+
+    template_id = body.get("template_id")  # e.g. "marketing/email-launch"
+    action = body.get("action")            # e.g. "price_scout"
+    content = body.get("content")          # the generated content to publish
+    product_id = body.get("product_id")
+    context = body.get("context", {})
+
+    logger.info(
+        "[Publish] rid=%s shop=%s template_id=%s action=%s",
+        rid, shop, template_id, action,
+    )
+
+    if template_id:
+        return await _publish_via_agent(db, shop, template_id, content, product_id, body)
+    elif action:
+        return await _publish_via_action(db, shop, action, content, product_id, context)
+    else:
+        raise HTTPException(400, "Either template_id or action is required")
+
+
+async def _publish_via_agent(db, shop, template_id, content, product_id, body):
+    """Route to the agent's _maybe_publish() using PUBLISH_MAP."""
+    from src.main.agents.templates import get_template
+    from src.main.agents.state import MissionState
+    from src.main.services.registry import ServiceRegistry
+
+    template = get_template(template_id)
+    if not template:
+        raise HTTPException(404, f"Template '{template_id}' not found")
+
+    # Build a lightweight MissionState with the content to publish
+    state = MissionState(
+        product_id=product_id or "",
+        shop_id=shop,
+        plan_tier="Pro",
+        autonomous=True,
+        draft_content=content,
+        raw_input={"template_id": template_id, **body},
+        db=db,
+    )
+
+    services = ServiceRegistry.create_default(db=db, shop_domain=shop)
+
+    # Route to appropriate agent
+    if template.agent_type.value == "rewriter":
+        from src.main.agents.rewriter import RewriterAgent
+        agent = RewriterAgent(shop_id=shop, services=services)
+    elif template.agent_type.value == "marketing":
+        from src.main.agents.marketing import MarketingAgent
+        agent = MarketingAgent(shop_id=shop, services=services)
+    else:
+        raise HTTPException(400, f"Unknown agent type: {template.agent_type.value}")
+
+    is_published, error = await agent._maybe_publish(state, template_id)
+    return {"is_published": is_published, "error": error}
+
+
+async def _publish_via_action(db, shop, action, content, product_id, context):
+    """Route to PUBLISH_ACTION_MAP handler for legacy /api/agent actions."""
+    from src.main.core.agent_actions import PUBLISH_ACTION_MAP
+
+    handler = PUBLISH_ACTION_MAP.get(action)
+    if not handler:
+        raise HTTPException(400, f"No publish handler for action '{action}'")
+
+    try:
+        result = await handler(db=db, shop=shop, content=content, product_id=product_id, context=context)
+        return {"is_published": True, "error": None, **(result or {})}
+    except Exception as e:
+        error_msg = str(e)
+        logger.error("[Publish] action=%s shop=%s err=%s", action, shop, error_msg)
+        return {"is_published": False, "error": error_msg}
+
+
+# =============================================================================
+# Meta Credentials Endpoints (Pro tier)
+# =============================================================================
+
+@router.post("/api/admin/meta-credentials")
+async def save_meta_credentials(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Save Meta (Facebook/Instagram) API credentials for the shop.
+    Pro tier only. Requires user consent before submission.
+    """
+    body = await request.json()
+    auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
+    plan_name = auth_context.get("effective_plan_name") or "Free"
+    if plan_name != "Pro":
+        raise HTTPException(403, "Meta integration requires Pro tier")
+
+    meta_access_token = body.get("meta_access_token")
+    meta_page_id = body.get("meta_page_id")
+    if not meta_access_token or not meta_page_id:
+        raise HTTPException(400, "meta_access_token and meta_page_id are required")
+
+    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+    if not shop_record:
+        raise HTTPException(404, "Shop not found")
+
+    shop_record.meta_access_token = meta_access_token
+    shop_record.meta_page_id = meta_page_id
+    db.commit()
+
+    logger.info("[MetaCreds] saved shop=%s page_id=%s", shop, meta_page_id)
+    return {"status": "success", "has_meta_credentials": True}
+
+
+@router.get("/api/admin/meta-credentials/status")
+async def meta_credentials_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """Check Meta credentials status (does NOT expose the token)."""
+    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+    has_creds = bool(
+        shop_record
+        and getattr(shop_record, "meta_access_token", None)
+        and getattr(shop_record, "meta_page_id", None)
+    )
+    return {
+        "has_meta_credentials": has_creds,
+        "meta_page_id": getattr(shop_record, "meta_page_id", None) if has_creds else None,
     }

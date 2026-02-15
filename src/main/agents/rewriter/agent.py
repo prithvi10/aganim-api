@@ -8,7 +8,7 @@ NOTE: SEO generation is handled by SEOAgent for all tiers.
 """
 
 import json
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..base import BaseAgent
 from ..state import MissionState
@@ -67,6 +67,136 @@ class RewriterAgent(BaseAgent):
     
     # NOTE: requires_llm_reasoning = False (default)
     # Reasoning phase uses deterministic plan - NO LLM call
+
+    # ── Autonomous Publish Map ────────────────────────────────────────
+    # Maps template_id → async handler(self, state, creds) for autonomous publishing.
+    PUBLISH_MAP: Dict[str, "Callable"] = {
+        "product/description": "_publish_product_body",
+        "product/faq": "_publish_faq_append",
+        "product/landing-hero": "_publish_hero_overwrite",
+        "product/blog-post": "_publish_article",
+        "product/collection": "_publish_collection",
+    }
+
+    async def _publish_product_body(self, state, creds):
+        """Push draft_content → Shopify descriptionHtml."""
+        from src.main.services.shopify_service import update_product_body
+        await update_product_body(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            html=state.draft_content or "",
+        )
+
+    async def _publish_faq_append(self, state, creds):
+        """Convert FAQ JSON → HTML and append to product description."""
+        from src.main.services.shopify_service import (
+            faq_json_to_html, inject_section, update_product_body, get_product_body,
+        )
+        faq_html = faq_json_to_html(state.draft_content or "")
+        if not faq_html:
+            return
+        current_body = (
+            await get_product_body(state.shop_id, creds["access_token"], state.product_id)
+        ) or ""
+        new_body = inject_section(
+            current_body, faq_html,
+            "<!-- cba-faq-start -->", "<!-- cba-faq-end -->",
+            position="append",
+        )
+        await update_product_body(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            html=new_body,
+        )
+
+    async def _publish_hero_overwrite(self, state, creds):
+        """Convert Hero JSON → HTML and overwrite hero section in product description."""
+        from src.main.services.shopify_service import (
+            hero_json_to_html, inject_section, update_product_body, get_product_body,
+        )
+        hero_html = hero_json_to_html(state.draft_content or "")
+        if not hero_html:
+            return
+        current_body = (
+            await get_product_body(state.shop_id, creds["access_token"], state.product_id)
+        ) or ""
+        new_body = inject_section(
+            current_body, hero_html,
+            "<!-- cba-hero-start -->", "<!-- cba-hero-end -->",
+            position="prepend",
+        )
+        await update_product_body(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            html=new_body,
+        )
+
+    async def _publish_article(self, state, creds):
+        """Push blog-post draft_content → Shopify article."""
+        from src.main.services.shopify_service import create_article, get_default_blog_id
+        blog_id = state.raw_input.get("blog_id", "")
+        if not blog_id:
+            # Auto-fetch the shop's default blog (usually "News")
+            blog_id = await get_default_blog_id(
+                shop_domain=state.shop_id,
+                access_token=creds["access_token"],
+            )
+        if not blog_id:
+            raise ValueError("No blog found on this Shopify store – cannot create article")
+        title = state.draft_title or "Untitled Post"
+        body_html = state.draft_content or ""
+        # If body is JSON, extract the body_html field
+        try:
+            parsed = json.loads(body_html)
+            if isinstance(parsed, dict):
+                body_html = parsed.get("body_html", parsed.get("content", body_html))
+                title = parsed.get("title", title)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        await create_article(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            blog_id=blog_id,
+            title=title,
+            body_html=body_html,
+        )
+
+    async def _publish_collection(self, state, creds):
+        """Create a Shopify collection from draft_content."""
+        from src.main.services.shopify_service import create_collection
+
+        raw = state.raw_input or {}
+        collection_name = (
+            raw.get("collection_name")
+            or raw.get("product_name")
+            or "Untitled Collection"
+        )
+
+        # Parse description from LLM output
+        desc_html = state.draft_content or ""
+        try:
+            parsed = json.loads(desc_html)
+            if isinstance(parsed, dict):
+                desc_html = parsed.get(
+                    "description_html",
+                    parsed.get("description", parsed.get("content", desc_html)),
+                )
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Product IDs from extra_context
+        product_ids = raw.get("product_ids") or []
+
+        await create_collection(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            title=collection_name,
+            description_html=desc_html,
+            product_ids=product_ids,
+        )
 
     # -------------------------------------------------------------------------
     # PERCEPTION: Gather brand context (NO LLM call)

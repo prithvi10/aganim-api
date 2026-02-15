@@ -1,5 +1,5 @@
 # Facebook / Instagram Ad — Takumi Ceramics
-Generated: 2026-02-10 17:08 | Template: marketing/ad-facebook
+Generated: 2026-02-13 17:50 | Template: marketing/ad-facebook
 
 ---
 

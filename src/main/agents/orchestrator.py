@@ -108,6 +108,8 @@ class MissionControl:
         self.workflow_config = workflow_config or []
         self.workflow = self._build_workflow()
         self.mission_id = mission_id or uuid.uuid4().hex
+        # Pro tier gets autonomous publishing (content pushed to external systems on approval)
+        self.autonomous = (plan_tier == "Pro")
 
     def _build_workflow(self) -> List[Type[BaseAgent]]:
         """
@@ -288,6 +290,7 @@ class MissionControl:
         Yields:
             MissionState after each agent completes
         """
+        state.autonomous = self.autonomous
         state.status = "IN_PROGRESS"
         state.add_log(f"MissionControl: Starting {self.plan_tier} workflow")
         yield state
@@ -472,6 +475,11 @@ class MissionControl:
         
         if step_template_id:
             state.raw_input["template_id"] = step_template_id
+            # Clear shared draft fields so previous step output doesn't leak
+            # into this step.  Each step captures its own output in agent_outputs
+            # via _extract_agent_output().
+            state.draft_content = None
+            state.draft_title = None
             state.add_log(
                 f"MissionControl: Step {current_idx + 1}/{len(self.workflow)} - "
                 f"Running {agent_name} with template '{step_template_id}'..."
@@ -480,6 +488,9 @@ class MissionControl:
             # Clear template_id so agent uses its default behaviour
             state.raw_input.pop("template_id", None)
             state.add_log(f"MissionControl: Step {current_idx + 1}/{len(self.workflow)} - Running {agent_name}...")
+        
+        # Propagate autonomous flag to state
+        state.autonomous = self.autonomous
         
         state.status = "IN_PROGRESS"
         yield state
@@ -515,7 +526,8 @@ class MissionControl:
             
             # Check gate logic: auto-proceed or wait for human
             if self._should_auto_proceed(state, current_idx):
-                # Auto-proceed: advance index without waiting for human
+                # Auto-proceed: publish if autonomous, then advance
+                await self._on_step_approved(state, current_idx)
                 state.current_agent_index += 1
                 if state.current_agent_index >= len(self.workflow):
                     state.status = "COMPLETED"
@@ -622,11 +634,76 @@ class MissionControl:
         else:
             return {}
 
-    def advance_to_next_step(self, state: MissionState) -> MissionState:
+    async def _on_step_approved(self, state: MissionState, step_idx: int) -> None:
+        """
+        After a step is approved (human or auto), call its agent's publish hook.
+        
+        Only fires when state.autonomous is True.  Injects ``is_published``
+        (and optionally ``publish_error``) into the step's ``agent_outputs``
+        entry so the frontend can display a "Published" badge.
+        
+        Before publishing, restores ``state.draft_content`` / ``draft_title``
+        from the step's captured ``agent_outputs`` entry so that publish
+        handlers always read the *correct* content even when a later step
+        has already overwritten the shared field.
+        
+        Args:
+            state: Current mission state
+            step_idx: Index of the just-approved step
+        """
+        if not state.autonomous:
+            return
+        
+        agent_class = self.workflow[step_idx]
+        agent = agent_class(self.shop_id, services=self.services)
+        
+        wf_config = state.workflow_config or self.workflow_config
+        template_id = None
+        if wf_config and step_idx < len(wf_config):
+            template_id = wf_config[step_idx].get("template_id")
+        
+        # ── Restore draft_content for the approved step ──────────────────
+        # When multiple template steps share the same agent (e.g. two
+        # RewriterAgent steps: product/description + product/faq), the
+        # shared state.draft_content will hold the *last* step's output.
+        # We must restore the correct content before calling the publish
+        # handler so it pushes the right data.
+        output_key = (
+            f"{agent_class.__name__}:{template_id}"
+            if template_id
+            else agent_class.__name__
+        )
+        step_output = state.agent_outputs.get(output_key, {})
+        if step_output:
+            saved_content = state.draft_content
+            saved_title = state.draft_title
+            state.draft_content = step_output.get("draft_content", state.draft_content)
+            state.draft_title = step_output.get("draft_title", state.draft_title)
+        
+        is_published, error = await agent._maybe_publish(state, template_id)
+        
+        # Restore previous draft_content so later steps are not affected
+        if step_output:
+            state.draft_content = saved_content
+            state.draft_title = saved_title
+        
+        # Inject is_published into agent_outputs for this step
+        output_key = (
+            f"{agent_class.__name__}:{template_id}"
+            if template_id
+            else agent_class.__name__
+        )
+        if output_key in state.agent_outputs:
+            state.agent_outputs[output_key]["is_published"] = is_published
+            if error:
+                state.agent_outputs[output_key]["publish_error"] = error
+
+    async def advance_to_next_step(self, state: MissionState) -> MissionState:
         """
         Advance to the next agent in the workflow.
         
         Called when merchant clicks "Continue".
+        Publishes the just-approved step if autonomous mode is active.
         
         Args:
             state: Current mission state
@@ -634,6 +711,10 @@ class MissionControl:
         Returns:
             Updated state with incremented index
         """
+        # Publish the just-approved step before advancing
+        approved_idx = state.current_agent_index
+        await self._on_step_approved(state, approved_idx)
+        
         state.current_agent_index += 1
         state.status = "PENDING"  # Ready for next step
         
