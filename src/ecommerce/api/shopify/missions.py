@@ -797,8 +797,13 @@ async def continue_step(
         #   product/landing-hero → prepend/overwrite hero HTML in product body
         #   product/blog-post    → create a new Shopify blog article
         #   product/collection   → create a new Shopify collection
+        #   marketing/*          → saved as metafields only, NEVER as product body
         #   (no template)        → base RewriterAgent → same as product/description
-        TEMPLATE_TEMPLATES = {"product/faq", "product/landing-hero", "product/blog-post", "product/collection"}
+        TEMPLATE_TEMPLATES = {
+            "product/faq", "product/landing-hero", "product/blog-post", "product/collection",
+            "marketing/email-launch", "marketing/email-welcome", "marketing/email-abandoned",
+            "marketing/ad-facebook", "marketing/ad-google",
+        }
         
         product_title = None
         product_desc = None
@@ -806,6 +811,7 @@ async def continue_step(
         faq_outputs = []
         hero_outputs = []
         collection_outputs = []
+        marketing_outputs = []
         
         outputs = state.agent_outputs or {}
         logger.debug(
@@ -842,6 +848,8 @@ async def continue_step(
                 hero_outputs.append(out)
             elif tmpl == "product/collection":
                 collection_outputs.append(out)
+            elif tmpl and tmpl.startswith("marketing/"):
+                marketing_outputs.append(out)
             elif tmpl not in TEMPLATE_TEMPLATES:
                 # product/description template step OR base RewriterAgent output
                 if isinstance(out, dict):
@@ -1110,6 +1118,22 @@ async def continue_step(
                     "type": "json",
                 })
             
+            # Marketing outputs (emails, ads) — save as metafield JSON
+            if marketing_outputs:
+                mktg_data = []
+                for m_out in marketing_outputs:
+                    mktg_data.append({
+                        "template_id": m_out.get("template_id", ""),
+                        "content": m_out.get("draft_content", ""),
+                        "title": m_out.get("draft_title", ""),
+                    })
+                metafields_to_save.append({
+                    "namespace": "crossborder_agent",
+                    "key": "marketing_content",
+                    "value": json.dumps(mktg_data),
+                    "type": "json",
+                })
+            
             if metafields_to_save:
                 try:
                     await save_product_metafields(
@@ -1342,7 +1366,11 @@ async def skip_step(
         product_id = state.product_id
         
         # ── Classify agent_outputs by template type ───────────────────────
-        TEMPLATE_TEMPLATES = {"product/faq", "product/landing-hero", "product/blog-post", "product/collection"}
+        TEMPLATE_TEMPLATES = {
+            "product/faq", "product/landing-hero", "product/blog-post", "product/collection",
+            "marketing/email-launch", "marketing/email-welcome", "marketing/email-abandoned",
+            "marketing/ad-facebook", "marketing/ad-google",
+        }
         
         product_title = None
         product_desc = None
@@ -1350,6 +1378,7 @@ async def skip_step(
         faq_outputs = []
         hero_outputs = []
         collection_outputs = []
+        marketing_outputs = []
         
         outputs = state.agent_outputs or {}
         logger.debug(
@@ -1383,6 +1412,8 @@ async def skip_step(
                 hero_outputs.append(out)
             elif tmpl == "product/collection":
                 collection_outputs.append(out)
+            elif tmpl and tmpl.startswith("marketing/"):
+                marketing_outputs.append(out)
             elif tmpl not in TEMPLATE_TEMPLATES:
                 if isinstance(out, dict):
                     dc = out.get("draft_content")
@@ -1629,6 +1660,22 @@ async def skip_step(
                     "namespace": "crossborder_agent",
                     "key": "seo_data",
                     "value": json.dumps(seo_data),
+                    "type": "json",
+                })
+            
+            # Marketing outputs (emails, ads)
+            if marketing_outputs:
+                mktg_data = []
+                for m_out in marketing_outputs:
+                    mktg_data.append({
+                        "template_id": m_out.get("template_id", ""),
+                        "content": m_out.get("draft_content", ""),
+                        "title": m_out.get("draft_title", ""),
+                    })
+                metafields_to_save.append({
+                    "namespace": "crossborder_agent",
+                    "key": "marketing_content",
+                    "value": json.dumps(mktg_data),
                     "type": "json",
                 })
             
