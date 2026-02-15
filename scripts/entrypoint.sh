@@ -17,5 +17,5 @@ PORT=${PORT:-8000}
 echo "🚀 Starting server on port $PORT..."
 
 # Use exec to replace the shell process with uvicorn (better signal handling)
-exec uvicorn src.main.api.main:app --host 0.0.0.0 --port $PORT
+exec uvicorn src.ecommerce.api.main:app --host 0.0.0.0 --port $PORT
 

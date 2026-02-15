@@ -5,8 +5,8 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.orm import Session
-from src.main.db.database import SessionLocal, engine, Base
-from src.main.db.db_models import Plan, User, Shop
+from src.shared.db.database import SessionLocal, engine, Base
+from src.ecommerce.db.models import Plan, User, Shop
 
 def add_custom_user():
     db = SessionLocal()

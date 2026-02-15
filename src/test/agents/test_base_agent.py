@@ -8,9 +8,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing import List, Tuple
 
-from src.main.agents.base import BaseAgent
-from src.main.agents.state import MissionState
-from src.main.agents.context import AgentContext, AgentPlan, AgentAction
+from src.agentic_core.agents.base import BaseAgent
+from src.ecommerce.state import MissionState
+from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 
 
 # =============================================================================
@@ -89,6 +89,8 @@ def mock_services():
     services.llm.generate_structured = AsyncMock()
     services.serp.search = AsyncMock(return_value=[])
     services.rag.get_brand_context = AsyncMock(return_value=[])
+    # Default publish_adapter with async get_credentials
+    services.publish_adapter.get_credentials = AsyncMock(return_value={})
     return services
 
 
@@ -471,12 +473,13 @@ async def test_maybe_publish_exact_match_calls_handler(mock_services, mission_st
     """Test _maybe_publish dispatches via exact template_id match."""
     agent = MockPublishAgent("test-shop.myshopify.com", mock_services)
     mission_state.autonomous = True
-    mission_state.db = MagicMock()  # Need db so get_shop_credentials is called
+    mission_state.db = MagicMock()  # Need db so get_credentials is called
     MockPublishAgent._publish_called_with = None
 
-    # Mock get_shop_credentials to return valid creds
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={"access_token": "shpat_xxx"}):
-        is_published, error = await agent._maybe_publish(mission_state, "product/description")
+    # Mock publish_adapter to return valid creds
+    mock_services.publish_adapter.get_credentials = AsyncMock(return_value={"access_token": "shpat_xxx"})
+
+    is_published, error = await agent._maybe_publish(mission_state, "product/description")
 
     assert is_published is True
     assert error is None
@@ -492,8 +495,9 @@ async def test_maybe_publish_wildcard_match_calls_handler(mock_services, mission
     mission_state.db = MagicMock()
     MockPublishAgent._publish_called_with = None
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={"access_token": "shpat_xxx"}):
-        is_published, error = await agent._maybe_publish(mission_state, "marketing/email-launch")
+    mock_services.publish_adapter.get_credentials = AsyncMock(return_value={"access_token": "shpat_xxx"})
+
+    is_published, error = await agent._maybe_publish(mission_state, "marketing/email-launch")
 
     assert is_published is True
     assert error is None
@@ -519,8 +523,9 @@ async def test_maybe_publish_missing_credentials(mock_services, mission_state):
     mission_state.autonomous = True
     mission_state.db = MagicMock()
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={}):
-        is_published, error = await agent._maybe_publish(mission_state, "product/description")
+    mock_services.publish_adapter.get_credentials = AsyncMock(return_value={})
+
+    is_published, error = await agent._maybe_publish(mission_state, "product/description")
 
     assert is_published is False
     assert error == "missing_credentials"
@@ -534,8 +539,9 @@ async def test_maybe_publish_handler_error_returns_error(mock_services, mission_
     mission_state.autonomous = True
     mission_state.db = MagicMock()
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={"access_token": "shpat_xxx"}):
-        is_published, error = await agent._maybe_publish(mission_state, "product/faq")
+    mock_services.publish_adapter.get_credentials = AsyncMock(return_value={"access_token": "shpat_xxx"})
+
+    is_published, error = await agent._maybe_publish(mission_state, "product/faq")
 
     assert is_published is False
     assert "Shopify API timeout" in error
@@ -549,8 +555,9 @@ async def test_maybe_publish_success_logs_published(mock_services, mission_state
     mission_state.autonomous = True
     mission_state.db = MagicMock()
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={"access_token": "shpat_xxx"}):
-        is_published, error = await agent._maybe_publish(mission_state, "product/description")
+    mock_services.publish_adapter.get_credentials = AsyncMock(return_value={"access_token": "shpat_xxx"})
+
+    is_published, error = await agent._maybe_publish(mission_state, "product/description")
 
     assert is_published is True
     assert any("Published via product/description" in log for log in mission_state.logs)
@@ -563,8 +570,8 @@ async def test_maybe_publish_no_db_session_returns_error(mock_services, mission_
     mission_state.autonomous = True
     mission_state.db = None  # No db session
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={}):
-        is_published, error = await agent._maybe_publish(mission_state, "product/description")
+    # With no db, get_credentials is NOT called, so creds stays {}
+    is_published, error = await agent._maybe_publish(mission_state, "product/description")
 
     # Should still attempt but fail gracefully on missing creds
     assert is_published is False
@@ -597,8 +604,9 @@ async def test_maybe_publish_handler_receives_correct_creds(mock_services, missi
         "price_guardrails": {"min_price": 5, "max_price": 500},
     }
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value=test_creds):
-        await agent._maybe_publish(mission_state, "product/description")
+    mock_services.publish_adapter.get_credentials = AsyncMock(return_value=test_creds)
+
+    await agent._maybe_publish(mission_state, "product/description")
 
     assert MockPublishAgent._publish_called_with is not None
     received_creds = MockPublishAgent._publish_called_with[2]

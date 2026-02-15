@@ -9,14 +9,14 @@ Copywriter, SEO, Marketing, PriceScout.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.main.agents.orchestrator import MissionControl
-from src.main.agents.state import MissionState
-from src.main.agents.rewriter import RewriterAgent
+from src.ecommerce.orchestrator import MissionControl
+from src.ecommerce.state import MissionState
+from src.ecommerce.agents.rewriter import RewriterAgent
 CopywriterAgent = RewriterAgent  # Backward compat alias
-from src.main.agents.seo import SEOAgent
-from src.main.agents.marketing import MarketingAgent
-from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.price_scout.schemas import PricingAnalysis
+from src.ecommerce.agents.seo import SEOAgent
+from src.ecommerce.agents.marketing import MarketingAgent
+from src.ecommerce.agents.price_scout import PriceScoutAgent
+from src.ecommerce.agents.price_scout.schemas import PricingAnalysis
 
 
 # =============================================================================

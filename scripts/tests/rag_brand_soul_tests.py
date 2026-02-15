@@ -91,7 +91,7 @@ class RAGBrandSoulTests:
     def _get_real_services(self):
         """Get real ServiceRegistry with actual API clients."""
         if self._services is None:
-            from src.main.services.registry import ServiceRegistry
+            from src.ecommerce.services.registry import ServiceRegistry
             self._services = ServiceRegistry.create_default()
         return self._services
 
@@ -105,8 +105,8 @@ class RAGBrandSoulTests:
             self._add_result("rag/copywriter_injection", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.copywriter import CopywriterAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.rewriter import CopywriterAgent
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing Copywriter with brand context in input (REAL LLM)")
         
@@ -169,8 +169,8 @@ class RAGBrandSoulTests:
             self._add_result("rag/multi_tenant", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.copywriter import CopywriterAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.rewriter import CopywriterAgent
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing multi-tenant context isolation (REAL LLM)")
         

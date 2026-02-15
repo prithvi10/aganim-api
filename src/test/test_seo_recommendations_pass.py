@@ -2,10 +2,10 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from sqlalchemy.orm import Session
 
-from src.main.core.generation import process_generation_request
-from src.main.db.db_models import User, Plan
-from src.main.api.models import RewriteRequest
-from src.main.config.configs import OPENAI_MODEL
+from src.ecommerce.core.generation import process_generation_request
+from src.ecommerce.db.models import User, Plan
+from src.ecommerce.api.models import RewriteRequest
+from src.ecommerce.config.configs import OPENAI_MODEL
 
 
 @pytest.fixture
@@ -70,12 +70,12 @@ async def test_basic_includes_seo_recommendations_and_uses_cheapest_model(mock_d
         '}'
     )
 
-    with patch("src.main.core.generation.openai_service.generate_copy", return_value=_openai_resp_with_contract(description_html=base_desc)), \
-         patch("src.main.core.generation.openai_service.generate_json_response", return_value=_json_response_obj(recs_json)) as mock_recs, \
-         patch("src.main.core.generation.get_shop_access_token", return_value="token"), \
-         patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
-         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
-         patch("src.main.core.generation.limiter.is_allowed", return_value=True):
+    with patch("src.ecommerce.core.generation.openai_service.generate_copy", return_value=_openai_resp_with_contract(description_html=base_desc)), \
+         patch("src.ecommerce.core.generation.openai_service.generate_json_response", return_value=_json_response_obj(recs_json)) as mock_recs, \
+         patch("src.ecommerce.core.generation.get_shop_access_token", return_value="token"), \
+         patch("src.ecommerce.core.generation.httpx.AsyncClient") as MockClient, \
+         patch("src.ecommerce.core.generation.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True):
 
         mock_client = MockClient.return_value
         mock_client.__aenter__.return_value = mock_client
@@ -115,12 +115,12 @@ async def test_seo_recommendations_failure_is_non_blocking(mock_db, mock_user):
 
     base_desc = "<div>Base</div>"
 
-    with patch("src.main.core.generation.openai_service.generate_copy", return_value=_openai_resp_with_contract(description_html=base_desc)), \
-         patch("src.main.core.generation.openai_service.generate_json_response", side_effect=Exception("timeout")), \
-         patch("src.main.core.generation.get_shop_access_token", return_value="token"), \
-         patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
-         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
-         patch("src.main.core.generation.limiter.is_allowed", return_value=True):
+    with patch("src.ecommerce.core.generation.openai_service.generate_copy", return_value=_openai_resp_with_contract(description_html=base_desc)), \
+         patch("src.ecommerce.core.generation.openai_service.generate_json_response", side_effect=Exception("timeout")), \
+         patch("src.ecommerce.core.generation.get_shop_access_token", return_value="token"), \
+         patch("src.ecommerce.core.generation.httpx.AsyncClient") as MockClient, \
+         patch("src.ecommerce.core.generation.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True):
 
         mock_client = MockClient.return_value
         mock_client.__aenter__.return_value = mock_client

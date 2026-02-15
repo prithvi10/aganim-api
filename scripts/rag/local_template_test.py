@@ -22,6 +22,7 @@ Usage:
   python -m scripts.rag.local_template_test --category marketing        # marketing templates only
   python -m scripts.rag.local_template_test --skip-ingest               # skip brand soul ingest
 """
+from __future__ import annotations
 
 import argparse
 import json
@@ -40,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.main.db.db_models import Shop, StoreContext, Plan, User
+from src.ecommerce.db.models import Shop, StoreContext, Plan, User
 
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/shopify_translator")

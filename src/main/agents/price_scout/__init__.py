@@ -1,8 +1,9 @@
-"""
-PriceScout Agent - Analyzes competitor pricing using SERP data.
-"""
+# Backward-compat shim — canonical location: src/ecommerce/agents/price_scout/
+from src.ecommerce.agents.price_scout.agent import PriceScoutAgent  # noqa: F401
+from src.ecommerce.agents.price_scout.schemas import PricingAnalysis  # noqa: F401
 
-from .agent import PriceScoutAgent
-from .schemas import PricingAnalysis
+import src.ecommerce.agents.price_scout as _canonical_module
 
-__all__ = ["PriceScoutAgent", "PricingAnalysis"]
+
+def __getattr__(name):
+    return getattr(_canonical_module, name)

@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from src.main.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota
-from src.main.db.db_models import User, Plan, Shop
+from src.ecommerce.api.validation import validate_api_key_and_quota, validate_rewrite_request, validate_shop_and_quota
+from src.ecommerce.db.models import User, Plan, Shop
 
 # --- Tests for validate_api_key_and_quota ---
 
@@ -84,7 +84,7 @@ def test_validate_rewrite_request_too_long():
 
 # --- Tests for validate_shop_and_quota ---
 
-@patch("src.main.api.validation.get_shop_quota_context")
+@patch("src.ecommerce.api.validation.get_shop_quota_context")
 def test_validate_shop_valid(mock_get_context):
     """Test successful shop validation."""
     mock_db = MagicMock(spec=Session)
@@ -119,7 +119,7 @@ def test_validate_shop_missing_domain():
     assert exc.value.status_code == 401
     assert "Missing Shop Domain" in exc.value.detail
 
-@patch("src.main.api.validation.get_shop_quota_context")
+@patch("src.ecommerce.api.validation.get_shop_quota_context")
 def test_validate_shop_invalid(mock_get_context):
     """Test validation when shop lookup returns None."""
     mock_db = MagicMock(spec=Session)
@@ -131,7 +131,7 @@ def test_validate_shop_invalid(mock_get_context):
     # Updated error message expectation
     assert "Invalid Shop or User not found" in exc.value.detail
 
-@patch("src.main.api.validation.get_shop_quota_context")
+@patch("src.ecommerce.api.validation.get_shop_quota_context")
 def test_validate_shop_quota_exceeded(mock_get_context):
     """Test validation when monthly rewrite limit is exceeded."""
     mock_db = MagicMock(spec=Session)
@@ -158,7 +158,7 @@ def test_validate_shop_quota_exceeded(mock_get_context):
     assert "Monthly limit reached" in exc.value.detail
 
 
-@patch("src.main.api.validation.get_shop_quota_context")
+@patch("src.ecommerce.api.validation.get_shop_quota_context")
 def test_validate_shop_free_lifetime_allows_when_remaining(mock_get_context):
     """Free/lifetime plan should allow when lifetime credits remain."""
     mock_db = MagicMock(spec=Session)
@@ -183,7 +183,7 @@ def test_validate_shop_free_lifetime_allows_when_remaining(mock_get_context):
     assert ctx["lifetime_rewrites_remaining"] == 7
 
 
-@patch("src.main.api.validation.get_shop_quota_context")
+@patch("src.ecommerce.api.validation.get_shop_quota_context")
 def test_validate_shop_free_lifetime_blocks_when_zero_remaining(mock_get_context):
     """Free/lifetime plan should 403 when lifetime credits are exhausted."""
     mock_db = MagicMock(spec=Session)
@@ -209,7 +209,7 @@ def test_validate_shop_free_lifetime_blocks_when_zero_remaining(mock_get_context
     assert "free lifetime credits" in str(exc.value.detail).lower()
 
 
-@patch("src.main.api.validation.get_shop_quota_context")
+@patch("src.ecommerce.api.validation.get_shop_quota_context")
 def test_validate_shop_expired_paid_blocks_with_403(mock_get_context):
     """Returning paid user with expired prepaid window must re-purchase (no fallback to Free)."""
     mock_db = MagicMock(spec=Session)

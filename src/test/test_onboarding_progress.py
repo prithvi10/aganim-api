@@ -3,10 +3,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.main.api.main import app
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import Shop, Plan, User
-from src.main.db.db_transactions import record_successful_rewrite
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import Shop, Plan, User
+from src.ecommerce.db.transactions import record_successful_rewrite
 
 
 def test_onboarding_update_step_persists_and_finishes():

@@ -8,19 +8,19 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date, timedelta
 
-from src.main.agents.marketing import MarketingAgent
-from src.main.agents.marketing.schemas import (
+from src.ecommerce.agents.marketing import MarketingAgent
+from src.ecommerce.agents.marketing.schemas import (
     SocialHook,
     SeasonalCampaign,
 )
-from src.main.agents.marketing.holidays import (
+from src.ecommerce.agents.marketing.holidays import (
     get_next_upcoming_holiday,
     generate_discount_code,
     should_show_seasonal_campaign,
     Holiday,
 )
-from src.main.agents.state import MissionState
-from src.main.agents.context import AgentContext, AgentPlan
+from src.ecommerce.state import MissionState
+from src.agentic_core.agents.context import AgentContext, AgentPlan
 
 
 # =============================================================================

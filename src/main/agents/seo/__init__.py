@@ -1,24 +1,9 @@
-"""
-SEO Agent Module
+# Backward-compat shim — canonical location: src/ecommerce/agents/seo/
+from src.ecommerce.agents.seo.agent import SEOAgent  # noqa: F401
+from src.ecommerce.agents.seo.schemas import SEOInsights, CTRCheck, SerpCompetitor, SEOOutput  # noqa: F401
 
-Handles all SEO-related functionality:
-- SERP competitor analysis
-- SEO title/description/alt-text generation
-- CTR/PST formula validation
-"""
+import src.ecommerce.agents.seo as _canonical_module
 
-from .agent import SEOAgent
-from .schemas import (
-    SEOInsights,
-    CTRCheck,
-    SerpCompetitor,
-    SEOOutput,
-)
 
-__all__ = [
-    "SEOAgent",
-    "SEOInsights",
-    "CTRCheck",
-    "SerpCompetitor",
-    "SEOOutput",
-]
+def __getattr__(name):
+    return getattr(_canonical_module, name)

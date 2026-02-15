@@ -8,7 +8,7 @@ publish_flow_campaign, and publish_value_metafields.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.core.agent_actions import (
+from src.ecommerce.core.agent_actions import (
     PUBLISH_ACTION_MAP,
     publish_seo_fields,
     publish_variant_price,
@@ -66,8 +66,8 @@ class TestPublishSeoFields:
         mock_db = MagicMock()
         content = {"seo_title": "Best Product", "seo_description": "Great quality product"}
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={"access_token": "shpat_test"}), \
-             patch("src.main.services.shopify_service.update_product_seo", new_callable=AsyncMock) as mock_update:
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={"access_token": "shpat_test"}), \
+             patch("src.ecommerce.services.shopify_service.update_product_seo", new_callable=AsyncMock) as mock_update:
 
             result = await publish_seo_fields(
                 db=mock_db,
@@ -93,8 +93,8 @@ class TestPublishSeoFields:
         import json
         content = json.dumps({"seo_title": "Title", "seo_description": "Desc"})
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={"access_token": "shpat_test"}), \
-             patch("src.main.services.shopify_service.update_product_seo", new_callable=AsyncMock) as mock_update:
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={"access_token": "shpat_test"}), \
+             patch("src.ecommerce.services.shopify_service.update_product_seo", new_callable=AsyncMock) as mock_update:
 
             await publish_seo_fields(
                 db=mock_db,
@@ -111,7 +111,7 @@ class TestPublishSeoFields:
         """Test that missing credentials raises ValueError."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={}):
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={}):
             with pytest.raises(ValueError, match="missing_credentials"):
                 await publish_seo_fields(
                     db=mock_db,
@@ -126,7 +126,7 @@ class TestPublishSeoFields:
         """Test that missing SEO title and description raises ValueError."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={"access_token": "shpat_test"}):
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={"access_token": "shpat_test"}):
             with pytest.raises(ValueError, match="seo_title or seo_description required"):
                 await publish_seo_fields(
                     db=mock_db,
@@ -141,8 +141,8 @@ class TestPublishSeoFields:
         """Test that SEO data can come from context dict."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={"access_token": "shpat_test"}), \
-             patch("src.main.services.shopify_service.update_product_seo", new_callable=AsyncMock) as mock_update:
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={"access_token": "shpat_test"}), \
+             patch("src.ecommerce.services.shopify_service.update_product_seo", new_callable=AsyncMock) as mock_update:
 
             await publish_seo_fields(
                 db=mock_db,
@@ -169,10 +169,10 @@ class TestPublishVariantPrice:
         """Test successful price publish."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
             "price_guardrails": {"min_price": 5, "max_price": 500},
-        }), patch("src.main.services.shopify_service.update_variant_price", new_callable=AsyncMock) as mock_update:
+        }), patch("src.ecommerce.services.shopify_service.update_variant_price", new_callable=AsyncMock) as mock_update:
 
             await publish_variant_price(
                 db=mock_db,
@@ -189,7 +189,7 @@ class TestPublishVariantPrice:
         """Test that price below min guardrail raises ValueError."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
             "price_guardrails": {"min_price": 10, "max_price": 500},
         }):
@@ -207,7 +207,7 @@ class TestPublishVariantPrice:
         """Test that price above max guardrail raises ValueError."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
             "price_guardrails": {"min_price": 10, "max_price": 100},
         }):
@@ -225,7 +225,7 @@ class TestPublishVariantPrice:
         """Test that missing variant_id raises ValueError."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
         }):
             with pytest.raises(ValueError, match="variant_id and recommended_price required"):
@@ -242,10 +242,10 @@ class TestPublishVariantPrice:
         """Test that price passes when no guardrails are configured."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
             "price_guardrails": None,
-        }), patch("src.main.services.shopify_service.update_variant_price", new_callable=AsyncMock) as mock_update:
+        }), patch("src.ecommerce.services.shopify_service.update_variant_price", new_callable=AsyncMock) as mock_update:
 
             await publish_variant_price(
                 db=mock_db,
@@ -270,11 +270,11 @@ class TestPublishMetaPost:
         """Test successful Meta post publish."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
             "meta_access_token": "EAA_token",
             "meta_page_id": "page_123",
-        }), patch("src.main.services.meta_service.MetaService") as MockMeta:
+        }), patch("src.agentic_core.tools.meta_service.MetaService") as MockMeta:
             mock_instance = MockMeta.return_value
             mock_instance.post_ad = AsyncMock(return_value=(True, "post_id_999"))
 
@@ -293,7 +293,7 @@ class TestPublishMetaPost:
         """Test that missing Meta credentials raises ValueError."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
             "meta_access_token": None,
             "meta_page_id": None,
@@ -312,11 +312,11 @@ class TestPublishMetaPost:
         """Test that failed Meta post raises Exception."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
             "meta_access_token": "EAA_token",
             "meta_page_id": "page_123",
-        }), patch("src.main.services.meta_service.MetaService") as MockMeta:
+        }), patch("src.agentic_core.tools.meta_service.MetaService") as MockMeta:
             mock_instance = MockMeta.return_value
             mock_instance.post_ad = AsyncMock(return_value=(False, "Invalid token"))
 
@@ -334,11 +334,11 @@ class TestPublishMetaPost:
         """Test that image_url is passed to MetaService from context."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
             "meta_access_token": "EAA_token",
             "meta_page_id": "page_123",
-        }), patch("src.main.services.meta_service.MetaService") as MockMeta:
+        }), patch("src.agentic_core.tools.meta_service.MetaService") as MockMeta:
             mock_instance = MockMeta.return_value
             mock_instance.post_ad = AsyncMock(return_value=(True, "post_99"))
 
@@ -366,9 +366,9 @@ class TestPublishFlowCampaign:
         """Test successful Shopify Flow trigger."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
-        }), patch("src.main.services.shopify_service.trigger_flow_event", new_callable=AsyncMock) as mock_trigger:
+        }), patch("src.ecommerce.services.shopify_service.trigger_flow_event", new_callable=AsyncMock) as mock_trigger:
 
             await publish_flow_campaign(
                 db=mock_db,
@@ -388,7 +388,7 @@ class TestPublishFlowCampaign:
         """Test that missing credentials raises ValueError."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={}):
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={}):
             with pytest.raises(ValueError, match="missing_credentials"):
                 await publish_flow_campaign(
                     db=mock_db,
@@ -411,9 +411,9 @@ class TestPublishValueMetafields:
         """Test successful value discovery metafield publish."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
-        }), patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save:
+        }), patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save:
 
             await publish_value_metafields(
                 db=mock_db,
@@ -433,7 +433,7 @@ class TestPublishValueMetafields:
         """Test that missing product_id raises ValueError."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
         }):
             with pytest.raises(ValueError, match="product_id required"):
@@ -450,9 +450,9 @@ class TestPublishValueMetafields:
         """Test that dict content is JSON-serialized for metafield value."""
         mock_db = MagicMock()
 
-        with patch("src.main.services.shopify_service.get_shop_credentials", return_value={
+        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
             "access_token": "shpat_test",
-        }), patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save:
+        }), patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save:
 
             await publish_value_metafields(
                 db=mock_db,

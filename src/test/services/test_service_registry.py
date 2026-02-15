@@ -7,7 +7,7 @@ Tests factory methods and service initialization.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from src.main.services.registry import ServiceRegistry
+from src.ecommerce.services.registry import ServiceRegistry
 
 
 # =============================================================================
@@ -82,7 +82,7 @@ def test_registry_attributes():
 
 def test_registry_compatible_with_agents():
     """Test that registry can be used with agents."""
-    from src.main.agents.rewriter import RewriterAgent
+    from src.ecommerce.agents.rewriter import RewriterAgent
     CopywriterAgent = RewriterAgent  # Backward compat alias
     
     registry = ServiceRegistry.create_for_testing()

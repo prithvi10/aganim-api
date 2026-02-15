@@ -11,16 +11,16 @@ import asyncio
 import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.price_scout.schemas import (
+from src.ecommerce.agents.price_scout import PriceScoutAgent
+from src.ecommerce.agents.price_scout.schemas import (
     PricingAnalysis,
     FilteredCompetitorsResponse,
     MarketAnalysis,
     ShoppingCompetitor,
 )
-from src.main.agents.state import MissionState
-from src.main.agents.orchestrator import MissionControl
-from src.main.services.serp_service import SerpService, ShoppingResult
+from src.ecommerce.state import MissionState
+from src.ecommerce.orchestrator import MissionControl
+from src.agentic_core.tools.serp_service import SerpService, ShoppingResult
 
 
 # =============================================================================
@@ -735,7 +735,7 @@ class TestSerpServiceShoppingMethod:
     async def test_search_shopping_no_api_key(self):
         """Test search_shopping without API key."""
         # Explicitly pass None and clear env to ensure no API key is used
-        with patch('src.main.services.serp_service.SERP_API_KEY', None):
+        with patch('src.agentic_core.tools.serp_service.SERP_API_KEY', None):
             service = SerpService(api_key=None)
             result = await service.search_shopping("test query")
             
