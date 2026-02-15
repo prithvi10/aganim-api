@@ -4,10 +4,10 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from sqlalchemy.orm import Session
 from datetime import date
 
-from src.main.api.main import app
-from src.main.security.security import get_api_key_hash, verify_shopify_proxy_request
-from src.main.db.database import get_db
-from src.main.db.db_models import User, Plan
+from src.ecommerce.api.main import app
+from src.shared.security.security import get_api_key_hash, verify_shopify_proxy_request
+from src.shared.db.database import get_db
+from src.ecommerce.db.models import User, Plan
 
 # Initialize Test Client
 client = TestClient(app)
@@ -68,8 +68,8 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
     # But we MUST provide the 'shop' query parameter as the controller manually extracts it.
 
     # Patch in the module where the function is used (shopify.proxy)
-    with patch("src.main.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
-        with patch("src.main.api.shopify.proxy.process_generation_request", new_callable=AsyncMock) as mock_process:
+    with patch("src.ecommerce.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context) as mock_validate:
+        with patch("src.ecommerce.api.shopify.proxy.process_generation_request", new_callable=AsyncMock) as mock_process:
             mock_process.return_value = {
                 "status": "success",
                 "data": {"title": "My Title", "description": "My Description"}

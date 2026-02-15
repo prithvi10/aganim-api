@@ -8,13 +8,13 @@ market metrics calculation, and pricing recommendations.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.price_scout.schemas import (
+from src.ecommerce.agents.price_scout import PriceScoutAgent
+from src.ecommerce.agents.price_scout.schemas import (
     PricingAnalysis,
     FilteredCompetitorsResponse,
 )
-from src.main.agents.state import MissionState
-from src.main.agents.context import AgentContext
+from src.ecommerce.state import MissionState
+from src.agentic_core.agents.context import AgentContext
 
 
 # =============================================================================

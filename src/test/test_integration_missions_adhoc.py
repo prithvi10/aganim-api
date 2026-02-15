@@ -15,11 +15,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
 
-from src.main.api.main import app
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import Plan, User, Shop, Mission
-from src.main.security.security import verify_shopify_session
-from src.main.api.shopify.shared import resolve_shop_domain
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import Plan, User, Shop, Mission
+from src.shared.security.security import verify_shopify_session
+from src.ecommerce.api.shopify.shared import resolve_shop_domain
 
 
 TEST_DATABASE_URL = "sqlite:///:memory:"

@@ -8,9 +8,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from datetime import date
 
-from src.main.db.database import Base
-from src.main.db.db_models import User, Plan, UsageRecord, Shop
-from src.main.api.validation import validate_shop_and_quota
+from src.shared.db.database import Base
+from src.ecommerce.db.models import User, Plan, UsageRecord, Shop
+from src.ecommerce.api.validation import validate_shop_and_quota
 from fastapi import HTTPException
 
 # Setup In-Memory DB

@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from src.main.services.rag_service import get_brand_context
+from src.agentic_core.rag.rag_service import get_brand_context
 
 
 def test_get_brand_context_empty_inputs():
@@ -18,7 +18,7 @@ def test_get_brand_context_returns_rows():
     query = db.query.return_value
     query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [row]
 
-    with patch("src.main.services.rag_service.embed_texts", return_value=[[0.1, 0.2]]):
+    with patch("src.agentic_core.rag.rag_service.embed_texts", return_value=[[0.1, 0.2]]):
         out = get_brand_context(db, shop_id="shop.myshopify.com", product_text="query text", limit=3)
 
     assert len(out) == 1

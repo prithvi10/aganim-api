@@ -5,9 +5,9 @@ import base64
 from unittest.mock import patch
 from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
-from src.main.api.main import app
-from src.main.db.database import Base
-from src.main.db.db_models import User, Plan
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base
+from src.ecommerce.db.models import User, Plan
 
 # Setup In-Memory Integration DB
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -54,7 +54,7 @@ def test_integration_onboarding_webhook_flow():
 
     # 3. Use TestClient with overrides
     from fastapi.testclient import TestClient
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     def override_get_db():
         db = TestingSessionLocal()
@@ -69,7 +69,7 @@ def test_integration_onboarding_webhook_flow():
     # We patch it where it is IMPORTED or used.
     # Since security.py loads it at module level, patching os.getenv won't work if already loaded.
     # We patch the variable in the module directly.
-    with patch("src.main.security.security.SHOPIFY_API_SECRET", secret):
+    with patch("src.shared.security.security.SHOPIFY_API_SECRET", secret):
         with TestClient(app) as client:
             response = client.post(
                 "/webhooks/subscription-activated",

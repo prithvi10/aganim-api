@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.main.api.main import app
-from src.main.db.database import get_db, Base
+from src.ecommerce.api.main import app
+from src.shared.db.database import get_db, Base
 
 # Mock Config
 MOCK_API_KEY = "test_api_key"
@@ -82,10 +82,10 @@ def test_auth_callback_success(client, auth_params):
     )
     
     # Patch in the oauth module where these are used
-    with patch("src.main.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_API_KEY), \
-         patch("src.main.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
-         patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
-         patch("src.main.api.shopify.oauth.SHOPIFY_UI_URL", "https://ui.test.com"):
+    with patch("src.ecommerce.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_API_KEY), \
+         patch("src.ecommerce.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
+         patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
+         patch("src.ecommerce.api.shopify.oauth.SHOPIFY_UI_URL", "https://ui.test.com"):
         
         # We set follow_redirects=False to inspect the RedirectResponse
         response = client.get("/api/auth/callback", params=params, follow_redirects=False)
@@ -102,7 +102,7 @@ def test_auth_callback_invalid_hmac(client, auth_params):
     params = auth_params.copy()
     params["hmac"] = "invalid_signature"
     
-    with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET):
+    with patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET):
         response = client.get("/api/auth/callback", params=params)
         assert response.status_code == 400
         assert "Invalid HMAC signature" in response.json()["detail"]
@@ -112,7 +112,7 @@ def test_auth_callback_missing_params(client, auth_params):
     incomplete_params = {"shop": "test.myshopify.com", "timestamp": "123"}
     incomplete_params["hmac"] = generate_hmac(MOCK_API_SECRET, incomplete_params)
 
-    with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET):
+    with patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET):
         response = client.get("/api/auth/callback", params=incomplete_params)
         assert response.status_code == 400
         assert "Missing code" in response.json()["detail"]
@@ -127,9 +127,9 @@ def test_auth_callback_exchange_failure(client, auth_params):
     respx.post(token_url).mock(return_value=Response(400, json={"error": "invalid_request"}))
     
     # Patch in the oauth module where these are used
-    with patch("src.main.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_API_KEY), \
-         patch("src.main.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
-         patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET):
+    with patch("src.ecommerce.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_API_KEY), \
+         patch("src.ecommerce.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_API_SECRET), \
+         patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_API_SECRET):
         
         response = client.get("/api/auth/callback", params=params)
         assert response.status_code == 400

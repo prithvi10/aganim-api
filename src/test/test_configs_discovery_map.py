@@ -1,4 +1,4 @@
-from src.main.config.configs import DISCOVERY_MAP, MADE_IN_JAPAN_GLOSSARY
+from src.ecommerce.config.configs import DISCOVERY_MAP, MADE_IN_JAPAN_GLOSSARY
 
 
 def test_discovery_map_has_entry_for_every_glossary_key():

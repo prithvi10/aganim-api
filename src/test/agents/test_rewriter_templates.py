@@ -19,9 +19,9 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.main.agents.rewriter import RewriterAgent
-from src.main.agents.state import MissionState
-from src.main.agents.context import AgentContext
+from src.ecommerce.agents.rewriter import RewriterAgent
+from src.ecommerce.state import MissionState
+from src.agentic_core.agents.context import AgentContext
 
 from src.test.fixtures.brand_soul_fixtures import (
     STRATEGIC_INTELLIGENCE,

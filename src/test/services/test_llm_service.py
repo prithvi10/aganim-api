@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from pydantic import BaseModel
 
-from src.main.services.llm_service import LLMService
+from src.agentic_core.llm.llm_service import LLMService
 
 
 # =============================================================================
@@ -261,7 +261,7 @@ async def test_generate_json_uses_json_system_prompt(llm_service, mock_openai_cl
 
 def test_llm_service_initialization():
     """Test that LLMService initializes with API key."""
-    with patch('src.main.services.llm_service.AsyncOpenAI') as MockClient:
+    with patch('src.agentic_core.llm.llm_service.AsyncOpenAI') as MockClient:
         service = LLMService(api_key="test-api-key")
         
         # Should create AsyncOpenAI client with api_key (http_client is also passed for SSL)
@@ -274,7 +274,7 @@ def test_llm_service_initialization():
 
 def test_llm_service_no_client_without_api_key():
     """Test that LLMService handles missing API key."""
-    with patch('src.main.services.llm_service.AsyncOpenAI') as MockClient:
+    with patch('src.agentic_core.llm.llm_service.AsyncOpenAI') as MockClient:
         service = LLMService(api_key=None)
         
         # Client might be None or raise on use

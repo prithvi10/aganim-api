@@ -89,7 +89,7 @@ class TierFeatureTests:
     def _get_real_services(self):
         """Get real ServiceRegistry with actual API clients."""
         if self._services is None:
-            from src.main.services.registry import ServiceRegistry
+            from src.ecommerce.services.registry import ServiceRegistry
             self._services = ServiceRegistry.create_default()
         return self._services
 
@@ -135,8 +135,8 @@ class TierFeatureTests:
 
     def _run_tier_pipeline(self, tier: str) -> None:
         """Run full MissionControl pipeline for a tier."""
-        from src.main.agents.orchestrator import MissionControl
-        from src.main.agents.state import MissionState
+        from src.ecommerce.orchestrator import MissionControl
+        from src.ecommerce.state import MissionState
         
         services = self._get_real_services()
         
@@ -262,8 +262,8 @@ class TierFeatureTests:
             self._add_result("tier/standard_agents", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.orchestrator import MissionControl
-        from src.main.agents.state import MissionState
+        from src.ecommerce.orchestrator import MissionControl
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing all agents run for STANDARD tier (REAL LLM)")
         

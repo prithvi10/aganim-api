@@ -1,5 +1,5 @@
-from src.main.api.models import RewriteRequest, MissionRequest
-from src.main.config.configs import DEFAULT_PRODUCT_CATEGORY
+from src.ecommerce.api.models import RewriteRequest, MissionRequest
+from src.ecommerce.config.configs import DEFAULT_PRODUCT_CATEGORY
 import pytest
 
 def test_rewrite_request_defaults():

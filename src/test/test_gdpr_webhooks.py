@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
 
-from src.main.api.main import app
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import Plan, User, UsageRecord, Shop
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import Plan, User, UsageRecord, Shop
 
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -84,7 +84,7 @@ def seed_shop_records():
     return shop_domain
 
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_gdpr_compliance_webhook_rejects_invalid_signature(client):
     raw = b'{"hello":"world"}'
     resp = client.post(
@@ -112,7 +112,7 @@ def test_gdpr_compliance_webhook_rejects_missing_hmac_header(client):
     assert resp.status_code == 401
 
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_gdpr_customers_data_request_acknowledged(client):
     payload = {"shop_id": 123, "customer": {"id": 999}}
     raw = json.dumps(payload).encode("utf-8")
@@ -134,7 +134,7 @@ def test_gdpr_customers_data_request_acknowledged(client):
     assert "No customer personal data stored" in body["message"]
 
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_gdpr_customers_redact_acknowledged(client):
     payload = {"shop_id": 123, "customer": {"id": 999}}
     raw = json.dumps(payload).encode("utf-8")
@@ -155,7 +155,7 @@ def test_gdpr_customers_redact_acknowledged(client):
     assert body["status"] == "ok"
 
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_gdpr_shop_redact_deletes_merchant_records(client, seed_shop_records):
     shop_domain = seed_shop_records
 

@@ -7,8 +7,8 @@ Tests serialization, deserialization, and helper methods.
 import pytest
 from unittest.mock import MagicMock
 
-from src.main.agents.state import MissionState
-from src.main.agents.context import AgentContext, AgentPlan, AgentAction
+from src.ecommerce.state import MissionState
+from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 
 
 # =============================================================================

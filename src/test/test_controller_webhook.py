@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, AsyncMock
 from sqlalchemy.orm import Session
 
-from src.main.api.main import app
-from src.main.db.database import get_db
-from src.main.db.db_models import Plan
-from src.main.api.models import OnboardingResponse
+from src.ecommerce.api.main import app
+from src.shared.db.database import get_db
+from src.ecommerce.db.models import Plan
+from src.ecommerce.api.models import OnboardingResponse
 
 client = TestClient(app)
 
@@ -46,7 +46,7 @@ def generate_hmac(secret, body):
     ).digest()
     return base64.b64encode(digest).decode('utf-8')
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_webhook_subscription_success(webhook_payload, mock_plan):
     """Test successful webhook processing."""
     
@@ -56,8 +56,8 @@ def test_webhook_subscription_success(webhook_payload, mock_plan):
     headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
 
     # Mock dependencies - patch in the webhooks module where they are used
-    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
-         patch("src.main.api.shopify.webhooks.onboard_user") as mock_onboard:
+    with patch("src.ecommerce.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
+         patch("src.ecommerce.api.shopify.webhooks.onboard_user") as mock_onboard:
         
         response = client.post(
             "/webhooks/subscription-activated",
@@ -76,7 +76,7 @@ def test_webhook_subscription_success(webhook_payload, mock_plan):
         assert request_obj.plan_id == 1
 
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_webhook_subscription_success_promo_plan_name_maps_to_canonical_plan(webhook_payload, mock_plan):
     """Promo plan names should map to canonical DB plans (Basic/Standard/Pro)."""
     promo_payload = dict(webhook_payload)
@@ -86,8 +86,8 @@ def test_webhook_subscription_success_promo_plan_name_maps_to_canonical_plan(web
     hmac_sig = generate_hmac(MOCK_SHOPIFY_SECRET, json_body)
     headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
 
-    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
-         patch("src.main.api.shopify.webhooks.onboard_user") as mock_onboard:
+    with patch("src.ecommerce.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan) as mock_get_plan, \
+         patch("src.ecommerce.api.shopify.webhooks.onboard_user") as mock_onboard:
         response = client.post(
             "/webhooks/subscription-activated",
             content=json_body,
@@ -110,7 +110,7 @@ def test_webhook_missing_header(webhook_payload):
     assert response.status_code == 401
     assert "Unauthorized" in response.json()["detail"]
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_webhook_invalid_signature(webhook_payload):
     """Test webhook fails with incorrect signature."""
     json_body = json.dumps(webhook_payload).encode('utf-8')
@@ -123,7 +123,7 @@ def test_webhook_invalid_signature(webhook_payload):
     )
     assert response.status_code == 401
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_webhook_payload_missing_fields(webhook_payload):
     """Test webhook returns 200 (graceful fail) when payload is incomplete."""
     incomplete_payload = {"some_other_field": "value"}
@@ -140,15 +140,15 @@ def test_webhook_payload_missing_fields(webhook_payload):
     # Should return 200 to acknowledge receipt even if processing failed
     assert response.status_code == 200
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_webhook_plan_not_found(webhook_payload):
     """Test webhook returns 200 when plan is unknown."""
     json_body = json.dumps(webhook_payload).encode('utf-8')
     hmac_sig = generate_hmac(MOCK_SHOPIFY_SECRET, json_body)
     headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
 
-    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=None) as mock_get_plan, \
-         patch("src.main.api.shopify.webhooks.onboard_user") as mock_onboard:
+    with patch("src.ecommerce.api.shopify.webhooks.get_plan_by_name", return_value=None) as mock_get_plan, \
+         patch("src.ecommerce.api.shopify.webhooks.onboard_user") as mock_onboard:
 
         response = client.post(
             "/webhooks/subscription-activated",
@@ -160,7 +160,7 @@ def test_webhook_plan_not_found(webhook_payload):
         mock_get_plan.assert_called_once()
         mock_onboard.assert_not_called()
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_webhook_user_already_exists(webhook_payload, mock_plan):
     """Test webhook returns 200 when user exists (idempotency)."""
     json_body = json.dumps(webhook_payload).encode('utf-8')
@@ -170,8 +170,8 @@ def test_webhook_user_already_exists(webhook_payload, mock_plan):
     # Simulate 409 Conflict from service
     from fastapi import HTTPException
     
-    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan), \
-         patch("src.main.api.shopify.webhooks.onboard_user", side_effect=HTTPException(status_code=409, detail="Exists")):
+    with patch("src.ecommerce.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan), \
+         patch("src.ecommerce.api.shopify.webhooks.onboard_user", side_effect=HTTPException(status_code=409, detail="Exists")):
 
         response = client.post(
             "/webhooks/subscription-activated",
@@ -181,15 +181,15 @@ def test_webhook_user_already_exists(webhook_payload, mock_plan):
 
         assert response.status_code == 200
 
-@patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
+@patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET)
 def test_webhook_unexpected_error(webhook_payload, mock_plan):
     """Test webhook returns 200 on unexpected errors."""
     json_body = json.dumps(webhook_payload).encode('utf-8')
     hmac_sig = generate_hmac(MOCK_SHOPIFY_SECRET, json_body)
     headers = {"X-Shopify-Hmac-Sha256": hmac_sig}
 
-    with patch("src.main.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan), \
-         patch("src.main.api.shopify.webhooks.onboard_user", side_effect=Exception("Unexpected Crash")):
+    with patch("src.ecommerce.api.shopify.webhooks.get_plan_by_name", return_value=mock_plan), \
+         patch("src.ecommerce.api.shopify.webhooks.onboard_user", side_effect=Exception("Unexpected Crash")):
 
         response = client.post(
             "/webhooks/subscription-activated",
