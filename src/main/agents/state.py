@@ -96,6 +96,10 @@ class MissionState:
     # Each entry: {"agent_name": "RewriterAgent", "has_gate": True}
     # When non-empty, overrides tier-based workflow and controls human gates per step.
     workflow_config: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Autonomous execution: when True, approved content is automatically pushed
+    # to external systems (Shopify, Meta, Flow). Set by orchestrator for Pro tier.
+    autonomous: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -145,6 +149,8 @@ class MissionState:
             "workflow_agents": self.workflow_agents,
             # Mission Architect pipeline config
             "workflow_config": self.workflow_config,
+            # Autonomous execution flag
+            "autonomous": self.autonomous,
         }
 
     @classmethod
@@ -200,6 +206,8 @@ class MissionState:
             workflow_agents=data.get("workflow_agents", []),
             # Mission Architect pipeline config
             workflow_config=data.get("workflow_config", []),
+            # Autonomous execution flag
+            autonomous=data.get("autonomous", False),
         )
 
     def add_log(self, message: str) -> None:
