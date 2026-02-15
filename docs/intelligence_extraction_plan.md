@@ -74,7 +74,7 @@ Transform flat Brand Soul text into a structured "Merchant Brain" that enforces 
 The high-reasoning LLM will extract this structured JSON from raw brand text:
 
 ```python
-# src/main/services/intelligence_extractor.py
+# src/ecommerce/services/intelligence_extractor.py
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -257,7 +257,7 @@ ALTER TABLE shops ADD COLUMN strategic_intelligence_updated_at TIMESTAMP;
 ### 4.1 Intelligence Extractor Service
 
 ```python
-# src/main/services/intelligence_extractor.py
+# src/ecommerce/services/intelligence_extractor.py
 
 class IntelligenceExtractorService:
     """
@@ -350,7 +350,7 @@ Identify relationships between entities as triplets.
 ### 4.2 Updated Brand Ingest Flow
 
 ```python
-# Update src/main/services/brand_ingest_service.py
+# Update src/ecommerce/services/brand_ingest_service.py
 
 async def ingest_brand_context_with_intelligence(
     db: Session,
@@ -469,7 +469,7 @@ async def ingest_brand_context_with_intelligence(
 ### 4.3 Enhanced RAG Service
 
 ```python
-# Update src/main/services/rag_service.py
+# Update src/agentic_core/rag/rag_service.py
 
 class RAGService:
     """Enhanced RAG with entity-aware retrieval."""
@@ -617,7 +617,7 @@ class RAGService:
 ### 4.4 Agent Integration
 
 ```python
-# Update src/main/agents/base.py
+# Update src/agentic_core/agents/base.py
 
 class BaseAgent(ABC):
     """Base agent with strategic intelligence integration."""
@@ -645,7 +645,7 @@ class BaseAgent(ABC):
         return await self._perceive_domain(state, context)
 
 
-# Update src/main/agents/context.py
+# Update src/agentic_core/agents/context.py
 
 @dataclass
 class AgentContext:
@@ -699,7 +699,7 @@ This brand embodies the {intel.get('archetype', '')} archetype.
 ### 4.5 Updated Rewriter/Marketing Prompts
 
 ```python
-# Update src/main/agents/rewriter/agent.py
+# Update src/ecommerce/agents/rewriter/agent.py
 
 def _build_system_prompt(self, state: MissionState, context: AgentContext) -> str:
     """Build system prompt with strategic intelligence."""
@@ -837,7 +837,7 @@ class BrandEntity(Base):
 ## 7. API Endpoints
 
 ```python
-# Add to src/main/api/controller.py
+# Add to src/ecommerce/api/controller.py
 
 @router.post("/api/admin/brand-intelligence/extract")
 async def extract_brand_intelligence(

@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
-from src.main.services.meta_service import MetaService, META_GRAPH_API
+from src.agentic_core.tools.meta_service import MetaService, META_GRAPH_API
 
 
 # =============================================================================
@@ -42,7 +42,7 @@ async def test_post_ad_photo_success(meta_service, valid_creds):
     mock_response.status_code = 200
     mock_response.json.return_value = {"id": "post_12345"}
 
-    with patch("src.main.services.meta_service.httpx.AsyncClient") as mock_client_cls:
+    with patch("src.agentic_core.tools.meta_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -71,7 +71,7 @@ async def test_post_ad_photo_includes_correct_payload(meta_service, valid_creds)
     mock_response.status_code = 200
     mock_response.json.return_value = {"id": "post_123"}
 
-    with patch("src.main.services.meta_service.httpx.AsyncClient") as mock_client_cls:
+    with patch("src.agentic_core.tools.meta_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -103,7 +103,7 @@ async def test_post_ad_text_only_success(meta_service, valid_creds):
     mock_response.status_code = 200
     mock_response.json.return_value = {"id": "post_text_456"}
 
-    with patch("src.main.services.meta_service.httpx.AsyncClient") as mock_client_cls:
+    with patch("src.agentic_core.tools.meta_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -131,7 +131,7 @@ async def test_post_ad_text_with_link(meta_service, valid_creds):
     mock_response.status_code = 200
     mock_response.json.return_value = {"id": "post_link_789"}
 
-    with patch("src.main.services.meta_service.httpx.AsyncClient") as mock_client_cls:
+    with patch("src.agentic_core.tools.meta_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -166,7 +166,7 @@ async def test_post_ad_api_error_returns_false(meta_service, valid_creds):
         "error": {"message": "Invalid OAuth 2.0 Access Token"}
     }
 
-    with patch("src.main.services.meta_service.httpx.AsyncClient") as mock_client_cls:
+    with patch("src.agentic_core.tools.meta_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -186,7 +186,7 @@ async def test_post_ad_api_error_returns_false(meta_service, valid_creds):
 @pytest.mark.asyncio
 async def test_post_ad_network_exception(meta_service, valid_creds):
     """Test that network exceptions are handled gracefully."""
-    with patch("src.main.services.meta_service.httpx.AsyncClient") as mock_client_cls:
+    with patch("src.agentic_core.tools.meta_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ConnectError("Connection refused")
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -213,7 +213,7 @@ async def test_post_ad_server_error(meta_service, valid_creds):
         "error": {"message": "An unexpected error has occurred."}
     }
 
-    with patch("src.main.services.meta_service.httpx.AsyncClient") as mock_client_cls:
+    with patch("src.agentic_core.tools.meta_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -237,7 +237,7 @@ async def test_post_ad_201_status_is_success(meta_service, valid_creds):
     mock_response.status_code = 201
     mock_response.json.return_value = {"post_id": "new_post_99"}
 
-    with patch("src.main.services.meta_service.httpx.AsyncClient") as mock_client_cls:
+    with patch("src.agentic_core.tools.meta_service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)

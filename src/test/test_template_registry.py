@@ -6,7 +6,7 @@ Tests template registration, filtering, and prompt content.
 
 import pytest
 
-from src.main.agents.templates.registry import (
+from src.ecommerce.templates.registry import (
     ContentTemplate,
     TemplateInput,
     TemplateCategory,
@@ -27,7 +27,7 @@ class TestTemplateRegistration:
     def test_registry_is_populated(self):
         """Templates should be registered on import of the package."""
         # Force import to trigger registration
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
 
         assert len(TEMPLATE_REGISTRY) >= 9, (
             f"Expected at least 9 templates (4 product + 5 marketing), got {len(TEMPLATE_REGISTRY)}"
@@ -46,7 +46,7 @@ class TestTemplateRegistration:
     )
     def test_product_template_exists(self, template_id):
         """Every product template must be registered."""
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         template = get_template(template_id)
         assert template is not None, f"Template '{template_id}' not found in registry"
         assert template.category == TemplateCategory.PRODUCT
@@ -66,7 +66,7 @@ class TestTemplateRegistration:
     )
     def test_marketing_template_exists(self, template_id):
         """Every marketing template must be registered."""
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         template = get_template(template_id)
         assert template is not None, f"Template '{template_id}' not found in registry"
         assert template.category == TemplateCategory.MARKETING
@@ -81,7 +81,7 @@ class TestTemplateStructure:
     """Verify template fields are well-formed."""
 
     def _all_templates(self):
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         return list(TEMPLATE_REGISTRY.values())
 
     def test_every_template_has_name_and_description(self):
@@ -115,29 +115,29 @@ class TestTemplateFiltering:
     """Verify list_templates filtering logic."""
 
     def test_filter_by_product_category(self):
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         results = list_templates(category=TemplateCategory.PRODUCT)
         assert all(t.category == TemplateCategory.PRODUCT for t in results)
         assert len(results) >= 4
 
     def test_filter_by_marketing_category(self):
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         results = list_templates(category=TemplateCategory.MARKETING)
         assert all(t.category == TemplateCategory.MARKETING for t in results)
         assert len(results) >= 5
 
     def test_filter_by_agent_type_rewriter(self):
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         results = list_templates(agent_type=AgentType.REWRITER)
         assert all(t.agent_type == AgentType.REWRITER for t in results)
 
     def test_filter_by_agent_type_marketing(self):
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         results = list_templates(agent_type=AgentType.MARKETING)
         assert all(t.agent_type == AgentType.MARKETING for t in results)
 
     def test_combined_filter(self):
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         results = list_templates(
             category=TemplateCategory.MARKETING,
         )
@@ -145,7 +145,7 @@ class TestTemplateFiltering:
             assert t.category == TemplateCategory.MARKETING
 
     def test_results_sorted_by_id(self):
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         results = list_templates()
         ids = [t.id for t in results]
         assert ids == sorted(ids), "list_templates should return results sorted by ID"
@@ -198,7 +198,7 @@ class TestPromptContent:
 
     def test_all_marketing_templates_return_json(self):
         """Marketing templates should request JSON output."""
-        import src.main.agents.templates  # noqa: F401
+        import src.ecommerce.templates  # noqa: F401
         marketing_templates = list_templates(category=TemplateCategory.MARKETING)
         for t in marketing_templates:
             assert t.system_prompt, f"Marketing template {t.id} has empty system_prompt"

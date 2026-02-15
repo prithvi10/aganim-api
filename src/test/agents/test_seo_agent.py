@@ -7,15 +7,15 @@ Tests SEO generation, CTR check, and SERP insights.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.agents.seo import SEOAgent
-from src.main.agents.seo.schemas import (
+from src.ecommerce.agents.seo import SEOAgent
+from src.ecommerce.agents.seo.schemas import (
     SEOOutput,
     SEOInsights,
     CTRCheck,
     SerpCompetitor,
 )
-from src.main.agents.state import MissionState
-from src.main.agents.context import AgentContext, AgentPlan
+from src.ecommerce.state import MissionState
+from src.agentic_core.agents.context import AgentContext, AgentPlan
 
 
 # =============================================================================

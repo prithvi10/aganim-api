@@ -1,4 +1,4 @@
-from src.main.core.generation import _render_brand_context_block, _should_use_brand_context
+from src.ecommerce.core.generation import _render_brand_context_block, _should_use_brand_context
 
 
 def test_brand_context_block_rendering():

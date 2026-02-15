@@ -10,8 +10,8 @@ from urllib.parse import urlencode, quote
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.main.api.main import app
-from src.main.db.database import get_db, Base
+from src.ecommerce.api.main import app
+from src.shared.db.database import get_db, Base
 
 # Setup In-Memory DB
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -102,10 +102,10 @@ def test_integration_oauth_handshake(client): # Inject client fixture
 
     # 3. Execute Request with Patched Secrets
     # Patch in the oauth module where these are used
-    with patch("src.main.security.security.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
-         patch("src.main.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_INTEGRATION_KEY), \
-         patch("src.main.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
-         patch("src.main.api.shopify.oauth.SHOPIFY_UI_URL", "https://ui.test.com"):
+    with patch("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
+         patch("src.ecommerce.api.shopify.oauth.SHOPIFY_API_KEY", MOCK_INTEGRATION_KEY), \
+         patch("src.ecommerce.api.shopify.oauth.SHOPIFY_API_SECRET", MOCK_INTEGRATION_SECRET), \
+         patch("src.ecommerce.api.shopify.oauth.SHOPIFY_UI_URL", "https://ui.test.com"):
         
         response = client.get("/api/auth/callback", params=params, follow_redirects=False)
         

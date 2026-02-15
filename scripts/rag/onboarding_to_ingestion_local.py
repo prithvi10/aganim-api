@@ -9,8 +9,8 @@ import httpx
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from src.main.db.db_models import StoreContext, Shop, Plan, User
-from src.main.service.brand_context_retrieval import get_brand_context
+from src.ecommerce.db.models import StoreContext, Shop, Plan, User
+from src.agentic_core.rag.rag_service import get_brand_context
 
 
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")

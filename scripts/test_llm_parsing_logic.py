@@ -5,7 +5,7 @@ import os
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
+from src.shared.utils.llm_parser import parse_llm_json, recover_title_desc
 
 def test_parsing():
     scenarios = [

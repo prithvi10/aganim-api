@@ -15,7 +15,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 from datetime import datetime, timezone
 
-from src.main.api.main import app
+from src.ecommerce.api.main import app
 
 
 # =============================================================================
@@ -25,7 +25,7 @@ from src.main.api.main import app
 @pytest.fixture
 def client():
     """Create test client with auth dependency override."""
-    from src.main.api.shopify.shared import resolve_shop_domain
+    from src.ecommerce.api.shopify.shared import resolve_shop_domain
     
     # Override auth to return test shop
     app.dependency_overrides[resolve_shop_domain] = lambda: "test-shop.myshopify.com"
@@ -51,7 +51,7 @@ def mock_db_session():
 @pytest.fixture
 def sample_mission():
     """Create a sample mission record."""
-    from src.main.db.db_models import Mission
+    from src.ecommerce.db.models import Mission
     
     mission = MagicMock(spec=Mission)
     mission.id = "test-mission-123"
@@ -84,7 +84,7 @@ def sample_mission():
 
 def test_list_missions_returns_missions_for_shop(client, sample_mission):
     """Test that /api/missions returns missions for the authenticated shop."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     from datetime import datetime, timezone
     
     # Create a second mission
@@ -132,7 +132,7 @@ def test_list_missions_returns_missions_for_shop(client, sample_mission):
 
 def test_list_missions_empty(client):
     """Test that /api/missions returns empty list for shop with no missions."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     mock_session = MagicMock()
     mock_query = MagicMock()
@@ -154,7 +154,7 @@ def test_list_missions_empty(client):
 
 def test_list_missions_respects_limit_parameter(client, sample_mission):
     """Test that /api/missions respects the limit query parameter."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     mock_session = MagicMock()
     mock_query = MagicMock()
@@ -174,7 +174,7 @@ def test_list_missions_respects_limit_parameter(client, sample_mission):
 
 def test_list_missions_includes_all_status_fields(client):
     """Test that /api/missions returns all expected fields for each mission."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     from datetime import datetime, timezone
     
     mission = MagicMock()
@@ -216,7 +216,7 @@ def test_list_missions_includes_all_status_fields(client):
 
 def test_list_missions_handles_null_product_name(client):
     """Test that /api/missions handles missions without product_name in state."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     from datetime import datetime, timezone
     
     mission = MagicMock()
@@ -250,7 +250,7 @@ def test_list_missions_handles_null_product_name(client):
 
 def test_list_missions_handles_null_current_state(client):
     """Test that /api/missions handles missions with null current_state."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     from datetime import datetime, timezone
     
     mission = MagicMock()
@@ -287,7 +287,7 @@ def test_list_missions_handles_null_current_state(client):
 
 def test_get_mission_status_returns_structured_response(client, sample_mission):
     """Test that /status returns structured MissionStatusResponse."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     mock_session = MagicMock()
     mock_session.query.return_value.filter.return_value.first.return_value = sample_mission
@@ -311,7 +311,7 @@ def test_get_mission_status_returns_structured_response(client, sample_mission):
 
 def test_get_mission_status_includes_current_state(client, sample_mission):
     """Test that /status includes current_state for mission resumption."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     # Add more fields to current_state for a completed mission
     sample_mission.status = "COMPLETED"
@@ -361,7 +361,7 @@ def test_get_mission_status_includes_current_state(client, sample_mission):
 
 def test_get_mission_status_current_state_for_in_progress(client, sample_mission):
     """Test that /status returns current_state for in-progress missions."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state = {
@@ -394,7 +394,7 @@ def test_get_mission_status_current_state_for_in_progress(client, sample_mission
 
 def test_get_mission_status_not_found(client):
     """Test /status returns 404 for non-existent mission."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     mock_session = MagicMock()
     mock_session.query.return_value.filter.return_value.first.return_value = None
@@ -410,7 +410,7 @@ def test_get_mission_status_not_found(client):
 
 def test_get_mission_status_includes_agent_outputs(client, sample_mission):
     """Test /status includes agent_outputs for completed steps."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.current_state["agent_outputs"] = {
         "RewriterAgent": {"draft_title": "Test Title"}
@@ -436,7 +436,7 @@ def test_get_mission_status_includes_agent_outputs(client, sample_mission):
 
 def test_get_mission_status_includes_skipped_agents(client, sample_mission):
     """Test /status includes skipped_agents list."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.current_state["skipped_agents"] = ["MarketingAgent"]
     
@@ -461,7 +461,7 @@ def test_get_mission_status_includes_skipped_agents(client, sample_mission):
 
 def test_continue_step_advances_index(client, sample_mission):
     """Test /continue advances current_agent_index."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -486,7 +486,7 @@ def test_continue_step_advances_index(client, sample_mission):
 
 def test_continue_step_completes_at_end(client, sample_mission):
     """Test /continue marks complete at last agent."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -501,9 +501,9 @@ def test_continue_step_completes_at_end(client, sample_mission):
     app.dependency_overrides[get_db] = lambda: mock_session
     
     # Mock Shopify save functions - patch where they're used (imported inside the function)
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="test-token"), \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save, \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_metafields:
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value="test-token"), \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save, \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_metafields:
         
         response = client.post(f"/api/missions/{sample_mission.id}/continue")
     
@@ -518,7 +518,7 @@ def test_continue_step_completes_at_end(client, sample_mission):
 
 def test_continue_step_rejects_wrong_status(client, sample_mission):
     """Test /continue rejects if mission not in AWAITING_APPROVAL."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "IN_PROGRESS"  # Wrong status
     
@@ -536,7 +536,7 @@ def test_continue_step_rejects_wrong_status(client, sample_mission):
 
 def test_continue_step_not_found(client):
     """Test /continue returns 404 for non-existent mission."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     mock_session = MagicMock()
     mock_session.query.return_value.filter.return_value.first.return_value = None
@@ -556,7 +556,7 @@ def test_continue_step_not_found(client):
 
 def test_regenerate_step_sets_feedback(client, sample_mission):
     """Test /regenerate sets regeneration_feedback."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -583,7 +583,7 @@ def test_regenerate_step_sets_feedback(client, sample_mission):
 
 def test_regenerate_step_without_feedback(client, sample_mission):
     """Test /regenerate works without feedback."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -608,7 +608,7 @@ def test_regenerate_step_without_feedback(client, sample_mission):
 
 def test_regenerate_step_rejects_wrong_status(client, sample_mission):
     """Test /regenerate rejects if mission not in AWAITING_APPROVAL."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "COMPLETED"  # Wrong status
     
@@ -633,7 +633,7 @@ def test_regenerate_step_rejects_wrong_status(client, sample_mission):
 
 def test_skip_step_records_agent(client, sample_mission):
     """Test /skip records the skipped agent."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -658,7 +658,7 @@ def test_skip_step_records_agent(client, sample_mission):
 
 def test_skip_step_advances_index(client, sample_mission):
     """Test /skip advances to next agent."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -682,7 +682,7 @@ def test_skip_step_advances_index(client, sample_mission):
 
 def test_skip_step_completes_at_end(client, sample_mission):
     """Test /skip marks complete at last agent."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -697,9 +697,9 @@ def test_skip_step_completes_at_end(client, sample_mission):
     app.dependency_overrides[get_db] = lambda: mock_session
     
     # Mock Shopify save functions (may be called on completion) - patch where they're used
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="test-token"), \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value="test-token"), \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
         
         response = client.post(f"/api/missions/{sample_mission.id}/skip")
     
@@ -714,7 +714,7 @@ def test_skip_step_completes_at_end(client, sample_mission):
 
 def test_skip_step_allows_pending_status(client, sample_mission):
     """Test /skip also accepts PENDING status (for skipping before run)."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "PENDING"
     sample_mission.current_state["status"] = "PENDING"
@@ -733,7 +733,7 @@ def test_skip_step_allows_pending_status(client, sample_mission):
 
 def test_skip_step_rejects_completed(client, sample_mission):
     """Test /skip rejects if mission already completed."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "COMPLETED"
     
@@ -755,8 +755,8 @@ def test_skip_step_rejects_completed(client, sample_mission):
 
 def test_create_mission_returns_step_info(client):
     """Test POST /api/missions returns step-by-step journey info."""
-    from src.main.db.database import get_db
-    from src.main.api.validation import validate_shop_and_quota
+    from src.shared.db.database import get_db
+    from src.ecommerce.api.validation import validate_shop_and_quota
     
     mock_session = MagicMock()
     
@@ -767,7 +767,7 @@ def test_create_mission_returns_step_info(client):
     app.dependency_overrides[get_db] = lambda: mock_session
     app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
     
-    with patch("src.main.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
         response = client.post(
             "/api/missions",
             json={
@@ -797,8 +797,8 @@ def test_create_mission_returns_step_info(client):
 
 def test_run_step_rejects_if_already_in_progress(client, sample_mission):
     """Test /run-step rejects if step already in progress."""
-    from src.main.db.database import get_db
-    from src.main.api.shopify.missions import _mission_locks
+    from src.shared.db.database import get_db
+    from src.ecommerce.api.shopify.missions import _mission_locks
     
     sample_mission.status = "PENDING"
     
@@ -823,8 +823,8 @@ def test_run_step_rejects_if_already_in_progress(client, sample_mission):
 
 def test_run_step_resets_stuck_in_progress_mission(client, sample_mission):
     """Test /run-step resets stuck IN_PROGRESS mission (no lock held) instead of returning 409."""
-    from src.main.db.database import get_db
-    from src.main.api.shopify.missions import _mission_locks
+    from src.shared.db.database import get_db
+    from src.ecommerce.api.shopify.missions import _mission_locks
     
     # Mission is IN_PROGRESS but no lock (simulates interrupted previous run)
     sample_mission.status = "IN_PROGRESS"
@@ -852,7 +852,7 @@ def test_run_step_resets_stuck_in_progress_mission(client, sample_mission):
 
 def test_run_step_rejects_completed_mission(client, sample_mission):
     """Test /run-step rejects already completed mission."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "COMPLETED"
     
@@ -872,7 +872,7 @@ def test_run_step_rejects_completed_mission(client, sample_mission):
 
 def test_run_step_rejects_error_mission(client, sample_mission):
     """Test /run-step rejects mission in error state."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "ERROR"
     
@@ -896,7 +896,7 @@ def test_run_step_rejects_error_mission(client, sample_mission):
 
 def test_status_with_empty_workflow_agents(client, sample_mission):
     """Test /status handles empty workflow_agents gracefully."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.current_state["workflow_agents"] = []
     
@@ -918,7 +918,7 @@ def test_status_with_empty_workflow_agents(client, sample_mission):
 
 def test_continue_at_index_zero(client, sample_mission):
     """Test /continue from first agent."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -941,7 +941,7 @@ def test_continue_at_index_zero(client, sample_mission):
 
 def test_regenerate_empty_body(client, sample_mission):
     """Test /regenerate accepts completely empty body."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -970,7 +970,7 @@ def test_regenerate_empty_body(client, sample_mission):
 
 def test_continue_completion_saves_product_content(client, sample_mission):
     """Test /continue saves product content to Shopify when mission completes."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -989,9 +989,9 @@ def test_continue_completion_saves_product_content(client, sample_mission):
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="test-access-token") as mock_get_token, \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value="test-access-token") as mock_get_token, \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
         
         response = client.post(f"/api/missions/{sample_mission.id}/continue")
     
@@ -1012,7 +1012,7 @@ def test_continue_completion_saves_product_content(client, sample_mission):
 
 def test_continue_completion_saves_metafields(client, sample_mission):
     """Test /continue saves metafields when mission completes with agent data."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -1037,9 +1037,9 @@ def test_continue_completion_saves_metafields(client, sample_mission):
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="token"), \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value="token"), \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
         
         response = client.post(f"/api/missions/{sample_mission.id}/continue")
     
@@ -1069,7 +1069,7 @@ def test_continue_completion_saves_metafields(client, sample_mission):
 
 def test_continue_completion_no_save_without_access_token(client, sample_mission):
     """Test /continue skips Shopify save if no access token."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -1083,9 +1083,9 @@ def test_continue_completion_no_save_without_access_token(client, sample_mission
     app.dependency_overrides[get_db] = lambda: mock_session
     
     # Return None for access token
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value=None), \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value=None), \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
         
         response = client.post(f"/api/missions/{sample_mission.id}/continue")
     
@@ -1100,7 +1100,7 @@ def test_continue_completion_no_save_without_access_token(client, sample_mission
 
 def test_continue_completion_no_save_without_content(client, sample_mission):
     """Test /continue skips product content save if no draft content."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -1115,9 +1115,9 @@ def test_continue_completion_no_save_without_content(client, sample_mission):
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="token"), \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value="token"), \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock) as mock_save_meta:
         
         response = client.post(f"/api/missions/{sample_mission.id}/continue")
     
@@ -1133,7 +1133,7 @@ def test_continue_completion_no_save_without_content(client, sample_mission):
 
 def test_continue_completion_handles_shopify_error_gracefully(client, sample_mission):
     """Test /continue handles Shopify save errors gracefully without failing."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -1152,9 +1152,9 @@ def test_continue_completion_handles_shopify_error_gracefully(client, sample_mis
     # Mock save to raise an exception
     mock_save_content = AsyncMock(side_effect=Exception("Shopify API Error"))
     
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="token"), \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", mock_save_content), \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value="token"), \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", mock_save_content), \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
         
         response = client.post(f"/api/missions/{sample_mission.id}/continue")
     
@@ -1168,7 +1168,7 @@ def test_continue_completion_handles_shopify_error_gracefully(client, sample_mis
 
 def test_skip_completion_saves_to_shopify(client, sample_mission):
     """Test /skip saves to Shopify when mission completes via skip."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -1184,9 +1184,9 @@ def test_skip_completion_saves_to_shopify(client, sample_mission):
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="token"), \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value="token"), \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
         
         response = client.post(f"/api/missions/{sample_mission.id}/skip")
     
@@ -1208,7 +1208,7 @@ def test_skip_completion_saves_to_shopify(client, sample_mission):
 
 def test_approve_step_advances_index(client, sample_mission):
     """Test /approve advances current_agent_index (alias for /continue)."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -1232,7 +1232,7 @@ def test_approve_step_advances_index(client, sample_mission):
 
 def test_approve_step_completes_at_end(client, sample_mission):
     """Test /approve marks complete at last agent."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "AWAITING_APPROVAL"
     sample_mission.current_state["status"] = "AWAITING_APPROVAL"
@@ -1245,9 +1245,9 @@ def test_approve_step_completes_at_end(client, sample_mission):
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
-    with patch("src.main.db.db_transactions.get_shop_access_token", return_value="test-token"), \
-         patch("src.main.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
-         patch("src.main.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
+    with patch("src.ecommerce.db.transactions.get_shop_access_token", return_value="test-token"), \
+         patch("src.ecommerce.services.shopify_service.save_product_content_with_locale", new_callable=AsyncMock), \
+         patch("src.ecommerce.services.shopify_service.save_product_metafields", new_callable=AsyncMock):
         
         response = client.post(f"/api/missions/{sample_mission.id}/approve")
     
@@ -1262,7 +1262,7 @@ def test_approve_step_completes_at_end(client, sample_mission):
 
 def test_approve_step_rejects_wrong_status(client, sample_mission):
     """Test /approve rejects if mission not in AWAITING_APPROVAL."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.status = "IN_PROGRESS"  # Wrong status
     
@@ -1280,7 +1280,7 @@ def test_approve_step_rejects_wrong_status(client, sample_mission):
 
 def test_approve_step_not_found(client):
     """Test /approve returns 404 for non-existent mission."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     mock_session = MagicMock()
     mock_session.query.return_value.filter.return_value.first.return_value = None
@@ -1300,8 +1300,8 @@ def test_approve_step_not_found(client):
 
 def test_create_mission_with_workflow_config(client):
     """Test POST /api/missions accepts workflow_config."""
-    from src.main.db.database import get_db
-    from src.main.api.validation import validate_shop_and_quota
+    from src.shared.db.database import get_db
+    from src.ecommerce.api.validation import validate_shop_and_quota
     
     mock_session = MagicMock()
     
@@ -1316,7 +1316,7 @@ def test_create_mission_with_workflow_config(client):
         {"agent_name": "RewriterAgent", "has_gate": False},
     ]
     
-    with patch("src.main.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
         response = client.post(
             "/api/missions",
             json={
@@ -1343,8 +1343,8 @@ def test_create_mission_with_workflow_config(client):
 
 def test_create_mission_workflow_config_stored_in_state(client):
     """Test that workflow_config is stored in mission current_state."""
-    from src.main.db.database import get_db
-    from src.main.api.validation import validate_shop_and_quota
+    from src.shared.db.database import get_db
+    from src.ecommerce.api.validation import validate_shop_and_quota
     
     mock_session = MagicMock()
     
@@ -1360,7 +1360,7 @@ def test_create_mission_workflow_config_stored_in_state(client):
         {"agent_name": "PriceScoutAgent", "has_gate": True},
     ]
     
-    with patch("src.main.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
         response = client.post(
             "/api/missions",
             json={
@@ -1388,8 +1388,8 @@ def test_create_mission_workflow_config_stored_in_state(client):
 
 def test_create_mission_workflow_config_overrides_requested_agents(client):
     """Test that workflow_config takes priority over requested_agents."""
-    from src.main.db.database import get_db
-    from src.main.api.validation import validate_shop_and_quota
+    from src.shared.db.database import get_db
+    from src.ecommerce.api.validation import validate_shop_and_quota
     
     mock_session = MagicMock()
     
@@ -1399,7 +1399,7 @@ def test_create_mission_workflow_config_overrides_requested_agents(client):
     app.dependency_overrides[get_db] = lambda: mock_session
     app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
     
-    with patch("src.main.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
         response = client.post(
             "/api/missions",
             json={
@@ -1425,7 +1425,7 @@ def test_create_mission_workflow_config_overrides_requested_agents(client):
 
 def test_status_includes_workflow_config(client, sample_mission):
     """Test /status includes workflow_config when present in state."""
-    from src.main.db.database import get_db
+    from src.shared.db.database import get_db
     
     sample_mission.current_state["workflow_config"] = [
         {"agent_name": "RewriterAgent", "has_gate": True},

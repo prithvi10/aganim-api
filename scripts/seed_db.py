@@ -7,8 +7,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from src.main.db.database import SessionLocal, engine, Base
-from src.main.db.db_models import Plan, User, Shop, BrandEntity
+from src.shared.db.database import SessionLocal, engine, Base
+from src.ecommerce.db.models import Plan, User, Shop, BrandEntity
 
 def _ensure_plan_columns_exist():
     """

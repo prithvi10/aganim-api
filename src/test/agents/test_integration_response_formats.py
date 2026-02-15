@@ -9,13 +9,13 @@ import pytest
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-from src.main.agents.rewriter import RewriterAgent
+from src.ecommerce.agents.rewriter import RewriterAgent
 CopywriterAgent = RewriterAgent  # Backward compat alias
-from src.main.agents.seo import SEOAgent
-from src.main.agents.marketing import MarketingAgent
-from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.price_scout.schemas import PricingAnalysis, FilteredCompetitorsResponse
-from src.main.agents.state import MissionState
+from src.ecommerce.agents.seo import SEOAgent
+from src.ecommerce.agents.marketing import MarketingAgent
+from src.ecommerce.agents.price_scout import PriceScoutAgent
+from src.ecommerce.agents.price_scout.schemas import PricingAnalysis, FilteredCompetitorsResponse
+from src.ecommerce.state import MissionState
 
 
 # =============================================================================

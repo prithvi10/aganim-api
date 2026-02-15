@@ -10,9 +10,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.main.api.main import app
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import Plan, Shop, User
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import Plan, Shop, User
 
 
 MOCK_SHOPIFY_SECRET = "test_secret_key"
@@ -105,7 +105,7 @@ def _rewrite_success(client: TestClient, shop_domain: str):
 @pytest.fixture
 def integration_client(monkeypatch):
     # Patch secret used by verify_webhook_signature
-    monkeypatch.setattr("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET, raising=False)
+    monkeypatch.setattr("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET, raising=False)
 
     # In-memory DB (StaticPool so threads share the same DB)
     engine = create_engine(
@@ -137,7 +137,7 @@ def integration_client(monkeypatch):
 
     # Patch in the proxy module where the function is used
     monkeypatch.setattr(
-        "src.main.api.shopify.proxy.process_generation_request",
+        "src.ecommerce.api.shopify.proxy.process_generation_request",
         _mock_generation_request,
         raising=True,
     )

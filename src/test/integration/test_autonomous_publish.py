@@ -8,13 +8,14 @@ verifying that Pro tier triggers publishing and non-Pro does not.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.agents.orchestrator import MissionControl
-from src.main.agents.state import MissionState
-from src.main.agents.rewriter import RewriterAgent
-from src.main.agents.seo import SEOAgent
-from src.main.agents.marketing import MarketingAgent
-from src.main.agents.price_scout import PriceScoutAgent
-from src.main.services.meta_service import MetaService
+from src.ecommerce.orchestrator import MissionControl
+from src.ecommerce.state import MissionState
+from src.ecommerce.agents.rewriter import RewriterAgent
+from src.ecommerce.agents.seo import SEOAgent
+from src.ecommerce.agents.marketing import MarketingAgent
+from src.ecommerce.agents.price_scout import PriceScoutAgent
+from src.agentic_core.tools.meta_service import MetaService
+from src.ecommerce.publish_adapters import ShopifyPublishAdapter
 
 CopywriterAgent = RewriterAgent
 
@@ -250,6 +251,7 @@ async def test_auto_proceed_step_also_publishes(mock_services, pro_state):
 async def test_price_scout_publish_respects_guardrails():
     """Test that PriceScoutAgent._maybe_publish validates against price guardrails."""
     mock_services = MagicMock()
+    mock_services.publish_adapter = ShopifyPublishAdapter()
 
     state = MissionState(
         product_id="product-123",
@@ -264,7 +266,7 @@ async def test_price_scout_publish_respects_guardrails():
     mock_db = MagicMock()
     state.db = mock_db
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={
+    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
         "access_token": "shpat_test",
         "price_guardrails": {"min_price": 10, "max_price": 100},
     }):
@@ -279,6 +281,7 @@ async def test_price_scout_publish_respects_guardrails():
 async def test_price_scout_publish_succeeds_within_guardrails():
     """Test that PriceScoutAgent publishes when price is within guardrails."""
     mock_services = MagicMock()
+    mock_services.publish_adapter = ShopifyPublishAdapter()
 
     state = MissionState(
         product_id="product-123",
@@ -292,10 +295,10 @@ async def test_price_scout_publish_succeeds_within_guardrails():
     mock_db = MagicMock()
     state.db = mock_db
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={
+    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
         "access_token": "shpat_test",
         "price_guardrails": {"min_price": 10, "max_price": 100},
-    }), patch('src.main.services.shopify_service.update_variant_price', new_callable=AsyncMock) as mock_update:
+    }), patch('src.ecommerce.services.shopify_service.update_variant_price', new_callable=AsyncMock) as mock_update:
         agent = PriceScoutAgent("shop.myshopify.com", services=mock_services)
         is_published, error = await agent._maybe_publish(state, "product/price-update")
 
@@ -312,6 +315,7 @@ async def test_price_scout_publish_succeeds_within_guardrails():
 async def test_rewriter_publish_product_body():
     """Test RewriterAgent publishes product body for product/description template."""
     mock_services = MagicMock()
+    mock_services.publish_adapter = ShopifyPublishAdapter()
 
     state = MissionState(
         product_id="product-123",
@@ -325,9 +329,9 @@ async def test_rewriter_publish_product_body():
     mock_db = MagicMock()
     state.db = mock_db
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={
+    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
         "access_token": "shpat_test",
-    }), patch('src.main.services.shopify_service.update_product_body', new_callable=AsyncMock) as mock_update:
+    }), patch('src.ecommerce.services.shopify_service.update_product_body', new_callable=AsyncMock) as mock_update:
         agent = RewriterAgent("shop.myshopify.com", services=mock_services)
         is_published, error = await agent._maybe_publish(state, "product/description")
 
@@ -345,6 +349,7 @@ async def test_rewriter_publish_product_body():
 async def test_rewriter_publish_faq_appends_to_body():
     """Test RewriterAgent appends FAQ HTML to product description body."""
     mock_services = MagicMock()
+    mock_services.publish_adapter = ShopifyPublishAdapter()
 
     state = MissionState(
         product_id="product-123",
@@ -358,11 +363,11 @@ async def test_rewriter_publish_faq_appends_to_body():
     mock_db = MagicMock()
     state.db = mock_db
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={
+    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
         "access_token": "shpat_test",
     }), \
-    patch('src.main.services.shopify_service.get_product_body', new_callable=AsyncMock, return_value="<p>Existing desc</p>") as mock_get, \
-    patch('src.main.services.shopify_service.update_product_body', new_callable=AsyncMock) as mock_update:
+    patch('src.ecommerce.services.shopify_service.get_product_body', new_callable=AsyncMock, return_value="<p>Existing desc</p>") as mock_get, \
+    patch('src.ecommerce.services.shopify_service.update_product_body', new_callable=AsyncMock) as mock_update:
         agent = RewriterAgent("shop.myshopify.com", services=mock_services)
         is_published, error = await agent._maybe_publish(state, "product/faq")
 
@@ -387,6 +392,7 @@ async def test_rewriter_publish_faq_appends_to_body():
 async def test_marketing_publish_flow_event():
     """Test MarketingAgent publishes email content via Shopify Flow."""
     mock_services = MagicMock()
+    mock_services.publish_adapter = ShopifyPublishAdapter()
 
     state = MissionState(
         product_id="product-123",
@@ -400,9 +406,9 @@ async def test_marketing_publish_flow_event():
     mock_db = MagicMock()
     state.db = mock_db
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={
+    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
         "access_token": "shpat_test",
-    }), patch('src.main.services.shopify_service.trigger_flow_event', new_callable=AsyncMock) as mock_trigger:
+    }), patch('src.ecommerce.services.shopify_service.trigger_flow_event', new_callable=AsyncMock) as mock_trigger:
         agent = MarketingAgent("shop.myshopify.com", services=mock_services)
         is_published, error = await agent._maybe_publish(state, "marketing/email-launch")
 
@@ -418,6 +424,7 @@ async def test_marketing_publish_meta_ad():
     mock_meta.post_ad = AsyncMock(return_value=(True, "post_99"))
 
     mock_services = MagicMock()
+    mock_services.publish_adapter = ShopifyPublishAdapter()
     mock_services.meta = mock_meta
 
     state = MissionState(
@@ -432,7 +439,7 @@ async def test_marketing_publish_meta_ad():
     mock_db = MagicMock()
     state.db = mock_db
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={
+    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
         "access_token": "shpat_test",
         "meta_access_token": "EAA_token",
         "meta_page_id": "page_123",
@@ -452,6 +459,7 @@ async def test_marketing_publish_meta_ad():
 async def test_marketing_meta_ad_fails_without_credentials():
     """Test that MarketingAgent Meta ad fails without Meta credentials."""
     mock_services = MagicMock()
+    mock_services.publish_adapter = ShopifyPublishAdapter()
     mock_services.meta = MagicMock(spec=MetaService)
 
     state = MissionState(
@@ -466,7 +474,7 @@ async def test_marketing_meta_ad_fails_without_credentials():
     mock_db = MagicMock()
     state.db = mock_db
 
-    with patch('src.main.services.shopify_service.get_shop_credentials', return_value={
+    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
         "access_token": "shpat_test",
         "meta_access_token": None,
         "meta_page_id": None,

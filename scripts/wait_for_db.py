@@ -7,7 +7,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.exc import OperationalError
-from src.main.db.database import engine
+from src.shared.db.database import engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

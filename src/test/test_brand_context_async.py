@@ -4,11 +4,11 @@ from unittest.mock import patch
 from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
 
-from src.main.api.main import app
-from src.main.api.shopify import admin as admin_module
-from src.main.api.shopify.shared import resolve_shop_domain
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import Shop
+from src.ecommerce.api.main import app
+from src.ecommerce.api.shopify import admin as admin_module
+from src.ecommerce.api.shopify.shared import resolve_shop_domain
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import Shop
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
 engine = create_engine(

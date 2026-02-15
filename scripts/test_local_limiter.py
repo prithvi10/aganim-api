@@ -6,7 +6,7 @@ import os
 # Add the project root directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.main.security.ratelimiter import InMemoryRateLimiter
+from src.shared.security.ratelimiter import InMemoryRateLimiter
 
 # Use the class provided above
 limiter = InMemoryRateLimiter([

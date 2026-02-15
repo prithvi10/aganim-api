@@ -6,10 +6,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
 
-from src.main.api.main import app
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import Plan, User, Shop
-from src.main.security.security import verify_shopify_session
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import Plan, User, Shop
+from src.shared.security.security import verify_shopify_session
 
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -192,8 +192,8 @@ def test_agent_endpoint_invalid_token_returns_401(seed_shop):
     original_override = app.dependency_overrides.pop(verify_shopify_session, None)
     
     with TestClient(app, raise_server_exceptions=False) as test_client:
-        with patch("src.main.security.security.SHOPIFY_API_KEY", "test-key"), \
-             patch("src.main.security.security.SHOPIFY_API_SECRET", "test-secret"):
+        with patch("src.shared.security.security.SHOPIFY_API_KEY", "test-key"), \
+             patch("src.shared.security.security.SHOPIFY_API_SECRET", "test-secret"):
             resp = test_client.post(
                 "/apps/cross-border/agent",
                 headers={"Authorization": "Bearer not-a-real-token"},

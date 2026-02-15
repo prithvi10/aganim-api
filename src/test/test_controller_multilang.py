@@ -6,10 +6,10 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from sqlalchemy.orm import Session
 from datetime import date
 
-from src.main.api.main import app
-from src.main.db.database import get_db
-from src.main.db.db_models import User, Plan
-from src.main.security.security import SHOPIFY_API_SECRET
+from src.ecommerce.api.main import app
+from src.shared.db.database import get_db
+from src.ecommerce.db.models import User, Plan
+from src.shared.security.security import SHOPIFY_API_SECRET
 
 client = TestClient(app)
 
@@ -42,7 +42,7 @@ async def test_get_shop_locales_success(mock_auth_context):
     ]
     
     # Patch in the proxy module where fetch_shop_locales is used
-    with patch("src.main.api.shopify.proxy.fetch_shop_locales", new_callable=AsyncMock) as mock_fetch:
+    with patch("src.ecommerce.api.shopify.proxy.fetch_shop_locales", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = {"status": "success", "locales": mock_locales}
 
         canonical = f"shop={shop}"
@@ -65,8 +65,8 @@ async def test_controller_delegates_to_core_generation(mock_auth_context):
     shop = "test-shop.myshopify.com"
     
     # Patch in the proxy module where these are used
-    with patch("src.main.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.api.shopify.proxy.process_generation_request", new_callable=AsyncMock) as mock_process:
+    with patch("src.ecommerce.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
+         patch("src.ecommerce.api.shopify.proxy.process_generation_request", new_callable=AsyncMock) as mock_process:
         
         mock_process.return_value = {"status": "success", "data": {"title": "T", "description": "D"}}
 

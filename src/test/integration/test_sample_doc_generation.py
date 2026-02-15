@@ -22,10 +22,10 @@ import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
-from src.main.agents.rewriter import RewriterAgent
-from src.main.agents.marketing import MarketingAgent
-from src.main.agents.state import MissionState
-from src.main.agents.context import AgentContext
+from src.ecommerce.agents.rewriter import RewriterAgent
+from src.ecommerce.agents.marketing import MarketingAgent
+from src.ecommerce.state import MissionState
+from src.agentic_core.agents.context import AgentContext
 
 from src.test.fixtures.brand_soul_fixtures import (
     BRAND_SOUL_RAW_TEXT,

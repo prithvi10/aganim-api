@@ -2,9 +2,9 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from sqlalchemy.orm import Session
 
-from src.main.core.generation import process_bulk_generation_request
-from src.main.db.db_models import User, Plan
-from src.main.api.models import BulkRewriteRequest
+from src.ecommerce.core.generation import process_bulk_generation_request
+from src.ecommerce.db.models import User, Plan
+from src.ecommerce.api.models import BulkRewriteRequest
 
 
 @pytest.fixture
@@ -53,10 +53,10 @@ async def test_basic_tier_prompt_includes_seo_ctr_engineering_block(mock_db, moc
         seen_prompts.append(system_prompt)
         return _fake_openai_response()
 
-    with patch("src.main.core.generation.limiter.is_allowed", return_value=True), \
-         patch("src.main.core.generation.openai_service.generate_copy", side_effect=_capture_generate_copy), \
-         patch("src.main.core.generation.get_shop_access_token", return_value=None), \
-         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock):
+    with patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True), \
+         patch("src.ecommerce.core.generation.openai_service.generate_copy", side_effect=_capture_generate_copy), \
+         patch("src.ecommerce.core.generation.get_shop_access_token", return_value=None), \
+         patch("src.ecommerce.core.generation.save_product_content_with_locale", new_callable=AsyncMock):
         result = await process_bulk_generation_request(mock_db, req, mock_user, mock_plan_basic)
 
     assert result["status"] == "success"
@@ -83,10 +83,10 @@ async def test_misc_toggle_in_prompt_moves_misc_section_when_off(mock_db, mock_u
         seen_prompts.append(system_prompt)
         return _fake_openai_response()
 
-    with patch("src.main.core.generation.limiter.is_allowed", return_value=True), \
-         patch("src.main.core.generation.openai_service.generate_copy", side_effect=_capture_generate_copy), \
-         patch("src.main.core.generation.get_shop_access_token", return_value=None), \
-         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock):
+    with patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True), \
+         patch("src.ecommerce.core.generation.openai_service.generate_copy", side_effect=_capture_generate_copy), \
+         patch("src.ecommerce.core.generation.get_shop_access_token", return_value=None), \
+         patch("src.ecommerce.core.generation.save_product_content_with_locale", new_callable=AsyncMock):
         await process_bulk_generation_request(mock_db, req, mock_user, mock_plan_basic)
 
     assert len(seen_prompts) == 1

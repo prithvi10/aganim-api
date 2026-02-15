@@ -1,12 +1,12 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from src.main.services.openai_legacy_service import OpenAIService
+from src.ecommerce.services.openai_legacy_service import OpenAIService
 
-from src.main.config.configs import OPENAI_MAX_TOKENS
+from src.ecommerce.config.configs import OPENAI_MAX_TOKENS
 
 @pytest.fixture
 def mock_openai_client():
-    with patch("src.main.services.openai_legacy_service.OpenAI") as mock_openai:
+    with patch("src.ecommerce.services.openai_legacy_service.OpenAI") as mock_openai:
         yield mock_openai
 
 def test_generate_copy_success(mock_openai_client):

@@ -7,7 +7,7 @@ Tests Pydantic models, extraction prompts, and service methods.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.main.services.intelligence_extractor import (
+from src.ecommerce.services.intelligence_extractor import (
     BrandArchetype,
     EntityType,
     TonalGuardrails,

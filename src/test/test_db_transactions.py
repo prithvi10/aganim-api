@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.main.db.database import Base
-from src.main.db.db_models import User, Plan, Shop
-from src.main.db.db_transactions import (
+from src.shared.db.database import Base
+from src.ecommerce.db.models import User, Plan, Shop
+from src.ecommerce.db.transactions import (
     get_shop_quota_context,
     get_shop_access_token,
     store_shop_access_token,
@@ -79,7 +79,7 @@ def test_store_shop_access_token_create(db_session):
     """
     Should create a new Shop record AND a User record if they don't exist.
     """
-    from src.main.db.db_models import User, Plan
+    from src.ecommerce.db.models import User, Plan
     
     # Ensure default plan exists for the auto-creation logic
     if not db_session.query(Plan).filter_by(name="Free").first():
@@ -107,7 +107,7 @@ def test_store_shop_access_token_create(db_session):
 
 def test_record_successful_rewrite_free_decrements_lifetime(db_session):
     """Free/lifetime: successful rewrite decrements lifetime_rewrites_remaining and does not increment monthly usage."""
-    from src.main.db.db_models import Plan, User, Shop
+    from src.ecommerce.db.models import Plan, User, Shop
     from datetime import datetime, timedelta, timezone
 
     free = db_session.query(Plan).filter_by(name="Free").first()
@@ -144,7 +144,7 @@ def test_record_successful_rewrite_free_decrements_lifetime(db_session):
 
 def test_store_shop_access_token_update(db_session):
     """Should update the access token if the Shop record exists."""
-    from src.main.db.db_models import Shop
+    from src.ecommerce.db.models import Shop
     
     shop_domain = "existing-shop.myshopify.com"
     old_token = "old_token_123"
@@ -182,8 +182,8 @@ def test_get_shop_access_token_not_found(db_session):
 
 def test_get_shop_quota_context_paid_grace_overrides_plan(db_session):
     """Paid grace: last_plan_name paid + access_expires_at future => grace_active True and plan overridden."""
-    from src.main.db.db_models import Plan, User, Shop
-    from src.main.db.db_transactions import get_shop_quota_context
+    from src.ecommerce.db.models import Plan, User, Shop
+    from src.ecommerce.db.transactions import get_shop_quota_context
     from datetime import datetime, timedelta, timezone
 
     # Seed plans
@@ -245,8 +245,8 @@ def test_get_shop_quota_context_paid_grace_overrides_plan(db_session):
 
 def test_get_shop_quota_context_paid_expired_forces_zero_limit(db_session):
     """Paid expired: last_plan_name paid + access_expires_at past => expired_paid True and rewrite_limit forced to 0."""
-    from src.main.db.db_models import Plan, User, Shop
-    from src.main.db.db_transactions import get_shop_quota_context
+    from src.ecommerce.db.models import Plan, User, Shop
+    from src.ecommerce.db.transactions import get_shop_quota_context
     from datetime import datetime, timedelta, timezone
 
     if not db_session.query(Plan).filter_by(name="Basic").first():

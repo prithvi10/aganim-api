@@ -9,10 +9,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.main.api.main import app
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import Plan, Shop
-from src.main.db.db_transactions import record_successful_rewrite
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import Plan, Shop
+from src.ecommerce.db.transactions import record_successful_rewrite
 
 
 MOCK_SHOPIFY_SECRET = "test_secret_key"
@@ -34,7 +34,7 @@ async def test_install_uninstall_reinstall_preserves_free_credits(monkeypatch):
     Assert lifetime credits remain at 9 (not reset to 10).
     """
     # Patch secret used by verify_webhook_signature
-    monkeypatch.setattr("src.main.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET, raising=False)
+    monkeypatch.setattr("src.shared.security.security.SHOPIFY_API_SECRET", MOCK_SHOPIFY_SECRET, raising=False)
 
     # In-memory DB
     # Use StaticPool so the in-memory DB is shared across threads (TestClient runs in a thread).
