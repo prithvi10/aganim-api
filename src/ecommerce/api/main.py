@@ -133,6 +133,19 @@ def _ensure_plan_columns_exist():
         conn.commit()
 
 
+def _rename_column_if_exists(conn, table: str, old: str, new: str):
+    """Rename a column only if the old name still exists (idempotent)."""
+    row = conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = :tbl AND column_name = :col"
+        ),
+        {"tbl": table, "col": old},
+    ).fetchone()
+    if row:
+        conn.execute(text(f'ALTER TABLE {table} RENAME COLUMN "{old}" TO "{new}"'))
+
+
 def _ensure_agentic_tables_exist():
     """
     Best-effort creation of agentic tables (missions, agent_corrections).
@@ -144,6 +157,10 @@ def _ensure_agentic_tables_exist():
     On PostgreSQL we keep the raw-SQL ``CREATE TABLE IF NOT EXISTS`` as a
     belt-and-suspenders fallback for the very first deployment.  Column
     names match the canonical model: ``tenant_id``, ``resource_id``, ``tier``.
+
+    For existing databases that still use the legacy names (``shop_id``,
+    ``product_id``, ``plan_tier``) we rename the columns in-place before
+    creating indexes.
     """
     dialect = engine.dialect.name
 
@@ -170,6 +187,12 @@ def _ensure_agentic_tables_exist():
                 completed_at TIMESTAMPTZ
             )
         """))
+
+        # Migrate legacy column names → canonical names (idempotent)
+        _rename_column_if_exists(conn, "missions", "shop_id", "tenant_id")
+        _rename_column_if_exists(conn, "missions", "product_id", "resource_id")
+        _rename_column_if_exists(conn, "missions", "plan_tier", "tier")
+
         conn.execute(text("CREATE INDEX IF NOT EXISTS missions_tenant_id_idx ON missions(tenant_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS missions_resource_id_idx ON missions(resource_id)"))
 
@@ -187,6 +210,11 @@ def _ensure_agentic_tables_exist():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
+
+        # Migrate legacy column names → canonical names (idempotent)
+        _rename_column_if_exists(conn, "agent_corrections", "shop_id", "tenant_id")
+        _rename_column_if_exists(conn, "agent_corrections", "product_id", "resource_id")
+
         conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_tenant_id_idx ON agent_corrections(tenant_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_resource_id_idx ON agent_corrections(resource_id)"))
         # Embedding similarity index for learning
