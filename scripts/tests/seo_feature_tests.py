@@ -87,7 +87,7 @@ class SEOFeatureTests:
     def _get_real_services(self):
         """Get real ServiceRegistry with actual API clients."""
         if self._services is None:
-            from src.main.services.registry import ServiceRegistry
+            from src.ecommerce.services.registry import ServiceRegistry
             self._services = ServiceRegistry.create_default()
         return self._services
 
@@ -101,8 +101,8 @@ class SEOFeatureTests:
             self._add_result("seo/title", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.seo import SEOAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.seo import SEOAgent
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing SEO title generation (REAL LLM via SEOAgent)")
         
@@ -171,8 +171,8 @@ class SEOFeatureTests:
             self._add_result("seo/description", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.seo import SEOAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.seo import SEOAgent
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing SEO description generation (REAL LLM via SEOAgent)")
         
@@ -240,8 +240,8 @@ class SEOFeatureTests:
             self._add_result("seo/alt_text", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.seo import SEOAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.seo import SEOAgent
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing SEO alt-text generation (REAL LLM via SEOAgent)")
         
@@ -293,8 +293,8 @@ class SEOFeatureTests:
             self._add_result("seo/ctr_high", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.seo import SEOAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.seo import SEOAgent
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing CTR check on PST content (via SEOAgent)")
         
@@ -355,8 +355,8 @@ class SEOFeatureTests:
             self._add_result("seo/ctr_low", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.seo import SEOAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.seo import SEOAgent
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing CTR check on minimal content (via SEOAgent)")
         
@@ -421,8 +421,8 @@ class SEOFeatureTests:
             self._add_result("seo/serp_insights", True, "Skipped (no SERP_API_KEY)")
             return
         
-        from src.main.agents.seo import SEOAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.seo import SEOAgent
+        from src.ecommerce.state import MissionState
         
         self._log("\n  🔥 Testing SERP insights retrieval (REAL SERP API via SEOAgent)")
         

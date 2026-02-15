@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from src.main.services.brand_ingest_service import ingest_brand_context
+from src.ecommerce.services.brand_ingest_service import ingest_brand_context
 
 
 def test_ingest_brand_context_empty_returns_zero():
@@ -26,11 +26,11 @@ def test_ingest_brand_context_inserts_chunks_and_summary():
     )
 
     with patch(
-        "src.main.services.brand_ingest_service._get_openai_service",
+        "src.ecommerce.services.brand_ingest_service._get_openai_service",
         return_value=MagicMock(generate_json=MagicMock(return_value=clean_json)),
     ):
         with patch(
-            "src.main.services.brand_ingest_service.embed_texts",
+            "src.ecommerce.services.brand_ingest_service.embed_texts",
             return_value=[[0.1, 0.2, 0.3], [0.2, 0.3, 0.4]],
         ):
             result = ingest_brand_context(db, shop_id="shop.myshopify.com", raw_texts=raw, max_len=100)

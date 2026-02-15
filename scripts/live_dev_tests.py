@@ -57,9 +57,9 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Project imports (DATABASE_URL is read during module import)
 # ---------------------------------------------------------------------------
-from src.main.db.database import Base, SessionLocal, engine  # noqa: E402
-from src.main.db.db_models import Plan, Shop, User  # noqa: E402
-from src.main.db.db_transactions import get_plan_by_name  # noqa: E402
+from src.shared.db.database import Base, SessionLocal, engine  # noqa: E402
+from src.ecommerce.db.models import Plan, Shop, User  # noqa: E402
+from src.ecommerce.db.transactions import get_plan_by_name  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

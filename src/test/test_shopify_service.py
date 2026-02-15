@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from src.main.services.shopify_service import (
+from src.ecommerce.services.shopify_service import (
     create_shopify_translation,
     save_product_content_with_locale,
     save_product_metafields,
@@ -8,7 +8,7 @@ from src.main.services.shopify_service import (
 
 @pytest.fixture
 def mock_httpx_client():
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_client:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_client:
         mock_instance = mock_client.return_value
         mock_instance.__aenter__.return_value = mock_instance
         mock_instance.__aexit__.return_value = None

@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 
-from src.main.core.agent_actions import run_agent_action, seasonal_campaign_agent_action
+from src.ecommerce.core.agent_actions import run_agent_action, seasonal_campaign_agent_action
 
 
 def test_run_agent_action_unknown_action_raises_400():
@@ -72,7 +72,7 @@ def test_social_hook_architect_openai_parsed_happy_path(monkeypatch):
         "overlay_suggestions": ["Overlay 1", "Overlay 2", "Overlay 3"],
     }
 
-    with patch("src.main.core.agent_actions.openai_service.generate_json", return_value=str(fake).replace("'", '"')):
+    with patch("src.ecommerce.core.agent_actions.openai_service.generate_json", return_value=str(fake).replace("'", '"')):
         out = run_agent_action(
             "social_hook_architect",
             product_data={"title": "Test Product", "category": "General"},

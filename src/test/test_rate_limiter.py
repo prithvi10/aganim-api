@@ -2,7 +2,7 @@ import pytest
 import time
 import threading
 from unittest.mock import patch
-from src.main.security.ratelimiter import InMemoryRateLimiter
+from src.shared.security.ratelimiter import InMemoryRateLimiter
 
 # --- START OF UNIT TESTS ---
 

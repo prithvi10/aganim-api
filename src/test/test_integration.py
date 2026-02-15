@@ -4,9 +4,9 @@ from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
 from unittest.mock import patch, MagicMock
 
-from src.main.api.main import app
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import User, Plan, Shop
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import User, Plan, Shop
 # Removed APIKey import and key hashing
 from datetime import datetime, timedelta, timezone
 
@@ -92,7 +92,7 @@ def test_integration_generate_copy_flow(client, setup_data):
     mock_openai_response.choices = [MagicMock(message=MagicMock(content='{"title": "Int Title", "description": "Int Desc"}'))]
     mock_openai_response.usage.total_tokens = 50
 
-    with patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate:
+    with patch("src.ecommerce.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate:
         
         # Use proxy endpoint (manual shop extraction)
         response = client.post(

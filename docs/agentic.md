@@ -8,17 +8,17 @@ This plan transforms your linear SaaS into a Multi-Agent Mission Control Platfor
 
 |-----------|----------|--------------|
 
-| Core generation | [`generation.py`](shopify-translator-api/src/main/core/generation.py) (~1500 lines) | Monolithic product rewriting pipeline |
+| Core generation | [`generation.py`](shopify-translator-api/src/ecommerce/core/generation.py) (~1500 lines) | Monolithic product rewriting pipeline |
 
-| OpenAI Service | [`open_ai_api_service.py`](shopify-translator-api/src/main/service/open_ai_api_service.py) | Multiple methods with duplicated logic, no structured outputs |
+| OpenAI Service | [`open_ai_api_service.py`](shopify-translator-api/src/ecommerce/services/openai_legacy_service.py) | Multiple methods with duplicated logic, no structured outputs |
 
-| Agent actions | [`agent_actions.py`](shopify-translator-api/src/main/core/agent_actions.py) | Simple action handlers (social hooks, campaigns) |
+| Agent actions | [`agent_actions.py`](shopify-translator-api/src/ecommerce/core/agent_actions.py) | Simple action handlers (social hooks, campaigns) |
 
-| API layer | [`controller.py`](shopify-translator-api/src/main/api/controller.py) | REST endpoints with standard request/response |
+| API layer | [`controller.py`](shopify-translator-api/src/ecommerce/api/controller.py) | REST endpoints with standard request/response |
 
-| Services | [`brand_context_retrieval.py`](shopify-translator-api/src/main/service/brand_context_retrieval.py), [`serp_service.py`](shopify-translator-api/src/main/service/serp_service.py) | RAG retrieval, SERP fetching |
+| Services | [`brand_context_retrieval.py`](shopify-translator-api/src/ecommerce/services/brand_ingest_service.py), [`serp_service.py`](shopify-translator-api/src/agentic_core/tools/serp_service.py) | RAG retrieval, SERP fetching |
 
-| DB models | [`db_models.py`](shopify-translator-api/src/main/db/db_models.py) | User, Shop, Plan, StoreContext |
+| DB models | [`db_models.py`](shopify-translator-api/src/ecommerce/db/models.py) | User, Shop, Plan, StoreContext |
 
 ## Architecture Diagram
 
@@ -84,7 +84,7 @@ The Services Layer provides a clean abstraction between Agents and external APIs
 ### 0.1 Create Services Directory Structure
 
 ```
-src/main/services/
+src/ecommerce/services/
     __init__.py
     registry.py       # ServiceRegistry for DI
     llm_service.py    # LLMService (OpenAI wrapper)
@@ -97,7 +97,7 @@ src/main/services/
 Create a registry that agents use to access services:
 
 ```python
-# src/main/services/registry.py
+# src/ecommerce/services/registry.py
 from dataclasses import dataclass
 import os
 
@@ -121,7 +121,7 @@ class ServiceRegistry:
 
 ### 0.3 LLMService
 
-Refactor [`open_ai_api_service.py`](shopify-translator-api/src/main/service/open_ai_api_service.py) into a unified Gateway/Adapter that supports both legacy text generation and new structured outputs for agents.
+Refactor [`open_ai_api_service.py`](shopify-translator-api/src/ecommerce/services/openai_legacy_service.py) into a unified Gateway/Adapter that supports both legacy text generation and new structured outputs for agents.
 
 **Current State:** The existing `OpenAIService` class has multiple methods (`generate_copy`, `generate_json`, `generate_json_response`, etc.) with duplicated logic and no support for Pydantic-enforced structured outputs.
 
@@ -221,7 +221,7 @@ class LLMService:
 
 **Example Pydantic Models for Structured Outputs:**
 
-Create new file `src/main/agents/schemas.py`:
+Create new file `src/ecommerce/agents/schemas.py`:
 
 ```python
 from pydantic import BaseModel, Field
@@ -268,18 +268,18 @@ class OpenAIService:
 
 ### 0.4 SerpService
 
-Refactor [`serp_service.py`](shopify-translator-api/src/main/service/serp_service.py) from standalone functions into a class-based service.
+Refactor [`serp_service.py`](shopify-translator-api/src/agentic_core/tools/serp_service.py) from standalone functions into a class-based service.
 
 **Current State:** Single `fetch_top_results()` async function with hardcoded retry logic.
 
 **Target State:** A `SerpService` class usable by multiple agents (PriceScout, CompetitorAnalysis, etc.)
 
 ```python
-# src/main/services/serp_service.py
+# src/ecommerce/services/serp_service.py
 import httpx
 from typing import Optional, List, Dict
 from dataclasses import dataclass
-from src.main.logging.logger import get_logger
+from src.shared.logging.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -370,11 +370,11 @@ class SerpService:
 Wrap the existing brand context retrieval logic into a service:
 
 ```python
-# src/main/services/rag_service.py
+# src/ecommerce/services/rag_service.py
 from typing import List, Dict
 from sqlalchemy.orm import Session
-from src.main.service.brand_context_retrieval import get_brand_context
-from src.main.logging.logger import get_logger
+from src.agentic_core.rag.rag_service import get_brand_context
+from src.shared.logging.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -401,7 +401,7 @@ class RAGService:
 Update `BaseAgent` to receive services:
 
 ```python
-# src/main/agents/base.py
+# src/ecommerce/agents/base.py
 class BaseAgent(ABC):
     role_name: str
     
@@ -426,7 +426,7 @@ class BaseAgent(ABC):
 Create new directory structure:
 
 ```
-src/main/agents/
+src/ecommerce/agents/
     __init__.py
     state.py          # MissionState dataclass
     context.py        # AgentContext, AgentPlan, AgentAction dataclasses
@@ -938,7 +938,7 @@ class AdvancedCopywriterAgent(CopywriterAgent):
 
 ### 2.1 Add New Tables
 
-Add to [`db_models.py`](shopify-translator-api/src/main/db/db_models.py):
+Add to [`db_models.py`](shopify-translator-api/src/ecommerce/db/models.py):
 
 ```python
 class Mission(Base):
@@ -965,7 +965,7 @@ class AgentCorrection(Base):
 
 ### 2.2 Add Schema Evolution
 
-Update [`main.py`](shopify-translator-api/src/main/api/main.py) `_ensure_*` functions to add these columns on startup.
+Update [`main.py`](shopify-translator-api/src/ecommerce/api/main.py) `_ensure_*` functions to add these columns on startup.
 
 ---
 
@@ -1009,7 +1009,7 @@ class MissionControl:
 
 ### 4.1 Add SSE Endpoint
 
-Add to [`controller.py`](shopify-translator-api/src/main/api/controller.py):
+Add to [`controller.py`](shopify-translator-api/src/ecommerce/api/controller.py):
 
 ```python
 from fastapi.responses import StreamingResponse
@@ -1110,20 +1110,20 @@ Create [`CorrectionFeedback.tsx`](shopify-translator-ui/cross-border-agent/app/c
 
 **New Files (Services Layer):**
 
-- `src/main/services/__init__.py` - Package init
-- `src/main/services/registry.py` - ServiceRegistry for dependency injection
-- `src/main/services/llm_service.py` - LLMService with generate_text + generate_structured
-- `src/main/services/serp_service.py` - SerpService for competitor search
-- `src/main/services/rag_service.py` - RAGService wrapper for brand context
+- `src/ecommerce/services/__init__.py` - Package init
+- `src/ecommerce/services/registry.py` - ServiceRegistry for dependency injection
+- `src/ecommerce/services/llm_service.py` - LLMService with generate_text + generate_structured
+- `src/ecommerce/services/serp_service.py` - SerpService for competitor search
+- `src/ecommerce/services/rag_service.py` - RAGService wrapper for brand context
 
 **Refactored Files:**
 
-- [`open_ai_api_service.py`](shopify-translator-api/src/main/service/open_ai_api_service.py) - Thin backward-compat wrapper delegating to LLMService
-- [`serp_service.py`](shopify-translator-api/src/main/service/serp_service.py) - Keep for backward compat, delegate to new SerpService
-- [`db_models.py`](shopify-translator-api/src/main/db/db_models.py) - Add Mission, AgentCorrection models
-- [`main.py`](shopify-translator-api/src/main/api/main.py) - Add schema evolution for new tables
-- [`controller.py`](shopify-translator-api/src/main/api/controller.py) - Add SSE + corrections endpoints
-- [`generation.py`](shopify-translator-api/src/main/core/generation.py) - Extract logic, delegate to agents
+- [`open_ai_api_service.py`](shopify-translator-api/src/ecommerce/services/openai_legacy_service.py) - Thin backward-compat wrapper delegating to LLMService
+- [`serp_service.py`](shopify-translator-api/src/agentic_core/tools/serp_service.py) - Keep for backward compat, delegate to new SerpService
+- [`db_models.py`](shopify-translator-api/src/ecommerce/db/models.py) - Add Mission, AgentCorrection models
+- [`main.py`](shopify-translator-api/src/ecommerce/api/main.py) - Add schema evolution for new tables
+- [`controller.py`](shopify-translator-api/src/ecommerce/api/controller.py) - Add SSE + corrections endpoints
+- [`generation.py`](shopify-translator-api/src/ecommerce/core/generation.py) - Extract logic, delegate to agents
 
 **Frontend:**
 

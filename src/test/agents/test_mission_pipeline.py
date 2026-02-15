@@ -8,15 +8,15 @@ Note: ComplianceAgent is currently disabled.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.agents.orchestrator import MissionControl, run_mission
-from src.main.agents.state import MissionState
-from src.main.agents.rewriter import RewriterAgent
+from src.ecommerce.orchestrator import MissionControl, run_mission
+from src.ecommerce.state import MissionState
+from src.ecommerce.agents.rewriter import RewriterAgent
 CopywriterAgent = RewriterAgent  # Backward compat alias
-from src.main.agents.seo import SEOAgent
-from src.main.agents.marketing import MarketingAgent
-from src.main.agents.price_scout import PriceScoutAgent
-from src.main.agents.price_scout.schemas import PricingAnalysis
-from src.main.services import ServiceRegistry
+from src.ecommerce.agents.seo import SEOAgent
+from src.ecommerce.agents.marketing import MarketingAgent
+from src.ecommerce.agents.price_scout import PriceScoutAgent
+from src.ecommerce.agents.price_scout.schemas import PricingAnalysis
+from src.ecommerce.services import ServiceRegistry
 
 
 # =============================================================================
@@ -349,7 +349,7 @@ async def test_state_serialization_throughout_pipeline(mock_services, mission_st
 @pytest.mark.asyncio
 async def test_run_mission_convenience(mock_services, product_data):
     """Test the run_mission convenience function."""
-    with patch('src.main.agents.orchestrator.ServiceRegistry') as MockRegistry:
+    with patch('src.ecommerce.orchestrator.ServiceRegistry') as MockRegistry:
         MockRegistry.create_default.return_value = mock_services
         
         states = []

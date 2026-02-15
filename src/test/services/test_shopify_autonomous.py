@@ -13,7 +13,7 @@ Tests:
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.main.services.shopify_service import (
+from src.ecommerce.services.shopify_service import (
     get_shop_credentials,
     update_product_body,
     update_variant_price,
@@ -93,7 +93,7 @@ async def test_update_product_body_success():
         }
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -124,7 +124,7 @@ async def test_update_product_body_handles_gid_format():
         "data": {"productUpdate": {"product": {"id": "gid://shopify/Product/123"}, "userErrors": []}}
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -157,7 +157,7 @@ async def test_update_product_body_raises_on_user_errors():
         }
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -179,7 +179,7 @@ async def test_update_product_body_raises_on_http_error():
     mock_response = MagicMock()
     mock_response.status_code = 401
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -213,7 +213,7 @@ async def test_update_variant_price_success():
         }
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -245,7 +245,7 @@ async def test_update_variant_price_raises_on_user_errors():
         }
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -274,7 +274,7 @@ async def test_create_article_success():
         "article": {"id": 789, "title": "My Blog Post", "published_at": "2026-01-01T00:00:00Z"}
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -300,7 +300,7 @@ async def test_create_article_raises_on_error():
     mock_response.status_code = 422
     mock_response.text = "Unprocessable Entity"
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -330,7 +330,7 @@ async def test_trigger_flow_event_success():
         "data": {"flowTriggerReceive": {"userErrors": []}}
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -357,7 +357,7 @@ async def test_trigger_flow_event_raises_on_user_errors():
         "data": {"flowTriggerReceive": {"userErrors": [{"field": "body", "message": "Invalid topic"}]}}
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -386,7 +386,7 @@ async def test_update_product_seo_success():
         "data": {"productUpdate": {"product": {"id": "gid://shopify/Product/123"}, "userErrors": []}}
     }
 
-    with patch("src.main.services.shopify_service.httpx.AsyncClient") as mock_cls:
+    with patch("src.ecommerce.services.shopify_service.httpx.AsyncClient") as mock_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)

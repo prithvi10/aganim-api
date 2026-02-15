@@ -7,16 +7,16 @@ Tests regex pre-filtering, LLM-as-judge analysis, and flag handling.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.main.agents.compliance import ComplianceAgent
-from src.main.agents.compliance.schemas import ComplianceCheck
-from src.main.agents.compliance.patterns import (
+from src.ecommerce.agents.compliance import ComplianceAgent
+from src.ecommerce.agents.compliance.schemas import ComplianceCheck
+from src.ecommerce.agents.compliance.patterns import (
     FDA_PATTERNS,
     FTC_PATTERNS,
     SUPPLEMENT_PATTERNS,
     get_pattern_category,
 )
-from src.main.agents.state import MissionState
-from src.main.agents.context import AgentContext
+from src.ecommerce.state import MissionState
+from src.agentic_core.agents.context import AgentContext
 
 
 # =============================================================================

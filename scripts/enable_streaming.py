@@ -4,8 +4,8 @@ import os
 # Add the project root directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.main.db.database import SessionLocal
-from src.main.db.db_models import Plan
+from src.shared.db.database import SessionLocal
+from src.ecommerce.db.models import Plan
 
 def enable_streaming():
     db = SessionLocal()

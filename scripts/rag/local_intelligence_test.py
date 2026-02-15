@@ -17,6 +17,7 @@ Prereqs:
 Usage:
   python -m scripts.rag.local_intelligence_test
 """
+from __future__ import annotations
 
 import json
 import os
@@ -35,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.main.db.db_models import Shop, StoreContext, Plan, User
+from src.ecommerce.db.models import Shop, StoreContext, Plan, User
 
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 SHOP_DOMAIN = os.getenv("SHOP_DOMAIN", "intel-test-shop.myshopify.com")
@@ -409,7 +410,7 @@ def test_knowledge_graph_entities() -> None:
     _, SessionLocal = _get_db()
     db = SessionLocal()
     try:
-        from src.main.db.db_models import BrandEntity
+        from src.ecommerce.db.models import BrandEntity
         entities = db.query(BrandEntity).filter(BrandEntity.shop_id == SHOP_DOMAIN).all()
         if not entities:
             _log("⚠️  No BrandEntity rows found — knowledge graph may not be populated yet")

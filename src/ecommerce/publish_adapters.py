@@ -1,0 +1,233 @@
+"""
+Shopify Publish Adapters - Implements PublishAdapter for pushing content to Shopify.
+
+All Shopify API interactions for autonomous publishing live here so that
+the agentic core (agents/, services/) stays domain-agnostic.
+
+Agent handler methods delegate to these adapters via ServiceRegistry.publish_adapter.
+"""
+
+import json
+from typing import Any, Dict, Optional, Tuple
+
+from src.shared.logging.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class ShopifyPublishAdapter:
+    """
+    Concrete PublishAdapter for the Shopify platform.
+
+    Wraps src.ecommerce.services.shopify_service calls behind the PublishAdapter
+    protocol so that BaseAgent never imports shopify_service directly.
+    """
+
+    # ------------------------------------------------------------------
+    # PublishAdapter protocol
+    # ------------------------------------------------------------------
+
+    async def get_credentials(self, db: Any, tenant_id: str) -> dict:
+        """Load Shopify shop credentials (access_token, price_guardrails, meta creds)."""
+        from src.ecommerce.services.shopify_service import get_shop_credentials
+
+        if db is None:
+            return {}
+        return get_shop_credentials(db, tenant_id)
+
+    async def publish(
+        self,
+        state: Any,
+        template_id: str,
+        handler_ref: Any,
+        creds: dict,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Generic publish dispatch (not currently used — agents delegate to
+        individual methods below).  Kept for protocol completeness.
+        """
+        raise NotImplementedError("Use individual publish methods instead")
+
+    # ------------------------------------------------------------------
+    # Rewriter publish handlers
+    # ------------------------------------------------------------------
+
+    async def publish_product_body(self, state: Any, creds: dict) -> None:
+        """Push draft_content → Shopify descriptionHtml."""
+        from src.ecommerce.services.shopify_service import update_product_body
+
+        await update_product_body(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            html=state.draft_content or "",
+        )
+
+    async def publish_faq_append(self, state: Any, creds: dict) -> None:
+        """Convert FAQ JSON → HTML and append to product description."""
+        from src.ecommerce.services.shopify_service import (
+            faq_json_to_html,
+            inject_section,
+            update_product_body,
+            get_product_body,
+        )
+
+        faq_html = faq_json_to_html(state.draft_content or "")
+        if not faq_html:
+            return
+        current_body = (
+            await get_product_body(
+                state.shop_id, creds["access_token"], state.product_id
+            )
+        ) or ""
+        new_body = inject_section(
+            current_body,
+            faq_html,
+            "<!-- cba-faq-start -->",
+            "<!-- cba-faq-end -->",
+            position="append",
+        )
+        await update_product_body(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            html=new_body,
+        )
+
+    async def publish_hero_overwrite(self, state: Any, creds: dict) -> None:
+        """Convert Hero JSON → HTML and overwrite hero section in product description."""
+        from src.ecommerce.services.shopify_service import (
+            hero_json_to_html,
+            inject_section,
+            update_product_body,
+            get_product_body,
+        )
+
+        hero_html = hero_json_to_html(state.draft_content or "")
+        if not hero_html:
+            return
+        current_body = (
+            await get_product_body(
+                state.shop_id, creds["access_token"], state.product_id
+            )
+        ) or ""
+        new_body = inject_section(
+            current_body,
+            hero_html,
+            "<!-- cba-hero-start -->",
+            "<!-- cba-hero-end -->",
+            position="prepend",
+        )
+        await update_product_body(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            product_id=state.product_id,
+            html=new_body,
+        )
+
+    async def publish_article(self, state: Any, creds: dict) -> None:
+        """Push blog-post draft_content → Shopify article."""
+        from src.ecommerce.services.shopify_service import create_article, get_default_blog_id
+
+        blog_id = state.raw_input.get("blog_id", "")
+        if not blog_id:
+            blog_id = await get_default_blog_id(
+                shop_domain=state.shop_id,
+                access_token=creds["access_token"],
+            )
+        if not blog_id:
+            raise ValueError(
+                "No blog found on this Shopify store – cannot create article"
+            )
+
+        title = state.draft_title or "Untitled Post"
+        body_html = state.draft_content or ""
+        try:
+            parsed = json.loads(body_html)
+            if isinstance(parsed, dict):
+                body_html = parsed.get("body_html", parsed.get("content", body_html))
+                title = parsed.get("title", title)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        await create_article(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            blog_id=blog_id,
+            title=title,
+            body_html=body_html,
+        )
+
+    async def publish_collection(self, state: Any, creds: dict) -> None:
+        """Create a Shopify collection from draft_content."""
+        from src.ecommerce.services.shopify_service import create_collection
+
+        raw = state.raw_input or {}
+        collection_name = (
+            raw.get("collection_name")
+            or raw.get("product_name")
+            or "Untitled Collection"
+        )
+
+        desc_html = state.draft_content or ""
+        try:
+            parsed = json.loads(desc_html)
+            if isinstance(parsed, dict):
+                desc_html = parsed.get(
+                    "description_html",
+                    parsed.get("description", parsed.get("content", desc_html)),
+                )
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        product_ids = raw.get("product_ids") or []
+
+        await create_collection(
+            shop_domain=state.shop_id,
+            access_token=creds["access_token"],
+            title=collection_name,
+            description_html=desc_html,
+            product_ids=product_ids,
+        )
+
+    # ------------------------------------------------------------------
+    # PriceScout publish helpers
+    # ------------------------------------------------------------------
+
+    async def update_variant_price(
+        self,
+        shop_domain: str,
+        access_token: str,
+        variant_id: str,
+        price: str,
+    ) -> None:
+        """Update a Shopify variant price."""
+        from src.ecommerce.services.shopify_service import update_variant_price
+
+        await update_variant_price(
+            shop_domain=shop_domain,
+            access_token=access_token,
+            variant_id=variant_id,
+            price=price,
+        )
+
+    # ------------------------------------------------------------------
+    # Marketing publish helpers
+    # ------------------------------------------------------------------
+
+    async def trigger_flow_event(
+        self,
+        shop_domain: str,
+        access_token: str,
+        event_topic: str,
+        payload: dict,
+    ) -> None:
+        """Trigger a Shopify Flow event."""
+        from src.ecommerce.services.shopify_service import trigger_flow_event
+
+        await trigger_flow_event(
+            shop_domain=shop_domain,
+            access_token=access_token,
+            event_topic=event_topic,
+            payload=payload,
+        )

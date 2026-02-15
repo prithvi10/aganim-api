@@ -4,9 +4,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from datetime import date
 
-from src.main.api.main import app
-from src.main.db.database import get_db
-from src.main.db.db_models import User, Plan
+from src.ecommerce.api.main import app
+from src.shared.db.database import get_db
+from src.ecommerce.db.models import User, Plan
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -67,13 +67,13 @@ async def test_integration_multilang_happy_path(mock_auth_context, mock_openai_r
 
     # 2. Mock Translation Service (GraphQL) Success
     # Patch in the proxy module where validate_shop_and_quota is used
-    with patch("src.main.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.api.shopify.proxy.record_successful_rewrite"), \
-         patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
-         patch("src.main.core.generation.get_shop_access_token", return_value="valid_token"), \
-         patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
-         patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
-         patch("src.main.core.generation.limiter.is_allowed", return_value=True): # Mock Rate Limiter
+    with patch("src.ecommerce.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
+         patch("src.ecommerce.api.shopify.proxy.record_successful_rewrite"), \
+         patch("src.ecommerce.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
+         patch("src.ecommerce.core.generation.get_shop_access_token", return_value="valid_token"), \
+         patch("src.ecommerce.core.generation.httpx.AsyncClient") as MockClient, \
+         patch("src.ecommerce.core.generation.save_product_content_with_locale", new_callable=AsyncMock) as mock_save_content, \
+         patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True): # Mock Rate Limiter
 
         # Setup Client Mock for Primary Locale Check
         mock_client = MockClient.return_value
@@ -131,13 +131,13 @@ async def test_integration_multilang_missing_locale(mock_auth_context, mock_open
     error_message = "Shopify Translation Error: Locale 'de' is not enabled for this shop."
     
     # Patch in the proxy module where validate_shop_and_quota is used
-    with patch("src.main.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
-         patch("src.main.api.shopify.proxy.record_successful_rewrite"), \
-         patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
-         patch("src.main.core.generation.get_shop_access_token", return_value="valid_token"), \
-         patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
-         patch("src.main.core.generation.save_product_content_with_locale", side_effect=Exception(error_message)), \
-         patch("src.main.core.generation.limiter.is_allowed", return_value=True): # Mock Rate Limiter
+    with patch("src.ecommerce.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
+         patch("src.ecommerce.api.shopify.proxy.record_successful_rewrite"), \
+         patch("src.ecommerce.core.generation.openai_service.generate_copy", return_value=mock_openai_response), \
+         patch("src.ecommerce.core.generation.get_shop_access_token", return_value="valid_token"), \
+         patch("src.ecommerce.core.generation.httpx.AsyncClient") as MockClient, \
+         patch("src.ecommerce.core.generation.save_product_content_with_locale", side_effect=Exception(error_message)), \
+         patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True): # Mock Rate Limiter
 
         # Setup Client Mock for Primary Locale Check
         mock_client = MockClient.return_value
@@ -174,21 +174,21 @@ async def test_integration_optimize_bulk_with_serp_context(mock_auth_context, mo
     serp_results = [{"title": "A", "snippet": "S1", "url": "https://a.example"}]
 
     # Use FastAPI's dependency override for resolve_shop_domain
-    from src.main.api.shopify.shared import resolve_shop_domain
+    from src.ecommerce.api.shopify.shared import resolve_shop_domain
     async def mock_resolve_shop():
         return shop
     
     app.dependency_overrides[resolve_shop_domain] = mock_resolve_shop
     try:
         # Patch other dependencies
-        with patch("src.main.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
-             patch("src.main.api.shopify.proxy.record_successful_rewrite"), \
-             patch("src.main.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate, \
-             patch("src.main.core.generation.get_shop_access_token", return_value="valid_token"), \
-             patch("src.main.core.generation.httpx.AsyncClient") as MockClient, \
-             patch("src.main.core.generation.serp_service.fetch_top_results", new_callable=AsyncMock, return_value=serp_results), \
-             patch("src.main.core.generation.save_product_content_with_locale", new_callable=AsyncMock), \
-             patch("src.main.core.generation.limiter.is_allowed", return_value=True):
+        with patch("src.ecommerce.api.shopify.proxy.validate_shop_and_quota", return_value=mock_auth_context), \
+             patch("src.ecommerce.api.shopify.proxy.record_successful_rewrite"), \
+             patch("src.ecommerce.core.generation.openai_service.generate_copy", return_value=mock_openai_response) as mock_generate, \
+             patch("src.ecommerce.core.generation.get_shop_access_token", return_value="valid_token"), \
+             patch("src.ecommerce.core.generation.httpx.AsyncClient") as MockClient, \
+             patch("src.ecommerce.core.generation.serp_service.fetch_top_results", new_callable=AsyncMock, return_value=serp_results), \
+             patch("src.ecommerce.core.generation.save_product_content_with_locale", new_callable=AsyncMock), \
+             patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True):
 
             mock_client = MockClient.return_value
             mock_client.__aenter__.return_value = mock_client

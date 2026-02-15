@@ -91,7 +91,7 @@ class AgentOutputTests:
     def _get_real_services(self):
         """Get real ServiceRegistry with actual API clients."""
         if self._services is None:
-            from src.main.services.registry import ServiceRegistry
+            from src.ecommerce.services.registry import ServiceRegistry
             self._services = ServiceRegistry.create_default()
         return self._services
 
@@ -105,8 +105,8 @@ class AgentOutputTests:
             self._add_result("copywriter/artisan", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.copywriter import CopywriterAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.rewriter import CopywriterAgent
+        from src.ecommerce.state import MissionState
         
         # Only test first 2 artisan fixtures to save API costs
         artisan_fixtures = [f for f in self.fixtures.get("copywriter_fixtures", []) 
@@ -184,8 +184,8 @@ class AgentOutputTests:
             self._add_result("copywriter/generic", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.copywriter import CopywriterAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.rewriter import CopywriterAgent
+        from src.ecommerce.state import MissionState
         
         # Only test first generic fixture
         generic_fixtures = [f for f in self.fixtures.get("copywriter_fixtures", []) 
@@ -248,8 +248,8 @@ class AgentOutputTests:
             self._add_result("seo/generation", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.seo import SEOAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.seo import SEOAgent
+        from src.ecommerce.state import MissionState
         
         self._log(f"\n  🔥 Testing SEOAgent SEO generation (REAL LLM)")
         
@@ -323,8 +323,8 @@ class AgentOutputTests:
             self._add_result("seo/length", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.seo import SEOAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.seo import SEOAgent
+        from src.ecommerce.state import MissionState
         
         self._log(f"\n  🔥 Testing SEOAgent SEO length constraints (REAL LLM)")
         
@@ -375,8 +375,8 @@ class AgentOutputTests:
             self._add_result("marketing/social_hooks", True, "Skipped (no OPENAI_API_KEY)")
             return
         
-        from src.main.agents.marketing import MarketingAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.marketing import MarketingAgent
+        from src.ecommerce.state import MissionState
         
         self._log(f"\n  🔥 Testing MarketingAgent social hooks (REAL LLM)")
         
@@ -433,8 +433,8 @@ class AgentOutputTests:
             self._add_result("price_scout/analysis", True, "Skipped (no SERP_API_KEY)")
             return
         
-        from src.main.agents.price_scout import PriceScoutAgent
-        from src.main.agents.state import MissionState
+        from src.ecommerce.agents.price_scout import PriceScoutAgent
+        from src.ecommerce.state import MissionState
         
         # Test with common product fixture
         fixture = next((f for f in self.fixtures.get("price_scout_fixtures", [])

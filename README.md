@@ -4,6 +4,26 @@ A robust FastAPI-based backend designed to generate localized, high-quality Engl
 
 ## 🏗️ Architecture
 
+### Package Structure
+
+The codebase is organized into three top-level packages:
+
+```
+src/
+  agentic_core/   # Generic AI platform — agents, LLM, RAG, orchestration
+  shared/         # Shared utilities — logging, config, security, DB engine
+  ecommerce/      # Shopify domain — API routes, services, domain agents, templates
+  test/           # All tests
+```
+
+- **`agentic_core/`** is designed to be extractable as a standalone microservice.
+  It has zero imports from `ecommerce/`.
+- **`shared/`** contains infrastructure used by both packages (logging, DB, security).
+- **`ecommerce/`** holds all Shopify-specific code: FastAPI app, domain agents,
+  services, templates, and database models.
+
+### System Diagram
+
 ```mermaid
 graph TD
     subgraph "Shopify Cloud"

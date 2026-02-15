@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.main.db.db_models import Shop, StoreContext, Plan, User
+from src.ecommerce.db.models import Shop, StoreContext, Plan, User
 
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 SHOP_DOMAIN = "writing-studio-e2e.myshopify.com"
@@ -448,7 +448,7 @@ def step_verify_db() -> None:
 
         # Check brand entities
         try:
-            from src.main.db.db_models import BrandEntity
+            from src.ecommerce.db.models import BrandEntity
             entity_count = db.query(BrandEntity).filter(BrandEntity.shop_id == SHOP_DOMAIN).count()
             _log(f"   brand_entity rows: {entity_count}")
         except Exception:

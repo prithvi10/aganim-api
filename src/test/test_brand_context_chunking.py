@@ -1,4 +1,4 @@
-from src.main.rag.chunking import chunk_text
+from src.agentic_core.rag.chunking import chunk_text
 
 
 def test_chunk_text_overlap():

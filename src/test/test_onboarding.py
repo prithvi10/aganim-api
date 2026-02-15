@@ -2,9 +2,9 @@ import pytest
 from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from src.main.services.onboarding_service import onboard_user
-from src.main.api.models import OnboardingRequest, OnboardingResponse
-from src.main.db.db_models import User, Plan
+from src.ecommerce.services.onboarding_service import onboard_user
+from src.ecommerce.api.models import OnboardingRequest, OnboardingResponse
+from src.ecommerce.db.models import User, Plan
 
 @pytest.fixture
 def mock_db_session():
@@ -39,9 +39,9 @@ def test_onboard_user_success(mock_db_session, valid_request, mock_plan, mock_us
     """Test successful user onboarding."""
     
     # Mock DB transactions
-    with patch("src.main.services.onboarding_service.db_transactions.get_plan_by_id", return_value=mock_plan) as mock_get_plan, \
-         patch("src.main.services.onboarding_service.db_transactions.get_user_by_username", return_value=None) as mock_get_user, \
-         patch("src.main.services.onboarding_service.db_transactions.create_user", return_value=mock_user) as mock_create_user:
+    with patch("src.ecommerce.services.onboarding_service.db_transactions.get_plan_by_id", return_value=mock_plan) as mock_get_plan, \
+         patch("src.ecommerce.services.onboarding_service.db_transactions.get_user_by_username", return_value=None) as mock_get_user, \
+         patch("src.ecommerce.services.onboarding_service.db_transactions.create_user", return_value=mock_user) as mock_create_user:
 
         response = onboard_user(mock_db_session, valid_request)
 
@@ -65,7 +65,7 @@ def test_onboard_user_success(mock_db_session, valid_request, mock_plan, mock_us
 
 def test_onboard_user_plan_not_found(mock_db_session, valid_request):
     """Test onboarding fails when plan ID is invalid."""
-    with patch("src.main.services.onboarding_service.db_transactions.get_plan_by_id", return_value=None):
+    with patch("src.ecommerce.services.onboarding_service.db_transactions.get_plan_by_id", return_value=None):
         with pytest.raises(HTTPException) as exc_info:
             onboard_user(mock_db_session, valid_request)
         
@@ -74,8 +74,8 @@ def test_onboard_user_plan_not_found(mock_db_session, valid_request):
 
 def test_onboard_user_already_exists(mock_db_session, valid_request, mock_plan, mock_user):
     """Test onboarding fails when user already exists."""
-    with patch("src.main.services.onboarding_service.db_transactions.get_plan_by_id", return_value=mock_plan), \
-         patch("src.main.services.onboarding_service.db_transactions.get_user_by_username", return_value=mock_user):
+    with patch("src.ecommerce.services.onboarding_service.db_transactions.get_plan_by_id", return_value=mock_plan), \
+         patch("src.ecommerce.services.onboarding_service.db_transactions.get_user_by_username", return_value=mock_user):
         
         with pytest.raises(HTTPException) as exc_info:
             onboard_user(mock_db_session, valid_request)
@@ -85,9 +85,9 @@ def test_onboard_user_already_exists(mock_db_session, valid_request, mock_plan, 
 
 def test_onboard_user_creation_failure(mock_db_session, valid_request, mock_plan):
     """Test onboarding handles DB error during user creation."""
-    with patch("src.main.services.onboarding_service.db_transactions.get_plan_by_id", return_value=mock_plan), \
-         patch("src.main.services.onboarding_service.db_transactions.get_user_by_username", return_value=None), \
-         patch("src.main.services.onboarding_service.db_transactions.create_user", side_effect=Exception("DB Error")):
+    with patch("src.ecommerce.services.onboarding_service.db_transactions.get_plan_by_id", return_value=mock_plan), \
+         patch("src.ecommerce.services.onboarding_service.db_transactions.get_user_by_username", return_value=None), \
+         patch("src.ecommerce.services.onboarding_service.db_transactions.create_user", side_effect=Exception("DB Error")):
         
         with pytest.raises(HTTPException) as exc_info:
             onboard_user(mock_db_session, valid_request)

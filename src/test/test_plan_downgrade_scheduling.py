@@ -7,9 +7,9 @@ from sqlalchemy.pool import StaticPool
 
 from fastapi.testclient import TestClient
 
-from src.main.api.main import app
-from src.main.db.database import Base, get_db
-from src.main.db.db_models import Shop, User, Plan
+from src.ecommerce.api.main import app
+from src.shared.db.database import Base, get_db
+from src.ecommerce.db.models import Shop, User, Plan
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def test_apply_pending_plan_when_effective(db_session):
     db_session.add(s)
     db_session.commit()
 
-    from src.main.db.db_transactions import get_shop_quota_context
+    from src.ecommerce.db.transactions import get_shop_quota_context
 
     ctx = get_shop_quota_context(db_session, "downgrade-shop.myshopify.com")
     assert ctx is not None
@@ -110,7 +110,7 @@ def test_webhook_schedules_downgrade_end_of_cycle(db_session, db_engine):
             from unittest.mock import patch
 
             # Patch in the webhooks module where verify_webhook_signature is used
-            with patch("src.main.api.shopify.webhooks.verify_webhook_signature", return_value=None):
+            with patch("src.ecommerce.api.shopify.webhooks.verify_webhook_signature", return_value=None):
                 r = client.post(
                     "/webhooks/subscription-activated",
                     json=payload,

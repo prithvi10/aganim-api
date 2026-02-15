@@ -1,5 +1,5 @@
 import pytest
-from src.main.utils.llm_parser import parse_llm_json, recover_title_desc
+from src.shared.utils.llm_parser import parse_llm_json, recover_title_desc
 
 def test_parse_llm_json_clean():
     raw = '{"title": "Test", "description": "Desc"}'
