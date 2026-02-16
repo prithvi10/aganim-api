@@ -18,7 +18,9 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import re
 from typing import Any, Callable, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 
@@ -28,6 +30,101 @@ logger = get_logger(__name__)
 
 # Type alias for the progress callback used by SSE streaming
 ProgressCallback = Optional[Callable[[str, int, str], None]]
+
+# ---------------------------------------------------------------------------
+# Input URL Validation — SSRF prevention
+# ---------------------------------------------------------------------------
+
+# Trusted hostname patterns for product images
+_ALLOWED_IMAGE_HOSTS: Tuple[str, ...] = (
+    "cdn.shopify.com",
+    "cdn.shopifycdn.net",
+    # Shopify per-store CDNs: {shop-name}.myshopify.com/cdn/...
+)
+
+# Regex for per-store Shopify CDN subdomains
+_SHOPIFY_STORE_CDN_RE = re.compile(
+    r"^[a-z0-9][a-z0-9\-]*\.myshopify\.com$", re.IGNORECASE
+)
+
+# Allowed image extensions
+_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"}
+
+
+class ImageURLValidationError(ValueError):
+    """Raised when an image URL fails security validation."""
+    pass
+
+
+def validate_image_url(url: str, *, allow_fal_media: bool = False) -> str:
+    """
+    Validate that an image URL is from a trusted source before sending it
+    to fal.ai models.  This prevents SSRF (Server-Side Request Forgery)
+    where an attacker could pass ``http://169.254.169.254/latest/meta-data``
+    or an internal-network URL as the product image.
+
+    Args:
+        url: The image URL to validate.
+        allow_fal_media: If True, also allow ``fal.media`` and
+            ``storage.googleapis.com/fal-*`` URLs (used for intermediate
+            pipeline results that come back from fal.ai).
+
+    Returns:
+        The validated URL (stripped of whitespace).
+
+    Raises:
+        ImageURLValidationError: If the URL fails validation.
+    """
+    if not url or not isinstance(url, str):
+        raise ImageURLValidationError("Image URL is empty or not a string")
+
+    url = url.strip()
+
+    # Must be HTTPS (block http://, ftp://, file://, data:, etc.)
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ImageURLValidationError(
+            f"Image URL must use HTTPS (got {parsed.scheme!r})"
+        )
+
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ImageURLValidationError("Image URL has no hostname")
+
+    # Check against the allow-list
+    is_trusted = False
+
+    # 1. Exact-match trusted hosts
+    if host in _ALLOWED_IMAGE_HOSTS:
+        is_trusted = True
+
+    # 2. Per-store Shopify CDN (e.g. my-store.myshopify.com)
+    elif _SHOPIFY_STORE_CDN_RE.match(host):
+        is_trusted = True
+
+    # 3. fal.ai media URLs (only allowed for intermediate pipeline results)
+    elif allow_fal_media and (
+        host == "fal.media"
+        or host.endswith(".fal.media")
+        or (host.endswith(".googleapis.com") and "/fal-" in parsed.path)
+    ):
+        is_trusted = True
+
+    if not is_trusted:
+        raise ImageURLValidationError(
+            f"Image URL host {host!r} is not in the trusted allow-list. "
+            "Only Shopify CDN URLs are accepted."
+        )
+
+    # Validate the file extension (loose — query params are fine)
+    path_lower = parsed.path.lower()
+    if not any(path_lower.endswith(ext) for ext in _ALLOWED_EXTENSIONS):
+        raise ImageURLValidationError(
+            f"Image URL path does not end with a recognised image extension "
+            f"({', '.join(sorted(_ALLOWED_EXTENSIONS))})"
+        )
+
+    return url
 
 # ---------------------------------------------------------------------------
 # Lazy imports -- heavy deps loaded only when actually called

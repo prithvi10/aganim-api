@@ -51,7 +51,7 @@ from .brand_ingest_service import (
     extract_file_text,
 )
 from .value_discovery_service import ValueDiscoveryService
-from .visual_service import VisualService
+from .visual_service import VisualService, validate_image_url, ImageURLValidationError
 from .r2_storage_service import R2StorageService
 
 __all__ = [
@@ -94,4 +94,6 @@ __all__ = [
     # Visual pipeline (Pro tier)
     "VisualService",
     "R2StorageService",
+    "validate_image_url",
+    "ImageURLValidationError",
 ]
