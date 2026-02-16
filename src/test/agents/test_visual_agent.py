@@ -398,6 +398,112 @@ class TestActDomainNoImage:
 
 
 # =============================================================================
+# Tests: _act_domain -- SSRF URL validation
+# =============================================================================
+
+class TestActDomainURLValidation:
+    """Test _act_domain rejects untrusted image URLs (SSRF prevention)."""
+
+    @pytest.mark.asyncio
+    async def test_internal_ip_url_rejected(self, agent, pro_state, default_plan):
+        """AWS metadata endpoint should be blocked."""
+        context = AgentContext(
+            raw_input=pro_state.raw_input,
+            external_data={
+                "image_url": "https://169.254.169.254/latest/meta-data/img.png",
+                "brand_soul": "",
+                "product_name": "Bowl",
+                "brand_name": "",
+                "hook_text": "",
+            },
+        )
+
+        actions, state = await agent._act_domain(pro_state, context, default_plan)
+
+        assert len(actions) == 1
+        assert actions[0].success is False
+        assert "url_validation_failed" in str(actions[0].input_params)
+        assert "not in the trusted allow-list" in actions[0].error
+
+    @pytest.mark.asyncio
+    async def test_http_url_rejected(self, agent, pro_state, default_plan):
+        """Non-HTTPS URLs should be blocked."""
+        context = AgentContext(
+            raw_input=pro_state.raw_input,
+            external_data={
+                "image_url": "http://cdn.shopify.com/product.jpg",
+                "brand_soul": "",
+                "product_name": "Bowl",
+                "brand_name": "",
+                "hook_text": "",
+            },
+        )
+
+        actions, state = await agent._act_domain(pro_state, context, default_plan)
+
+        assert actions[0].success is False
+        assert "HTTPS" in actions[0].error
+
+    @pytest.mark.asyncio
+    async def test_evil_domain_rejected(self, agent, pro_state, default_plan):
+        """Random external domains should be blocked."""
+        context = AgentContext(
+            raw_input=pro_state.raw_input,
+            external_data={
+                "image_url": "https://evil.com/steal-data.png",
+                "brand_soul": "",
+                "product_name": "Bowl",
+                "brand_name": "",
+                "hook_text": "",
+            },
+        )
+
+        actions, state = await agent._act_domain(pro_state, context, default_plan)
+
+        assert actions[0].success is False
+        assert "not in the trusted allow-list" in actions[0].error
+        # Pipeline should NOT have been started
+        assert state.visual_assets is None
+
+    @pytest.mark.asyncio
+    async def test_valid_shopify_url_passes_validation(self, agent, pro_state, default_plan):
+        """Valid Shopify CDN URL should pass validation and enter the pipeline."""
+        context = AgentContext(
+            raw_input=pro_state.raw_input,
+            external_data={
+                "image_url": "https://cdn.shopify.com/s/files/1/product.jpg",
+                "brand_soul": "",
+                "product_name": "Bowl",
+                "brand_name": "",
+                "hook_text": "",
+            },
+        )
+
+        mock_visual_svc = MagicMock()
+        mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
+        mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
+        mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
+
+        mock_r2_svc = MagicMock()
+        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://asset.png")
+
+        mock_client = _make_httpx_mock()
+
+        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
+             patch(_R2_SVC) as mock_r2_cls, \
+             patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client):
+
+            mock_r2_cls.return_value = mock_r2_svc
+            mock_r2_cls.build_key = MagicMock(return_value="key")
+
+            actions, state = await agent._act_domain(pro_state, context, default_plan)
+
+        # Pipeline should have started (isolate_product called)
+        mock_visual_svc.isolate_product.assert_called_once()
+        assert actions[0].success is True
+
+
+# =============================================================================
 # Tests: _act_domain -- No hook text (ad skipped)
 # =============================================================================
 

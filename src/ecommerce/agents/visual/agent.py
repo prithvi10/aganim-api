@@ -128,7 +128,11 @@ class VisualAgent(BaseAgent):
         4. Expand hero banner (SD 3.5)
         5. Upload to R2
         """
-        from src.ecommerce.services.visual_service import VisualService
+        from src.ecommerce.services.visual_service import (
+            VisualService,
+            validate_image_url,
+            ImageURLValidationError,
+        )
         from src.ecommerce.services.r2_storage_service import R2StorageService
 
         actions: List[AgentAction] = []
@@ -142,6 +146,23 @@ class VisualAgent(BaseAgent):
                 output={},
                 success=False,
                 error="No product image URL provided",
+            )
+            actions.append(action)
+            return actions, state
+
+        # ── SSRF prevention: validate image URL before sending to fal.ai ──
+        try:
+            image_url = validate_image_url(image_url)
+        except ImageURLValidationError as e:
+            msg = f"Image URL rejected: {e}"
+            logger.warning("[VisualAgent] %s  url=%s", msg, image_url)
+            state.add_log(f"Visual: {msg}")
+            action = AgentAction(
+                tool_name="visual.generate",
+                input_params={"reason": "url_validation_failed", "image_url": image_url},
+                output={},
+                success=False,
+                error=msg,
             )
             actions.append(action)
             return actions, state
