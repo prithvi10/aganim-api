@@ -212,6 +212,59 @@ class ShopifyPublishAdapter:
         )
 
     # ------------------------------------------------------------------
+    # Visual publish helpers (Pro tier)
+    # ------------------------------------------------------------------
+
+    async def publish_visual_assets(self, state: Any, creds: dict) -> None:
+        """
+        Push generated visual assets (refined, ad, hero) to Shopify Media Library.
+
+        Uses the stagedUploadsCreate → fileCreate two-step upload flow.
+        """
+        from src.ecommerce.services.shopify_service import upload_media_to_shopify
+        import httpx
+
+        assets = getattr(state, "visual_assets", None) or {}
+        access_token = creds.get("access_token", "")
+
+        if not access_token:
+            logger.warning("publish_visual_assets: no access_token, skipping")
+            return
+
+        product_name = (state.raw_input or {}).get("product_name", "product")
+
+        for asset_type in ("refined", "ad", "hero"):
+            url = assets.get(f"{asset_type}_url")
+            if not url:
+                continue
+
+            try:
+                # Download the image bytes from R2 or fal.ai CDN
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    image_bytes = resp.content
+
+                filename = f"{product_name}-{asset_type}.png"
+
+                file_gid = await upload_media_to_shopify(
+                    shop_domain=state.shop_id,
+                    access_token=access_token,
+                    image_bytes=image_bytes,
+                    filename=filename,
+                    alt_text=f"{product_name} - {asset_type} visual",
+                )
+                logger.info(
+                    "✅ Visual asset '%s' published to Shopify: %s (%s)",
+                    asset_type, file_gid, state.shop_id,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to publish visual asset '%s' to Shopify (%s): %s",
+                    asset_type, state.shop_id, str(e),
+                )
+
+    # ------------------------------------------------------------------
     # Marketing publish helpers
     # ------------------------------------------------------------------
 

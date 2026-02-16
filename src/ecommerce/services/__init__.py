@@ -41,6 +41,9 @@ from .shopify_service import (
     create_shopify_translation,
     save_product_content_with_locale,
     save_product_metafields,
+    upload_media_to_shopify,
+    staged_upload_create,
+    file_create,
 )
 from .brand_ingest_service import (
     ingest_brand_context,
@@ -48,6 +51,8 @@ from .brand_ingest_service import (
     extract_file_text,
 )
 from .value_discovery_service import ValueDiscoveryService
+from .visual_service import VisualService
+from .r2_storage_service import R2StorageService
 
 __all__ = [
     # Core agentic services
@@ -77,10 +82,16 @@ __all__ = [
     "create_shopify_translation",
     "save_product_content_with_locale",
     "save_product_metafields",
+    "upload_media_to_shopify",
+    "staged_upload_create",
+    "file_create",
     # Brand ingest
     "ingest_brand_context",
     "scrape_urls",
     "extract_file_text",
     # Value discovery
     "ValueDiscoveryService",
+    # Visual pipeline (Pro tier)
+    "VisualService",
+    "R2StorageService",
 ]

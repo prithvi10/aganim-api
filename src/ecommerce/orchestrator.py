@@ -24,6 +24,7 @@ from .agents.seo import SEOAgent
 from .agents.marketing import MarketingAgent
 from .agents.price_scout import PriceScoutAgent
 from .agents.compliance import ComplianceAgent  # Kept for reference but disabled
+from .agents.visual import VisualAgent
 from src.agentic_core.registry import ServiceRegistry
 from src.shared.logging.logger import get_logger
 
@@ -36,6 +37,7 @@ AGENT_MAP: Dict[str, Type[BaseAgent]] = {
     "SEOAgent": SEOAgent,
     "MarketingAgent": MarketingAgent,
     "PriceScoutAgent": PriceScoutAgent,
+    "VisualAgent": VisualAgent,
     # "ComplianceAgent": ComplianceAgent,  # DISABLED
 }
 
@@ -52,7 +54,7 @@ class MissionControl(_GenericMissionControl):
         "Free": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
         "Basic": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
         "Standard": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
-        "Pro": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Pro": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent, VisualAgent],
     }
 
     # Default fallback workflow for unknown tiers
@@ -115,6 +117,11 @@ class MissionControl(_GenericMissionControl):
         elif agent_name == "ComplianceAgent":
             return {
                 "compliance_flags": state.compliance_flags,
+            }
+        elif agent_name == "VisualAgent":
+            return {
+                "visual_assets": state.visual_assets,
+                "visual_progress": state.visual_progress,
             }
         else:
             return {}
