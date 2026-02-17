@@ -144,15 +144,21 @@ def _get_fal_client():
 
 
 def _get_rembg():
-    """Lazily import rembg for background removal."""
+    """Lazily import rembg for background removal.
+
+    Returns the ``rembg.remove`` function, or *None* if the dependency
+    is missing.  rembg calls ``sys.exit(1)`` when onnxruntime is not
+    installed, so we catch ``SystemExit`` as well.
+    """
     try:
         from rembg import remove as rembg_remove
         return rembg_remove
-    except ImportError:
-        raise ImportError(
-            "rembg is required for product isolation. "
-            "Install it with: pip install rembg"
+    except (ImportError, SystemExit):
+        logger.warning(
+            "[VisualService] rembg/onnxruntime not available — "
+            "product isolation will be skipped (original image sent to Flux directly)"
         )
+        return None
 
 
 def _get_pil():
@@ -202,8 +208,12 @@ class VisualService:
         """
         Download the product image and remove the background using rembg.
 
+        If rembg/onnxruntime is not installed the original image bytes are
+        returned so the rest of the pipeline (Flux inpainting) can still run.
+
         Returns:
-            PNG bytes with transparent background (RGBA).
+            PNG bytes — with transparent background (RGBA) when rembg is
+            available, otherwise the original image bytes.
         """
         if progress:
             progress("masking", 5, "Downloading product image...")
@@ -219,6 +229,17 @@ class VisualService:
 
         # rembg is CPU-bound -- run in executor to avoid blocking the event loop
         rembg_remove = _get_rembg()
+
+        if rembg_remove is None:
+            # Graceful degradation: skip isolation, return original image
+            if progress:
+                progress("masking", 20, "Background removal unavailable — using original image")
+            logger.warning(
+                "[VisualService] rembg unavailable, skipping isolation input=%d bytes",
+                len(input_bytes),
+            )
+            return input_bytes
+
         loop = asyncio.get_running_loop()
         output_bytes: bytes = await loop.run_in_executor(
             None, rembg_remove, input_bytes
