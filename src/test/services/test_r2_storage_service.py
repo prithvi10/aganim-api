@@ -34,8 +34,14 @@ def r2_configured():
 
 
 @pytest.fixture
-def r2_unconfigured():
+def r2_unconfigured(monkeypatch):
     """R2StorageService without credentials (dev mode)."""
+    # Clear env vars so the ``or os.getenv(...)`` fallback doesn't pick them up
+    monkeypatch.delenv("R2_ENDPOINT", raising=False)
+    monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("R2_BUCKET", raising=False)
+    monkeypatch.delenv("R2_PUBLIC_URL", raising=False)
     return R2StorageService(
         endpoint="",
         access_key_id="",
@@ -52,6 +58,15 @@ FAKE_IMAGE = b"\x89PNG\r\n\x1a\nfake-image-data"
 
 class TestIsConfigured:
     """Test is_configured property."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_r2_env(self, monkeypatch):
+        """Ensure real R2 env vars don't leak into is_configured tests."""
+        monkeypatch.delenv("R2_ENDPOINT", raising=False)
+        monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+        monkeypatch.delenv("R2_BUCKET", raising=False)
+        monkeypatch.delenv("R2_PUBLIC_URL", raising=False)
 
     def test_configured_returns_true(self, r2_configured):
         assert r2_configured.is_configured is True
@@ -131,6 +146,15 @@ class TestBuildKey:
 
 class TestUploadToR2:
     """Test upload_asset when R2 is configured."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_r2_env(self, monkeypatch):
+        """Prevent real R2 env vars from leaking into test assertions."""
+        monkeypatch.delenv("R2_ENDPOINT", raising=False)
+        monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("R2_SECRET_ACCESS_KEY", raising=False)
+        monkeypatch.delenv("R2_BUCKET", raising=False)
+        monkeypatch.delenv("R2_PUBLIC_URL", raising=False)
 
     @pytest.mark.asyncio
     async def test_happy_path_with_public_url(self, r2_configured):

@@ -253,9 +253,8 @@ class TestRefineProduct:
 
     @pytest.mark.asyncio
     async def test_happy_path(self, visual_svc, progress_cb):
-        """Test successful background refinement."""
+        """Test successful background refinement using base64 data URI."""
         mock_fal = MagicMock()
-        mock_fal.upload = MagicMock(return_value="https://fal.ai/uploads/masked.png")
         mock_fal.subscribe = MagicMock(return_value={
             "images": [{"url": "https://fal.ai/output/refined.png"}]
         })
@@ -268,11 +267,14 @@ class TestRefineProduct:
             )
 
         assert result == "https://fal.ai/output/refined.png"
-        mock_fal.upload.assert_called_once_with(FAKE_MASKED_BYTES, "image/png")
+        # upload is no longer called — image bytes are sent as a base64 data URI
         mock_fal.subscribe.assert_called_once()
         # Verify model used is Flux Pro
         call_args = mock_fal.subscribe.call_args
         assert call_args[0][0] == VisualService.FLUX_PRO_MODEL
+        # Verify image_url is a data URI
+        arguments = call_args[1]["arguments"] if "arguments" in (call_args[1] or {}) else call_args[0][1]
+        assert arguments["image_url"].startswith("data:image/png;base64,")
 
         # Progress should have been called 4 times
         assert progress_cb.call_count == 4
@@ -292,7 +294,6 @@ class TestRefineProduct:
     async def test_fal_subscribe_error(self, visual_svc):
         """Test refine_product propagates fal.ai API errors."""
         mock_fal = MagicMock()
-        mock_fal.upload = MagicMock(return_value="https://fal.ai/uploads/masked.png")
         mock_fal.subscribe = MagicMock(side_effect=Exception("fal.ai rate limited"))
 
         with patch("src.ecommerce.services.visual_service._get_fal_client", return_value=mock_fal):
@@ -306,7 +307,6 @@ class TestRefineProduct:
     async def test_fal_result_no_images(self, visual_svc):
         """Test refine_product raises ValueError for unexpected result format."""
         mock_fal = MagicMock()
-        mock_fal.upload = MagicMock(return_value="https://fal.ai/uploads/masked.png")
         mock_fal.subscribe = MagicMock(return_value={"status": "done"})
 
         with patch("src.ecommerce.services.visual_service._get_fal_client", return_value=mock_fal):
@@ -320,7 +320,6 @@ class TestRefineProduct:
     async def test_empty_brand_prompt(self, visual_svc):
         """Test refine_product works with an empty brand prompt."""
         mock_fal = MagicMock()
-        mock_fal.upload = MagicMock(return_value="https://fal.ai/uploads/m.png")
         mock_fal.subscribe = MagicMock(return_value={
             "images": [{"url": "https://fal.ai/out.png"}]
         })

@@ -10,15 +10,15 @@ def test_get_brand_context_empty_inputs():
 
 
 def test_get_brand_context_returns_rows():
+    """Test that get_brand_context delegates to _vector_search and returns results.
+
+    We mock _vector_search directly because the cosine_distance SQLAlchemy
+    operation requires pgvector which is not available in the test environment.
+    """
     db = MagicMock()
-    row = MagicMock()
-    row.content = "Brand story chunk"
-    row.metadata_json = {"source_url": "https://example.com"}
+    expected = [{"content": "Brand story chunk", "metadata": {"source_url": "https://example.com"}}]
 
-    query = db.query.return_value
-    query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [row]
-
-    with patch("src.agentic_core.rag.rag_service.embed_texts", return_value=[[0.1, 0.2]]):
+    with patch("src.agentic_core.rag.rag_service._vector_search", return_value=expected):
         out = get_brand_context(db, shop_id="shop.myshopify.com", product_text="query text", limit=3)
 
     assert len(out) == 1
