@@ -1187,6 +1187,93 @@ async def upload_media_to_shopify(
     return file_gid
 
 
+async def add_product_image(
+    shop_domain: str,
+    access_token: str,
+    product_id: str,
+    image_url: str,
+    alt_text: str = "",
+) -> str:
+    """
+    Append an image to an existing Shopify product using ``productCreateMedia``.
+
+    This **adds** a new image without removing any existing product images.
+
+    Args:
+        shop_domain: Shop domain.
+        access_token: Shopify access token.
+        product_id: Shopify product GID (e.g. ``gid://shopify/Product/123``).
+        image_url: Public URL of the image to add.
+        alt_text: Alt text for the image.
+
+    Returns:
+        The created media GID.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    graphql_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json"
+
+    # Ensure product_id is a GID
+    if not product_id.startswith("gid://"):
+        product_id = f"gid://shopify/Product/{product_id}"
+
+    mutation = """
+    mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+      productCreateMedia(productId: $productId, media: $media) {
+        media {
+          ... on MediaImage {
+            id
+            image {
+              url
+            }
+          }
+        }
+        mediaUserErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    variables = {
+        "productId": product_id,
+        "media": [
+            {
+                "alt": alt_text,
+                "mediaContentType": "IMAGE",
+                "originalSource": image_url,
+            }
+        ],
+    }
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            graphql_url,
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"productCreateMedia failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+        user_errors = (
+            data.get("data", {}).get("productCreateMedia", {}).get("mediaUserErrors", [])
+        )
+        if user_errors:
+            raise Exception(f"productCreateMedia error: {user_errors[0].get('message')}")
+
+        media_list = data.get("data", {}).get("productCreateMedia", {}).get("media", [])
+        media_gid = media_list[0].get("id", "") if media_list else ""
+        logger.info(
+            "✅ Image appended to product %s: %s (%s)",
+            product_id, media_gid, shop_domain,
+        )
+        return media_gid
+
+
 def get_shop_credentials(db, shop_domain: str) -> dict:
     """
     Retrieve shop credentials needed for autonomous publishing.

@@ -310,6 +310,11 @@ class VisualService:
             arguments={
                 "image_url": image_data_uri,
                 "prompt": brand_prompt,
+                "negative_prompt": (
+                    "text, words, letters, logos, watermarks, typography, "
+                    "Japanese text, kanji, hiragana, katakana, numbers, stamps, "
+                    "overlays, captions, labels"
+                ),
                 "num_images": 1,
                 "image_size": "square_hd",
                 "enable_safety_checker": True,
@@ -471,6 +476,11 @@ class VisualService:
             parts.append(
                 f'Render the text "{hook_text}" in bold, elegant typography '
                 f"that is clearly legible and well-positioned."
+            )
+            parts.append(
+                "Spell every word correctly -- double-check spelling before rendering. "
+                "Do NOT misspell, abbreviate, or alter the provided text in any way. "
+                "Render the text exactly as provided, character for character."
             )
         if brand_name:
             parts.append(
