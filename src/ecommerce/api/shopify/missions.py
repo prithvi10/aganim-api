@@ -161,6 +161,9 @@ async def create_mission(
             "target_locale": mission_req.target_locale,
             "brand_soul_enabled": mission_req.brand_soul_enabled,
     }
+    # Include product image URL for VisualAgent
+    if mission_req.image_url:
+        raw_input["image_url"] = mission_req.image_url
     if mission_req.extra_context:
         raw_input.update(mission_req.extra_context)
     
