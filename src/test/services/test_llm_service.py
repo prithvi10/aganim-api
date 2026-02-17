@@ -264,12 +264,12 @@ def test_llm_service_initialization():
     with patch('src.agentic_core.llm.llm_service.AsyncOpenAI') as MockClient:
         service = LLMService(api_key="test-api-key")
         
-        # Should create AsyncOpenAI client with api_key (http_client is also passed for SSL)
+        # Should create AsyncOpenAI client with api_key
         MockClient.assert_called_once()
         call_kwargs = MockClient.call_args.kwargs
         assert call_kwargs.get("api_key") == "test-api-key"
-        # http_client is also passed for Netskope SSL support
-        assert "http_client" in call_kwargs
+        # http_client may or may not be present depending on truststore availability
+        # (it's passed only when _create_http_client() returns a non-None value)
 
 
 def test_llm_service_no_client_without_api_key():

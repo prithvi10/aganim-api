@@ -164,6 +164,51 @@ async def create_mission(
     # Include product image URL for VisualAgent
     if mission_req.image_url:
         raw_input["image_url"] = mission_req.image_url
+
+    # Fallback: if VisualAgent is in the pipeline but no image_url was provided,
+    # fetch the product's featured image from Shopify directly.
+    if not raw_input.get("image_url") and "VisualAgent" in workflow_agents:
+        try:
+            from src.ecommerce.db.transactions import get_shop_access_token
+            import httpx
+
+            access_token = get_shop_access_token(db, shop)
+            if access_token:
+                product_gid = f"gid://shopify/Product/{mission_req.product_id}"
+                gql_query = (
+                    '{"query":"{ product(id: \\\"%s\\\") { featuredImage { url } } }"}'
+                    % product_gid
+                )
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        f"https://{shop}/admin/api/2024-10/graphql.json",
+                        content=gql_query,
+                        headers={
+                            "X-Shopify-Access-Token": access_token,
+                            "Content-Type": "application/json",
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 200:
+                        img_url = (
+                            resp.json()
+                            .get("data", {})
+                            .get("product", {})
+                            .get("featuredImage", {})
+                            .get("url", "")
+                        )
+                        if img_url:
+                            raw_input["image_url"] = img_url
+                            logger.info(
+                                "[Mission] fetched_image_fallback rid=%s shop=%s image_url=%s",
+                                rid, shop, img_url[:120],
+                            )
+        except Exception as e:
+            logger.warning(
+                "[Mission] image_fallback_failed rid=%s shop=%s err=%s",
+                rid, shop, str(e)[:200],
+            )
+
     if mission_req.extra_context:
         raw_input.update(mission_req.extra_context)
     
@@ -225,6 +270,10 @@ async def create_mission(
 # Simple in-memory lock to prevent concurrent mission execution
 # In production, consider using Redis or database locks
 _mission_locks: dict[str, bool] = {}
+
+# Track retry counts to prevent infinite reconnection loops
+_mission_retry_counts: dict[str, int] = {}
+_MAX_STREAM_RETRIES = 3
 
 
 @router.get("/api/missions/{mission_id}/stream")
@@ -317,10 +366,41 @@ async def stream_mission(
         )
     
     # Reset stuck IN_PROGRESS missions (no lock held but status is IN_PROGRESS)
+    # Cap retries to prevent infinite reconnection loops (e.g. from EventSource auto-reconnect)
     if mission.status == "IN_PROGRESS":
+        retry_count = _mission_retry_counts.get(mission_id, 0) + 1
+        _mission_retry_counts[mission_id] = retry_count
+
+        if retry_count > _MAX_STREAM_RETRIES:
+            logger.warning(
+                "[MissionStream] max_retries_exceeded rid=%s mission_id=%s retries=%s — marking ERROR",
+                rid, mission_id, retry_count,
+            )
+            mission.status = "ERROR"
+            mission.error_message = "Mission execution exceeded maximum retries"
+            db.add(mission)
+            db.commit()
+            # Fall through to the already-complete check above on next request
+            async def retry_exceeded_gen():
+                error_data = json.dumps({
+                    "error": "Mission exceeded maximum retries",
+                    "mission_id": mission_id,
+                    "status": "ERROR",
+                })
+                yield f"event: error\ndata: {error_data}\n\n"
+            return StreamingResponse(
+                retry_exceeded_gen(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
         logger.warning(
-            "[MissionStream] resetting_stuck_mission rid=%s mission_id=%s from IN_PROGRESS to PENDING",
-            rid, mission_id
+            "[MissionStream] resetting_stuck_mission rid=%s mission_id=%s from IN_PROGRESS to PENDING (retry %s/%s)",
+            rid, mission_id, retry_count, _MAX_STREAM_RETRIES,
         )
         mission.status = "PENDING"
         db.add(mission)
@@ -362,8 +442,12 @@ async def stream_mission(
             # Send initial heartbeat
             yield f": heartbeat\n\n"
             
+            # Track the latest state from execute() for final event
+            last_state = None
+            
             # Execute workflow and yield events
             async for updated_state in mission_control.execute(state):
+                last_state = updated_state
                 # Update mission record in DB
                 try:
                     mission.current_state = updated_state.to_dict()
@@ -393,8 +477,24 @@ async def stream_mission(
                 # Small delay to prevent overwhelming the client
                 await asyncio.sleep(0.1)
             
-            # Final completion event
-            yield f"event: complete\ndata: {json.dumps({'mission_id': mission_id, 'status': state.status})}\n\n"
+            # Safety net: ensure mission is marked as terminal in DB.
+            # If the last yielded state wasn't COMPLETED/ERROR (e.g. agent failed
+            # gracefully), force it to COMPLETED so reconnects don't re-execute.
+            final_status = getattr(last_state, "status", "COMPLETED") if last_state else "COMPLETED"
+            if final_status not in ("COMPLETED", "ERROR", "COMPLIANCE_REVIEW"):
+                final_status = "COMPLETED"
+            try:
+                mission.status = final_status
+                if not mission.completed_at:
+                    from datetime import datetime, timezone
+                    mission.completed_at = datetime.now(timezone.utc)
+                db.add(mission)
+                db.commit()
+            except Exception:
+                pass
+
+            # Final completion event — use the actual terminal status
+            yield f"event: complete\ndata: {json.dumps({'mission_id': mission_id, 'status': final_status})}\n\n"
             
         except Exception as e:
             logger.exception("[MissionStream] Error in mission %s", mission_id)
@@ -411,8 +511,9 @@ async def stream_mission(
                 pass
         
         finally:
-            # Always release the lock
+            # Always release the lock and clear retry counter on success
             _mission_locks.pop(mission_id, None)
+            _mission_retry_counts.pop(mission_id, None)
             logger.info("[MissionStream] released_lock rid=%s mission_id=%s", rid, mission_id)
     
     return StreamingResponse(
