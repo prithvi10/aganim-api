@@ -19,6 +19,7 @@ from src.ecommerce.state import MissionState
 # Patch targets – publish_visual_assets does *local* imports so we patch at source
 _HTTPX_ASYNC_CLIENT = "httpx.AsyncClient"
 _UPLOAD_MEDIA = "src.ecommerce.services.shopify_service.upload_media_to_shopify"
+_ADD_PRODUCT_IMAGE = "src.ecommerce.services.shopify_service.add_product_image"
 
 
 # =============================================================================
@@ -80,39 +81,53 @@ class TestPublishVisualAssetsHappy:
 
     @pytest.mark.asyncio
     async def test_publishes_all_three_assets(self, adapter, state_with_assets, creds):
-        """All 3 assets should be downloaded and uploaded to Shopify."""
+        """All 3 assets should be published: refined via add_product_image, ad+hero via upload_media."""
         mock_client = _mock_httpx_client()
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
              patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
-                   return_value="gid://shopify/File/1") as mock_upload:
+                   return_value="gid://shopify/File/1") as mock_upload, \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
 
             await adapter.publish_visual_assets(state_with_assets, creds)
 
-        assert mock_upload.call_count == 3
+        # Refined image goes through add_product_image
+        assert mock_add_img.call_count == 1
+        assert mock_add_img.call_args.kwargs["product_id"] == "product-123"
+        assert "refined" in mock_add_img.call_args.kwargs["alt_text"]
 
-        # Verify filenames include product name
+        # Ad + hero go through upload_media_to_shopify
+        assert mock_upload.call_count == 2
         filenames = [c.kwargs["filename"] for c in mock_upload.call_args_list]
-        assert "Ceramic Bowl-refined.png" in filenames
         assert "Ceramic Bowl-ad.png" in filenames
         assert "Ceramic Bowl-hero.png" in filenames
 
     @pytest.mark.asyncio
     async def test_upload_params(self, adapter, state_with_assets, creds):
-        """Verify correct params passed to upload_media_to_shopify."""
+        """Verify correct params passed to upload_media_to_shopify for ad/hero."""
         mock_client = _mock_httpx_client()
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
              patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
-                   return_value="gid://shopify/File/1") as mock_upload:
+                   return_value="gid://shopify/File/1") as mock_upload, \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
 
             await adapter.publish_visual_assets(state_with_assets, creds)
 
+        # Refined goes through add_product_image
+        assert mock_add_img.call_count == 1
+        assert mock_add_img.call_args.kwargs["shop_domain"] == "shop.myshopify.com"
+        assert mock_add_img.call_args.kwargs["access_token"] == "shpat_test_token"
+        assert "refined" in mock_add_img.call_args.kwargs["alt_text"]
+
+        # Ad/hero go through upload_media_to_shopify
         first_call = mock_upload.call_args_list[0]
         assert first_call.kwargs["shop_domain"] == "shop.myshopify.com"
         assert first_call.kwargs["access_token"] == "shpat_test_token"
         assert first_call.kwargs["image_bytes"] == FAKE_IMAGE
-        assert "refined" in first_call.kwargs["alt_text"]
+        assert "ad" in first_call.kwargs["alt_text"]
 
 
 # =============================================================================
@@ -124,7 +139,7 @@ class TestPublishVisualAssetsPartial:
 
     @pytest.mark.asyncio
     async def test_only_refined_url(self, adapter, creds):
-        """Only refined asset should be uploaded when others are None."""
+        """Only refined asset should go through add_product_image when others are None."""
         state = MissionState(
             product_id="p1",
             shop_id="shop.myshopify.com",
@@ -137,16 +152,17 @@ class TestPublishVisualAssetsPartial:
             "hero_url": None,
         }
 
-        mock_client = _mock_httpx_client()
-
-        with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
-             patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
-                   return_value="gid://1") as mock_upload:
+        with patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
+                   return_value="gid://1") as mock_upload, \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
 
             await adapter.publish_visual_assets(state, creds)
 
-        assert mock_upload.call_count == 1
-        assert "refined" in mock_upload.call_args.kwargs["filename"]
+        # Refined goes through add_product_image, not upload_media
+        assert mock_add_img.call_count == 1
+        assert "refined" in mock_add_img.call_args.kwargs["alt_text"]
+        mock_upload.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_empty_asset_urls(self, adapter, creds):
@@ -163,10 +179,12 @@ class TestPublishVisualAssetsPartial:
             "hero_url": "",
         }
 
-        with patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload:
+        with patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload, \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img:
             await adapter.publish_visual_assets(state, creds)
 
         mock_upload.assert_not_called()
+        mock_add_img.assert_not_called()
 
 
 # =============================================================================
@@ -248,7 +266,7 @@ class TestPublishVisualAssetsFailure:
 
     @pytest.mark.asyncio
     async def test_download_failure_continues(self, adapter, creds):
-        """Download failure for one asset should not stop others."""
+        """Download failure for one ad/hero asset should not stop others."""
         import httpx
 
         state = MissionState(
@@ -276,7 +294,7 @@ class TestPublishVisualAssetsFailure:
 
         async def mock_get(url):
             call_idx[0] += 1
-            if call_idx[0] == 2:  # second call (ad) fails
+            if call_idx[0] == 1:  # first httpx call (ad) fails
                 return mock_bad_response
             return mock_ok_response
 
@@ -287,32 +305,40 @@ class TestPublishVisualAssetsFailure:
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
              patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
-                   return_value="gid://1") as mock_upload:
+                   return_value="gid://1") as mock_upload, \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
 
             await adapter.publish_visual_assets(state, creds)
 
-        # 2 successful uploads (refined + hero), ad download failed
-        assert mock_upload.call_count == 2
+        # Refined goes through add_product_image (no httpx download)
+        assert mock_add_img.call_count == 1
+        # 1 successful upload (hero), ad download failed
+        assert mock_upload.call_count == 1
 
     @pytest.mark.asyncio
     async def test_upload_failure_continues(self, adapter, state_with_assets, creds):
         """Upload failure for one asset should not stop others."""
         mock_client = _mock_httpx_client()
-        call_count = [0]
+        upload_call_count = [0]
 
         async def flaky_upload(**kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:  # first upload fails
+            upload_call_count[0] += 1
+            if upload_call_count[0] == 1:  # first upload (ad) fails
                 raise Exception("Shopify API error")
             return "gid://shopify/File/ok"
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
-             patch(_UPLOAD_MEDIA, side_effect=flaky_upload):
+             patch(_UPLOAD_MEDIA, side_effect=flaky_upload), \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
 
             await adapter.publish_visual_assets(state_with_assets, creds)
 
-        # All 3 were attempted
-        assert call_count[0] == 3
+        # Refined goes through add_product_image
+        assert mock_add_img.call_count == 1
+        # Both ad and hero were attempted via upload_media
+        assert upload_call_count[0] == 2
 
     @pytest.mark.asyncio
     async def test_product_name_defaults_to_product(self, adapter, creds):
@@ -325,13 +351,13 @@ class TestPublishVisualAssetsFailure:
         )
         state.visual_assets = {"refined_url": "https://r2/img.png"}
 
-        mock_client = _mock_httpx_client()
-
-        with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
-             patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
-                   return_value="gid://1") as mock_upload:
+        with patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img, \
+             patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload:
 
             await adapter.publish_visual_assets(state, creds)
 
-        filename = mock_upload.call_args.kwargs["filename"]
-        assert filename == "product-refined.png"
+        # Refined goes through add_product_image with default product name in alt_text
+        assert mock_add_img.call_count == 1
+        assert "product" in mock_add_img.call_args.kwargs["alt_text"]
+        mock_upload.assert_not_called()
