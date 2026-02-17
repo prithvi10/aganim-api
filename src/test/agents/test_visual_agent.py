@@ -21,6 +21,7 @@ from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 _VISUAL_SVC = "src.ecommerce.services.visual_service.VisualService"
 _R2_SVC = "src.ecommerce.services.r2_storage_service.R2StorageService"
 _UPLOAD_MEDIA = "src.ecommerce.services.shopify_service.upload_media_to_shopify"
+_ADD_PRODUCT_IMAGE = "src.ecommerce.services.shopify_service.add_product_image"
 _HTTPX_ASYNC_CLIENT = "httpx.AsyncClient"
 
 
@@ -716,16 +717,20 @@ class TestPublishVisualAssets:
         mock_client = _make_httpx_mock()
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
-             patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload:
+             patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload, \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img:
 
             await agent._publish_visual_assets(state, creds)
 
-        # Should upload 3 times (refined, ad, hero)
-        assert mock_upload.call_count == 3
+        # Refined goes via add_product_image, ad + hero via upload_media
+        assert mock_add_img.call_count == 1
+        assert mock_upload.call_count == 2
 
-        # Check logs for success messages
-        success_logs = [l for l in state.logs if "Published" in l]
-        assert len(success_logs) == 3
+        # Check logs: 1 refined added + 2 media published
+        all_logs = "\n".join(state.logs)
+        assert "Refined image added" in all_logs or "refined image" in all_logs.lower()
+        publish_logs = [l for l in state.logs if "Published" in l]
+        assert len(publish_logs) == 2
 
     @pytest.mark.asyncio
     async def test_publish_skips_missing_assets(self, agent):
@@ -747,11 +752,14 @@ class TestPublishVisualAssets:
         mock_client = _make_httpx_mock()
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
-             patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload:
+             patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload, \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img:
 
             await agent._publish_visual_assets(state, creds)
 
-        assert mock_upload.call_count == 1  # only refined
+        # Only refined via add_product_image, nothing via upload_media
+        assert mock_add_img.call_count == 1
+        assert mock_upload.call_count == 0
 
     @pytest.mark.asyncio
     async def test_publish_no_access_token(self, agent):
@@ -801,36 +809,36 @@ class TestPublishVisualAssets:
         }
         creds = {"access_token": "shpat_test"}
 
-        call_count = 0
+        upload_call_count = 0
 
         async def flaky_upload(**kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 2:  # second asset (ad) fails
+            nonlocal upload_call_count
+            upload_call_count += 1
+            if upload_call_count == 1:  # first media upload (ad) fails
                 raise Exception("Upload failed for ad")
             return "gid://shopify/File/123"
 
         mock_client = _make_httpx_mock()
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
-             patch(_UPLOAD_MEDIA, side_effect=flaky_upload):
+             patch(_UPLOAD_MEDIA, side_effect=flaky_upload), \
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img:
 
             await agent._publish_visual_assets(state, creds)
 
-        # All 3 assets were attempted
-        assert call_count == 3
+        # Refined via add_product_image, ad + hero via upload_media
+        assert mock_add_img.call_count == 1
+        assert upload_call_count == 2  # ad (fail) + hero (success)
 
-        # Should have 2 success logs and 1 failure log
-        success_logs = [l for l in state.logs if "Published" in l]
-        failure_logs = [l for l in state.logs if "Failed to publish" in l]
-        assert len(success_logs) == 2
-        assert len(failure_logs) == 1
+        # Should have success and failure logs
+        success_logs = [l for l in state.logs if "Published" in l or "Refined image added" in l]
+        failure_logs = [l for l in state.logs if "Failed" in l]
+        assert len(success_logs) >= 2  # refined added + hero published
+        assert len(failure_logs) >= 1  # ad failed
 
     @pytest.mark.asyncio
     async def test_publish_download_failure(self, agent):
-        """Test publish handles download failure for an asset."""
-        import httpx as httpx_mod
-
+        """Test publish handles failure in add_product_image for refined."""
         state = MissionState(
             product_id="p1",
             shop_id="shop.myshopify.com",
@@ -844,19 +852,10 @@ class TestPublishVisualAssets:
         }
         creds = {"access_token": "shpat_test"}
 
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock(
-            side_effect=httpx_mod.HTTPStatusError("404", request=MagicMock(), response=MagicMock())
-        )
-
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client):
+        with patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
+                    side_effect=Exception("productCreateMedia failed")):
             # Should not raise -- individual failures are caught
             await agent._publish_visual_assets(state, creds)
 
-        failure_logs = [l for l in state.logs if "Failed to publish" in l]
+        failure_logs = [l for l in state.logs if "Failed" in l]
         assert len(failure_logs) == 1

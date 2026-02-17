@@ -44,6 +44,7 @@ from .shopify_service import (
     upload_media_to_shopify,
     staged_upload_create,
     file_create,
+    add_product_image,
 )
 from .brand_ingest_service import (
     ingest_brand_context,
@@ -85,6 +86,7 @@ __all__ = [
     "upload_media_to_shopify",
     "staged_upload_create",
     "file_create",
+    "add_product_image",
     # Brand ingest
     "ingest_brand_context",
     "scrape_urls",

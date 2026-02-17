@@ -180,7 +180,7 @@ class VisualAgent(BaseAgent):
             }
             state.add_log(f"Visual: [{pct}%] {label}")
 
-        # Build prompts from Brand Soul
+        # Build prompts from Brand Soul (all prompt tuning is in prompts.py)
         brand_soul = context.external_data.get("brand_soul", "")
         product_name = context.external_data.get("product_name", "Product")
         brand_name = context.external_data.get("brand_name", "")
@@ -321,11 +321,14 @@ class VisualAgent(BaseAgent):
 
     async def _publish_visual_assets(self, state: MissionState, creds: dict) -> None:
         """
-        Push generated visual assets to Shopify Media Library.
-
-        Uses stagedUploadsCreate + fileCreate mutations.
+        Push generated visual assets to Shopify:
+        1. Append refined image to the product gallery (non-destructive).
+        2. Upload ad + hero to the Media Library.
         """
-        from src.ecommerce.services.shopify_service import upload_media_to_shopify
+        from src.ecommerce.services.shopify_service import (
+            upload_media_to_shopify,
+            add_product_image,
+        )
 
         assets = getattr(state, "visual_assets", None) or {}
         access_token = creds.get("access_token", "")
@@ -336,19 +339,44 @@ class VisualAgent(BaseAgent):
 
         import httpx
 
-        for asset_type in ("refined", "ad", "hero"):
+        product_name = (state.raw_input or {}).get("product_name", "product")
+        product_id = getattr(state, "product_id", "")
+
+        # ── 1. Append refined image to product gallery ──
+        refined_url = assets.get("refined_url")
+        if refined_url and product_id:
+            try:
+                media_gid = await add_product_image(
+                    shop_domain=state.shop_id,
+                    access_token=access_token,
+                    product_id=product_id,
+                    image_url=refined_url,
+                    alt_text=f"{product_name} - AI-refined product image",
+                )
+                state.add_log(f"Visual: Refined image added to product gallery ({media_gid})")
+                logger.info(
+                    "[VisualAgent] refined image appended to product %s shop=%s",
+                    product_id, state.shop_id,
+                )
+            except Exception as e:
+                state.add_log(f"Visual: Failed to add refined image to product: {str(e)[:100]}")
+                logger.error(
+                    "[VisualAgent] append refined to product failed shop=%s err=%s",
+                    state.shop_id, str(e),
+                )
+
+        # ── 2. Upload ad + hero to Shopify Media Library ──
+        for asset_type in ("ad", "hero"):
             url = assets.get(f"{asset_type}_url")
             if not url:
                 continue
 
             try:
-                # Download the image bytes
                 async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.get(url)
                     resp.raise_for_status()
                     image_bytes = resp.content
 
-                product_name = (state.raw_input or {}).get("product_name", "product")
                 filename = f"{product_name}-{asset_type}.png"
 
                 await upload_media_to_shopify(

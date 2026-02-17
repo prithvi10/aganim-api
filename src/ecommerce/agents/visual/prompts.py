@@ -14,6 +14,8 @@ Professional product photography background.
 {brand_style}
 Clean, well-lit studio environment that complements the product.
 Subtle, non-distracting background with consistent global lighting.
+Remove all text, logos, watermarks, Japanese characters, and typographic overlays from the image.
+The final image must contain only the product on a clean background -- no text of any kind.
 High-end e-commerce aesthetic. Premium quality.
 {extra_context}
 """
@@ -27,6 +29,9 @@ Professional social media marketing advertisement for {product_name}.
 {brand_style}
 Render the text "{hook_text}" in bold, elegant typography that is clearly \
 legible and well-positioned on the image.
+Spell every word correctly -- double-check spelling before rendering.
+Do NOT misspell, abbreviate, or alter the provided text in any way.
+Render the text exactly as provided, character for character.
 {brand_name_line}
 Modern, eye-catching design. High contrast for mobile viewing.
 Instagram-ready square format. Print-ready quality. No watermarks.
