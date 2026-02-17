@@ -16,6 +16,7 @@ Required env vars:
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import os
 import re
@@ -260,15 +261,12 @@ class VisualService:
 
         fal_client = _get_fal_client()
 
-        # Upload the masked image to fal storage for use as input
+        # Encode as base64 data URI — avoids needing fal storage upload perms
         if progress:
-            progress("inpainting", 30, "Uploading isolated product to generation engine...")
+            progress("inpainting", 30, "Encoding isolated product for generation engine...")
 
-        masked_url = await asyncio.to_thread(
-            fal_client.upload,
-            masked_image_bytes,
-            "image/png",
-        )
+        b64 = base64.b64encode(masked_image_bytes).decode()
+        image_data_uri = f"data:image/png;base64,{b64}"
 
         if progress:
             progress("inpainting", 35, "Regenerating background with brand styling...")
@@ -278,7 +276,7 @@ class VisualService:
             fal_client.subscribe,
             self.FLUX_PRO_MODEL,
             arguments={
-                "image_url": masked_url,
+                "image_url": image_data_uri,
                 "prompt": brand_prompt,
                 "num_images": 1,
                 "image_size": "square_hd",
