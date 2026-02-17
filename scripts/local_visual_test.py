@@ -100,6 +100,10 @@ try:
 except Exception:
     pass
 
+# Auto-enable rembg for local testing (server defaults to disabled to avoid OOM)
+if not os.getenv("REMBG_ENABLED"):
+    os.environ["REMBG_ENABLED"] = "true"
+
 
 # =============================================================================
 # Built-in Test Cases — Product descriptions with sample Shopify CDN images

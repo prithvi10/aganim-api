@@ -147,9 +147,20 @@ def _get_rembg():
     """Lazily import rembg for background removal.
 
     Returns the ``rembg.remove`` function, or *None* if the dependency
-    is missing.  rembg calls ``sys.exit(1)`` when onnxruntime is not
-    installed, so we catch ``SystemExit`` as well.
+    is missing or disabled.
+
+    rembg + onnxruntime loads the U2NET model (~170 MB) into RAM.  On
+    memory-constrained hosts (e.g. Render free/starter 512 MB) this causes
+    an OOM kill.  Set ``REMBG_ENABLED=true`` to opt-in; when the variable
+    is absent or any other value rembg is **skipped** and the original
+    image is sent directly to Flux Pro.
     """
+    if not os.getenv("REMBG_ENABLED", "").lower() == "true":
+        logger.info(
+            "[VisualService] rembg disabled (set REMBG_ENABLED=true to enable "
+            "background removal — requires ~512 MB free RAM)"
+        )
+        return None
     try:
         from rembg import remove as rembg_remove
         return rembg_remove
