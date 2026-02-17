@@ -197,14 +197,14 @@ class TestIsolateProduct:
                 )
 
     @pytest.mark.asyncio
-    async def test_rembg_import_error(self, visual_svc):
-        """Test isolate_product raises when rembg is not installed."""
+    async def test_rembg_unavailable_returns_original_bytes(self, visual_svc):
+        """Test isolate_product gracefully returns original image when rembg is unavailable."""
         mock_response = MagicMock()
         mock_response.content = FAKE_IMAGE_BYTES
         mock_response.raise_for_status = MagicMock()
 
         with patch("src.ecommerce.services.visual_service.httpx.AsyncClient") as mock_client_cls, \
-             patch("src.ecommerce.services.visual_service._get_rembg", side_effect=ImportError("rembg not found")):
+             patch("src.ecommerce.services.visual_service._get_rembg", return_value=None):
 
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(return_value=mock_response)
@@ -212,10 +212,11 @@ class TestIsolateProduct:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            with pytest.raises(ImportError, match="rembg"):
-                await visual_svc.isolate_product(
-                    image_url="https://cdn.shopify.com/product.jpg",
-                )
+            result = await visual_svc.isolate_product(
+                image_url="https://cdn.shopify.com/product.jpg",
+            )
+            # Should return original image bytes (graceful fallback)
+            assert result == FAKE_IMAGE_BYTES
 
     @pytest.mark.asyncio
     async def test_rembg_processing_error(self, visual_svc):
