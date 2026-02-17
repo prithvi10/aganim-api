@@ -1,5 +1,5 @@
 # Product Launch Email — Takumi Ceramics
-Generated: 2026-02-17 12:53 | Template: marketing/email-launch
+Generated: 2026-02-17 18:03 | Template: marketing/email-launch
 
 ---
 
