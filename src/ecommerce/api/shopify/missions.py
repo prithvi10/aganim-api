@@ -740,40 +740,71 @@ async def run_step(
                 mission_id=mission_id,  # Pass DB mission_id for consistent logging
                 workflow_config=wf_config,
             )
-            # Execute single step and chain auto-proceed steps
-            while True:
-                async for updated_state in mission_control.execute_single_step(state):
-                    # Update mission record in DB
+            _STEP_POLL_INTERVAL = 2.0
+
+            def _persist_step_state(s: MissionState):
+                try:
+                    mission.current_state = s.to_dict()
+                    mission.status = s.status
+                    mission.logs = s.logs
+                    if s.status == "COMPLETED":
+                        from datetime import datetime, timezone
+                        mission.completed_at = datetime.now(timezone.utc)
+                    if s.error_message:
+                        mission.error_message = s.error_message
+                    db.add(mission)
+                    db.commit()
+                except Exception as e:
+                    logger.warning("[MissionStep] DB update failed: %s", e)
                     try:
-                        mission.current_state = updated_state.to_dict()
-                        mission.status = updated_state.status
-                        mission.logs = updated_state.logs
-                        if updated_state.status == "COMPLETED":
-                            from datetime import datetime, timezone
-                            mission.completed_at = datetime.now(timezone.utc)
-                        if updated_state.error_message:
-                            mission.error_message = updated_state.error_message
-                        db.add(mission)
-                        db.commit()
-                    except Exception as e:
-                        logger.warning("[MissionStep] DB update failed: %s", e)
+                        db.rollback()
+                    except Exception:
+                        pass
+
+            # Execute single step with interim state polling so that
+            # long-running visual agents can surface images incrementally.
+            while True:
+                step_queue: asyncio.Queue = asyncio.Queue()
+
+                async def _run_step():
+                    async for updated_state in mission_control.execute_single_step(state):
+                        await step_queue.put(("state", updated_state))
+                    await step_queue.put(("done", None))
+
+                step_task = asyncio.create_task(_run_step())
+
+                try:
+                    while True:
                         try:
-                            db.rollback()
-                        except Exception:
-                            pass
-                    
-                    # Yield SSE event
-                    state_json = json.dumps(updated_state.to_dict())
-                    yield f"event: state_update\ndata: {state_json}\n\n"
-                    
-                    # Keep state reference updated for potential chaining
-                    state = updated_state
-                    
-                    await asyncio.sleep(0.1)
-                
+                            kind, payload = await asyncio.wait_for(
+                                step_queue.get(), timeout=_STEP_POLL_INTERVAL,
+                            )
+                        except asyncio.TimeoutError:
+                            # Emit interim state snapshot (visual_assets / visual_progress)
+                            state_json = json.dumps(state.to_dict())
+                            yield f"event: state_update\ndata: {state_json}\n\n"
+                            yield f": heartbeat\n\n"
+                            continue
+
+                        if kind == "done":
+                            break
+
+                        updated_state = payload
+                        _persist_step_state(updated_state)
+
+                        state_json = json.dumps(updated_state.to_dict())
+                        yield f"event: state_update\ndata: {state_json}\n\n"
+
+                        state = updated_state
+                        await asyncio.sleep(0.1)
+
+                    await step_task
+                finally:
+                    if step_task and not step_task.done():
+                        step_task.cancel()
+
                 # Check if auto-proceeded (status PENDING means no gate, keep running)
                 if state.status == "PENDING" and state.current_agent_index < len(mission_control.workflow):
-                    # Emit auto-proceed event so frontend can update UI
                     auto_data = {
                         "mission_id": mission_id,
                         "auto_proceeded_from": state.current_agent_index - 1,
@@ -781,10 +812,8 @@ async def run_step(
                         "next_agent": state.workflow_agents[state.current_agent_index] if state.current_agent_index < len(state.workflow_agents) else None,
                     }
                     yield f"event: step_auto_proceeded\ndata: {json.dumps(auto_data)}\n\n"
-                    # Continue the loop to run the next agent immediately
                     continue
                 else:
-                    # Gated (AWAITING_APPROVAL), completed, or error – break
                     break
             
             # Get final state info
