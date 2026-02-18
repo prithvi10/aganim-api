@@ -1,13 +1,14 @@
 """
 Integration tests for the Pro-Visual pipeline.
 
-Tests the end-to-end flow of the VisualAgent within MissionControl:
-  - Pro tier includes VisualAgent in workflow
-  - Standard/Basic/Free tiers do NOT include VisualAgent
-  - VisualAgent runs and populates state.visual_assets
-  - VisualAgent's output is extracted correctly by _extract_agent_output
+Tests the end-to-end flow of ImageRefinementAgent and VisualMarketingAgent
+within MissionControl:
+  - Pro tier includes both visual agents in workflow
+  - Standard/Basic/Free tiers do NOT include visual agents
+  - Visual agents run and populate state.visual_assets
+  - Visual agents' output is extracted correctly by _extract_agent_output
   - Autonomous mode triggers visual generation automatically
-  - Pipeline error in VisualAgent doesn't crash entire mission
+  - Pipeline error in visual agents doesn't crash entire mission
   - MissionState visual fields survive through the full pipeline
 """
 
@@ -21,6 +22,8 @@ from src.ecommerce.agents.seo import SEOAgent
 from src.ecommerce.agents.marketing import MarketingAgent
 from src.ecommerce.agents.price_scout import PriceScoutAgent
 from src.ecommerce.agents.visual import VisualAgent
+from src.ecommerce.agents.image_refinement import ImageRefinementAgent
+from src.ecommerce.agents.visual_marketing import VisualMarketingAgent
 
 
 # =============================================================================
@@ -86,26 +89,46 @@ def standard_state():
 # =============================================================================
 
 class TestWorkflowConfiguration:
-    """Test that VisualAgent is correctly included/excluded in workflows."""
+    """Test that visual agents are correctly included/excluded in workflows."""
 
-    def test_pro_workflow_includes_visual_agent(self):
-        assert VisualAgent in MissionControl.WORKFLOWS["Pro"]
+    def test_pro_workflow_includes_image_refinement_agent(self):
+        assert ImageRefinementAgent in MissionControl.WORKFLOWS["Pro"]
 
-    def test_standard_workflow_excludes_visual_agent(self):
-        assert VisualAgent not in MissionControl.WORKFLOWS["Standard"]
+    def test_pro_workflow_includes_visual_marketing_agent(self):
+        assert VisualMarketingAgent in MissionControl.WORKFLOWS["Pro"]
 
-    def test_basic_workflow_excludes_visual_agent(self):
-        assert VisualAgent not in MissionControl.WORKFLOWS["Basic"]
+    def test_standard_workflow_excludes_visual_agents(self):
+        assert ImageRefinementAgent not in MissionControl.WORKFLOWS["Standard"]
+        assert VisualMarketingAgent not in MissionControl.WORKFLOWS["Standard"]
 
-    def test_free_workflow_excludes_visual_agent(self):
-        assert VisualAgent not in MissionControl.WORKFLOWS["Free"]
+    def test_basic_workflow_excludes_visual_agents(self):
+        assert ImageRefinementAgent not in MissionControl.WORKFLOWS["Basic"]
+        assert VisualMarketingAgent not in MissionControl.WORKFLOWS["Basic"]
 
-    def test_visual_agent_is_last_in_pro_workflow(self):
-        """VisualAgent should run after all other agents."""
+    def test_free_workflow_excludes_visual_agents(self):
+        assert ImageRefinementAgent not in MissionControl.WORKFLOWS["Free"]
+        assert VisualMarketingAgent not in MissionControl.WORKFLOWS["Free"]
+
+    def test_visual_marketing_agent_is_last_in_pro_workflow(self):
+        """VisualMarketingAgent should run after all other agents."""
         pro = MissionControl.WORKFLOWS["Pro"]
-        assert pro[-1] == VisualAgent
+        assert pro[-1] == VisualMarketingAgent
 
-    def test_visual_agent_in_agent_map(self):
+    def test_image_refinement_before_visual_marketing(self):
+        """ImageRefinementAgent should run before VisualMarketingAgent."""
+        pro = MissionControl.WORKFLOWS["Pro"]
+        ir_idx = pro.index(ImageRefinementAgent)
+        vm_idx = pro.index(VisualMarketingAgent)
+        assert ir_idx < vm_idx
+
+    def test_visual_agents_in_agent_map(self):
+        assert "ImageRefinementAgent" in MissionControl.AGENT_MAP
+        assert MissionControl.AGENT_MAP["ImageRefinementAgent"] == ImageRefinementAgent
+        assert "VisualMarketingAgent" in MissionControl.AGENT_MAP
+        assert MissionControl.AGENT_MAP["VisualMarketingAgent"] == VisualMarketingAgent
+
+    def test_legacy_visual_agent_still_in_agent_map(self):
+        """VisualAgent kept in AGENT_MAP for backward compatibility."""
         assert "VisualAgent" in MissionControl.AGENT_MAP
         assert MissionControl.AGENT_MAP["VisualAgent"] == VisualAgent
 
@@ -115,9 +138,36 @@ class TestWorkflowConfiguration:
 # =============================================================================
 
 class TestExtractVisualOutput:
-    """Test _extract_agent_output for VisualAgent."""
+    """Test _extract_agent_output for visual agents."""
 
-    def test_extracts_visual_assets(self, mock_services):
+    def test_extracts_visual_assets_for_image_refinement(self, mock_services):
+        mission = MissionControl(
+            plan_tier="Pro",
+            shop_id="pro-shop.myshopify.com",
+            services=mock_services,
+        )
+
+        state = MissionState(
+            product_id="p1",
+            shop_id="pro-shop.myshopify.com",
+            plan_tier="Pro",
+            raw_input={},
+        )
+        state.visual_assets = {
+            "refined_url": "https://r2/refined.png",
+            "original_image_url": "https://cdn.shopify.com/product.jpg",
+        }
+        state.visual_progress = {
+            "phase": "complete",
+            "pct": 100,
+            "label": "Done",
+        }
+
+        output = mission._extract_agent_output(state, "ImageRefinementAgent")
+        assert output["visual_assets"] == state.visual_assets
+        assert output["visual_progress"] == state.visual_progress
+
+    def test_extracts_visual_assets_for_visual_marketing(self, mock_services):
         mission = MissionControl(
             plan_tier="Pro",
             shop_id="pro-shop.myshopify.com",
@@ -141,7 +191,7 @@ class TestExtractVisualOutput:
             "label": "Done",
         }
 
-        output = mission._extract_agent_output(state, "VisualAgent")
+        output = mission._extract_agent_output(state, "VisualMarketingAgent")
         assert output["visual_assets"] == state.visual_assets
         assert output["visual_progress"] == state.visual_progress
 
@@ -159,7 +209,7 @@ class TestExtractVisualOutput:
             raw_input={},
         )
 
-        output = mission._extract_agent_output(state, "VisualAgent")
+        output = mission._extract_agent_output(state, "ImageRefinementAgent")
         assert output["visual_assets"] is None
         assert output["visual_progress"] is None
 
@@ -169,10 +219,10 @@ class TestExtractVisualOutput:
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_pro_mission_runs_visual_agent(mock_services, pro_state):
+async def test_pro_mission_runs_visual_agents(mock_services, pro_state):
     """
-    Integration: Pro tier full mission should run VisualAgent.
-    We mock all agents to verify VisualAgent is in the execution flow.
+    Integration: Pro tier full mission should run both ImageRefinementAgent
+    and VisualMarketingAgent.
     """
     agents_executed = []
 
@@ -182,10 +232,11 @@ async def test_pro_mission_runs_visual_agent(mock_services, pro_state):
         return state
 
     with patch.object(RewriterAgent, 'run', capture_agent), \
+         patch.object(ImageRefinementAgent, 'run', capture_agent), \
          patch.object(SEOAgent, 'run', capture_agent), \
          patch.object(MarketingAgent, 'run', capture_agent), \
          patch.object(PriceScoutAgent, 'run', capture_agent), \
-         patch.object(VisualAgent, 'run', capture_agent):
+         patch.object(VisualMarketingAgent, 'run', capture_agent):
 
         mission = MissionControl(
             plan_tier="Pro",
@@ -197,16 +248,15 @@ async def test_pro_mission_runs_visual_agent(mock_services, pro_state):
         async for state in mission.execute(pro_state):
             states.append(state)
 
-    # VisualAgent should have been executed
-    assert "Visual" in agents_executed
-    # Final state should be COMPLETED
+    assert "ImageRefinement" in agents_executed
+    assert "VisualMarketing" in agents_executed
     assert states[-1].status == "COMPLETED"
 
 
 @pytest.mark.asyncio
-async def test_standard_mission_does_not_run_visual_agent(mock_services, standard_state):
+async def test_standard_mission_does_not_run_visual_agents(mock_services, standard_state):
     """
-    Integration: Standard tier should NOT run VisualAgent.
+    Integration: Standard tier should NOT run visual agents.
     """
     agents_executed = []
 
@@ -218,8 +268,7 @@ async def test_standard_mission_does_not_run_visual_agent(mock_services, standar
     with patch.object(RewriterAgent, 'run', capture_agent), \
          patch.object(SEOAgent, 'run', capture_agent), \
          patch.object(MarketingAgent, 'run', capture_agent), \
-         patch.object(PriceScoutAgent, 'run', capture_agent), \
-         patch.object(VisualAgent, 'run', capture_agent):
+         patch.object(PriceScoutAgent, 'run', capture_agent):
 
         mission = MissionControl(
             plan_tier="Standard",
@@ -231,8 +280,8 @@ async def test_standard_mission_does_not_run_visual_agent(mock_services, standar
         async for state in mission.execute(standard_state):
             states.append(state)
 
-    # VisualAgent should NOT have been executed
-    assert "Visual" not in agents_executed
+    assert "ImageRefinement" not in agents_executed
+    assert "VisualMarketing" not in agents_executed
     assert states[-1].status == "COMPLETED"
 
 
@@ -241,36 +290,45 @@ async def test_standard_mission_does_not_run_visual_agent(mock_services, standar
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_visual_agent_populates_state(mock_services, pro_state):
+async def test_visual_agents_populate_state(mock_services, pro_state):
     """
-    Integration: VisualAgent should populate state.visual_assets
-    when it runs in the Pro pipeline.
+    Integration: ImageRefinementAgent and VisualMarketingAgent should
+    cumulatively populate state.visual_assets when they run in the Pro pipeline.
     """
     async def noop_agent(self, state):
         state.add_log(f"{self.role_name}: ran")
         return state
 
-    async def mock_visual_run(self, state):
-        """Simulate VisualAgent populating visual_assets."""
+    async def mock_image_refinement_run(self, state):
         state.visual_assets = {
             "refined_url": "https://r2/refined.png",
-            "ad_url": "https://r2/ad.png",
-            "hero_url": "https://r2/hero.png",
             "original_image_url": "https://cdn.shopify.com/product.jpg",
         }
         state.visual_progress = {
+            "phase": "refinement_complete",
+            "pct": 50,
+            "label": "Image refinement complete",
+        }
+        state.add_log("ImageRefinement: pipeline complete")
+        return state
+
+    async def mock_visual_marketing_run(self, state):
+        state.visual_assets["ad_url"] = "https://r2/ad.png"
+        state.visual_assets["hero_url"] = "https://r2/hero.png"
+        state.visual_progress = {
             "phase": "complete",
             "pct": 100,
-            "label": "Visual pipeline complete",
+            "label": "Visual marketing complete",
         }
-        state.add_log("Visual: pipeline complete")
+        state.add_log("VisualMarketing: pipeline complete")
         return state
 
     with patch.object(RewriterAgent, 'run', noop_agent), \
+         patch.object(ImageRefinementAgent, 'run', mock_image_refinement_run), \
          patch.object(SEOAgent, 'run', noop_agent), \
          patch.object(MarketingAgent, 'run', noop_agent), \
          patch.object(PriceScoutAgent, 'run', noop_agent), \
-         patch.object(VisualAgent, 'run', mock_visual_run):
+         patch.object(VisualMarketingAgent, 'run', mock_visual_marketing_run):
 
         mission = MissionControl(
             plan_tier="Pro",
@@ -297,34 +355,33 @@ async def test_visual_agent_populates_state(mock_services, pro_state):
 @pytest.mark.asyncio
 async def test_visual_agent_error_handled_gracefully(mock_services, pro_state):
     """
-    Integration: If VisualAgent raises an error, it should be caught
+    Integration: If ImageRefinementAgent raises an error, it should be caught
     and the mission should still complete (with error logged).
     """
     async def noop_agent(self, state):
         state.add_log(f"{self.role_name}: ran")
         return state
 
-    async def visual_that_fails(self, state):
-        """Simulate VisualAgent that encounters an error but handles it."""
+    async def refinement_that_fails(self, state):
+        """Simulate ImageRefinementAgent that encounters an error but handles it."""
         state.visual_assets = {
             "original_image_url": "https://cdn.shopify.com/product.jpg",
             "refined_url": None,
-            "ad_url": None,
-            "hero_url": None,
         }
         state.visual_progress = {
             "phase": "error",
             "pct": 0,
-            "label": "Visual pipeline error: fal.ai unreachable",
+            "label": "Image refinement error: fal.ai unreachable",
         }
-        state.add_log("Visual: pipeline error - fal.ai unreachable")
+        state.add_log("ImageRefinement: pipeline error - fal.ai unreachable")
         return state
 
     with patch.object(RewriterAgent, 'run', noop_agent), \
+         patch.object(ImageRefinementAgent, 'run', refinement_that_fails), \
          patch.object(SEOAgent, 'run', noop_agent), \
          patch.object(MarketingAgent, 'run', noop_agent), \
          patch.object(PriceScoutAgent, 'run', noop_agent), \
-         patch.object(VisualAgent, 'run', visual_that_fails):
+         patch.object(VisualMarketingAgent, 'run', noop_agent):
 
         mission = MissionControl(
             plan_tier="Pro",
@@ -337,11 +394,8 @@ async def test_visual_agent_error_handled_gracefully(mock_services, pro_state):
             states.append(state)
 
     final_state = states[-1]
-    # Mission should still complete
     assert final_state.status == "COMPLETED"
-    # Visual progress should show error
     assert final_state.visual_progress["phase"] == "error"
-    # But there should be partial results stored
     assert final_state.visual_assets is not None
 
 
@@ -350,10 +404,10 @@ async def test_visual_agent_error_handled_gracefully(mock_services, pro_state):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_autonomous_flag_persists_through_visual_agent(mock_services, pro_state):
+async def test_autonomous_flag_persists_through_visual_agents(mock_services, pro_state):
     """
     Integration: autonomous flag should persist through all agents
-    including VisualAgent.
+    including ImageRefinementAgent and VisualMarketingAgent.
     """
     captured_flags = []
 
@@ -363,10 +417,11 @@ async def test_autonomous_flag_persists_through_visual_agent(mock_services, pro_
         return state
 
     with patch.object(RewriterAgent, 'run', capture_autonomous), \
+         patch.object(ImageRefinementAgent, 'run', capture_autonomous), \
          patch.object(SEOAgent, 'run', capture_autonomous), \
          patch.object(MarketingAgent, 'run', capture_autonomous), \
          patch.object(PriceScoutAgent, 'run', capture_autonomous), \
-         patch.object(VisualAgent, 'run', capture_autonomous):
+         patch.object(VisualMarketingAgent, 'run', capture_autonomous):
 
         mission = MissionControl(
             plan_tier="Pro",
@@ -378,14 +433,16 @@ async def test_autonomous_flag_persists_through_visual_agent(mock_services, pro_
         async for state in mission.execute(pro_state):
             states.append(state)
 
-    # All 5 agents (including Visual) should have seen autonomous=True
-    assert len(captured_flags) == 5
+    assert len(captured_flags) == 6
     assert all(flag is True for _, flag in captured_flags)
 
-    # Verify Visual was one of them
-    visual_entry = [e for e in captured_flags if e[0] == "Visual"]
-    assert len(visual_entry) == 1
-    assert visual_entry[0][1] is True
+    ir_entry = [e for e in captured_flags if e[0] == "ImageRefinement"]
+    assert len(ir_entry) == 1
+    assert ir_entry[0][1] is True
+
+    vm_entry = [e for e in captured_flags if e[0] == "VisualMarketing"]
+    assert len(vm_entry) == 1
+    assert vm_entry[0][1] is True
 
 
 # =============================================================================
@@ -395,37 +452,45 @@ async def test_autonomous_flag_persists_through_visual_agent(mock_services, pro_
 @pytest.mark.asyncio
 async def test_visual_output_in_agent_outputs(mock_services, pro_state):
     """
-    Integration: VisualAgent's output should be stored in
+    Integration: Visual agents' output should be stored in
     state.agent_outputs during step-by-step execution.
     """
     async def noop(self, state):
         state.add_log(f"{self.role_name}: ran")
         return state
 
-    async def visual_run(self, state):
+    async def image_refinement_run(self, state):
         state.visual_assets = {
             "refined_url": "https://r2/refined.png",
-            "ad_url": "https://r2/ad.png",
-            "hero_url": "https://r2/hero.png",
+            "original_image_url": "https://cdn.shopify.com/product.jpg",
         }
+        state.visual_progress = {"phase": "refinement_complete", "pct": 50, "label": "Refined"}
+        state.add_log("ImageRefinement: ran")
+        return state
+
+    async def visual_marketing_run(self, state):
+        state.visual_assets["ad_url"] = "https://r2/ad.png"
+        state.visual_assets["hero_url"] = "https://r2/hero.png"
         state.visual_progress = {"phase": "complete", "pct": 100, "label": "Done"}
-        state.add_log("Visual: ran")
+        state.add_log("VisualMarketing: ran")
         return state
 
     config = [
         {"agent_name": "RewriterAgent", "has_gate": False},
+        {"agent_name": "ImageRefinementAgent", "has_gate": False},
         {"agent_name": "SEOAgent", "has_gate": False},
         {"agent_name": "MarketingAgent", "has_gate": False},
         {"agent_name": "PriceScoutAgent", "has_gate": False},
-        {"agent_name": "VisualAgent", "has_gate": True},  # Gate on visual
+        {"agent_name": "VisualMarketingAgent", "has_gate": True},
     ]
     pro_state.workflow_config = config
 
     with patch.object(RewriterAgent, 'run', noop), \
+         patch.object(ImageRefinementAgent, 'run', image_refinement_run), \
          patch.object(SEOAgent, 'run', noop), \
          patch.object(MarketingAgent, 'run', noop), \
          patch.object(PriceScoutAgent, 'run', noop), \
-         patch.object(VisualAgent, 'run', visual_run):
+         patch.object(VisualMarketingAgent, 'run', visual_marketing_run):
 
         mission = MissionControl(
             plan_tier="Pro",
@@ -434,7 +499,6 @@ async def test_visual_output_in_agent_outputs(mock_services, pro_state):
             workflow_config=config,
         )
 
-        # Execute all steps
         last_state = None
         while True:
             states = []
@@ -455,7 +519,6 @@ async def test_visual_output_in_agent_outputs(mock_services, pro_state):
             if last_state.status == "COMPLETED":
                 break
 
-    # Visual assets should be in the final state
     assert last_state.visual_assets is not None
     assert last_state.visual_assets["refined_url"] == "https://r2/refined.png"
 
@@ -468,7 +531,7 @@ async def test_visual_output_in_agent_outputs(mock_services, pro_state):
 async def test_pro_mission_no_image_visual_graceful(mock_services):
     """
     Integration: Pro mission with no image_url should still complete,
-    with VisualAgent logging that it was skipped.
+    with visual agents logging that they were skipped.
     """
     state = MissionState(
         product_id="product-789",
@@ -485,16 +548,20 @@ async def test_pro_mission_no_image_visual_graceful(mock_services):
         state.add_log(f"{self.role_name}: ran")
         return state
 
-    async def visual_no_image(self, state):
-        """Simulate VisualAgent that skips due to no image."""
-        state.add_log("Visual: Skipped -- no product image URL available")
+    async def refinement_no_image(self, state):
+        state.add_log("ImageRefinement: Skipped -- no product image URL available")
+        return state
+
+    async def marketing_no_image(self, state):
+        state.add_log("VisualMarketing: Skipped -- no image or hook text available")
         return state
 
     with patch.object(RewriterAgent, 'run', noop), \
+         patch.object(ImageRefinementAgent, 'run', refinement_no_image), \
          patch.object(SEOAgent, 'run', noop), \
          patch.object(MarketingAgent, 'run', noop), \
          patch.object(PriceScoutAgent, 'run', noop), \
-         patch.object(VisualAgent, 'run', visual_no_image):
+         patch.object(VisualMarketingAgent, 'run', marketing_no_image):
 
         mission = MissionControl(
             plan_tier="Pro",
@@ -508,7 +575,6 @@ async def test_pro_mission_no_image_visual_graceful(mock_services):
 
     final = states[-1]
     assert final.status == "COMPLETED"
-    assert final.visual_assets is None  # No assets generated
-    # Should have a log about skipping
+    assert final.visual_assets is None
     skip_logs = [l for l in final.logs if "Skipped" in l]
     assert len(skip_logs) > 0

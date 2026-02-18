@@ -445,20 +445,34 @@ async def stream_mission(
             
             # Track the latest state from execute() for final event
             last_state = None
-            
-            # Execute workflow and yield events
-            async for updated_state in mission_control.execute(state):
-                last_state = updated_state
-                # Update mission record in DB
+
+            # Run orchestrator in a background task so we can emit interim
+            # progress snapshots every few seconds (critical for long-running
+            # visual pipelines where a single agent may run for minutes).
+            _PROGRESS_POLL_INTERVAL = 2.0  # seconds
+            update_queue: asyncio.Queue = asyncio.Queue()
+
+            async def _run_workflow():
                 try:
-                    mission.current_state = updated_state.to_dict()
-                    mission.status = updated_state.status
-                    mission.logs = updated_state.logs
-                    if updated_state.status in ("COMPLETED", "ERROR"):
+                    async for s in mission_control.execute(state):
+                        await update_queue.put(("state", s))
+                    await update_queue.put(("done", None))
+                except Exception as exc:
+                    await update_queue.put(("error", exc))
+
+            workflow_task = asyncio.create_task(_run_workflow())
+
+            def _persist_state(s):
+                """Write state snapshot to DB (best-effort)."""
+                try:
+                    mission.current_state = s.to_dict()
+                    mission.status = s.status
+                    mission.logs = s.logs
+                    if s.status in ("COMPLETED", "ERROR"):
                         from datetime import datetime, timezone
                         mission.completed_at = datetime.now(timezone.utc)
-                    if updated_state.error_message:
-                        mission.error_message = updated_state.error_message
+                    if s.error_message:
+                        mission.error_message = s.error_message
                     db.add(mission)
                     db.commit()
                 except Exception as e:
@@ -467,20 +481,38 @@ async def stream_mission(
                         db.rollback()
                     except Exception:
                         pass
-                
-                # Yield SSE event
+
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(
+                        update_queue.get(), timeout=_PROGRESS_POLL_INTERVAL,
+                    )
+                except asyncio.TimeoutError:
+                    # No orchestrator yield yet — emit interim state snapshot
+                    # so the frontend sees visual_progress / visual_assets updates.
+                    state_json = json.dumps(state.to_dict())
+                    yield f"event: state_update\ndata: {state_json}\n\n"
+                    yield f": heartbeat\n\n"
+                    continue
+
+                if kind == "done":
+                    break
+                if kind == "error":
+                    raise payload
+
+                updated_state = payload
+                last_state = updated_state
+                _persist_state(updated_state)
+
                 state_json = json.dumps(updated_state.to_dict())
                 yield f"event: state_update\ndata: {state_json}\n\n"
-                
-                # Heartbeat to keep connection alive
                 yield f": heartbeat\n\n"
-                
-                # Small delay to prevent overwhelming the client
                 await asyncio.sleep(0.1)
+
+            # Ensure the task is awaited to surface any unhandled exceptions
+            await workflow_task
             
             # Safety net: ensure mission is marked as terminal in DB.
-            # If the last yielded state wasn't COMPLETED/ERROR (e.g. agent failed
-            # gracefully), force it to COMPLETED so reconnects don't re-execute.
             final_status = getattr(last_state, "status", "COMPLETED") if last_state else "COMPLETED"
             if final_status not in ("COMPLETED", "ERROR", "COMPLIANCE_REVIEW"):
                 final_status = "COMPLETED"
@@ -494,7 +526,7 @@ async def stream_mission(
             except Exception:
                 pass
 
-            # Final completion event — use the actual terminal status
+            # Final completion event
             yield f"event: complete\ndata: {json.dumps({'mission_id': mission_id, 'status': final_status})}\n\n"
             
         except Exception as e:
