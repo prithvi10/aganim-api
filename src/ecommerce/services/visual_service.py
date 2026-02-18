@@ -540,12 +540,13 @@ class VisualService:
 
         fal_client = _get_fal_client()
 
-        prompt_hint = (
+        _FAL_OUTPAINT_PROMPT_LIMIT = 500
+        prompt = brand_prompt or (
             "Seamless product scene with consistent lighting and style. "
             "No text, no words, no logos, no writing. Purely visual."
         )
-        if brand_prompt:
-            prompt_hint = f"{prompt_hint} {brand_prompt}"
+        if len(prompt) > _FAL_OUTPAINT_PROMPT_LIMIT:
+            prompt = prompt[: _FAL_OUTPAINT_PROMPT_LIMIT - 3] + "..."
 
         if progress:
             progress("outpainting", 80, "Expanding to 16:9 hero banner...")
@@ -560,7 +561,7 @@ class VisualService:
                 "expand_top": 0,
                 "expand_bottom": 0,
                 "zoom_out_percentage": 15,
-                "prompt": prompt_hint,
+                "prompt": prompt,
                 "num_images": 1,
                 "enable_safety_checker": True,
                 "output_format": "png",

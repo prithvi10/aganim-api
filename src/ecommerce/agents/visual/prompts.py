@@ -37,20 +37,20 @@ Instagram-ready square format. Print-ready quality. No watermarks. No hashtags.
 """
 
 # ---------------------------------------------------------------------------
-# Hero Banner Outpainting (SD 3.5)
+# Hero Banner Outpainting (fal.ai outpaint-v2, 500-char prompt limit)
 # ---------------------------------------------------------------------------
 
 HERO_BANNER_PROMPT_TEMPLATE = """\
-Expand this product photograph into a wide 16:9 hero banner.
-Keep the product centered and prominent.
-{brand_style}
-Extend the background seamlessly with consistent lighting, color palette, \
-and visual style. Suitable for a Shopify collection page header or blog hero image.
-Do NOT include any text, words, letters, numbers, logos, or writing of any kind.
-Purely visual — no typography whatsoever.
-Professional e-commerce photography. Ultra high quality.
+Expand product photo into wide 16:9 hero banner. Product centered and prominent.
+{brand_style}\
+Extend background seamlessly with consistent lighting and color palette.
+No text, words, letters, logos, or writing of any kind. Purely visual.
+Professional e-commerce photography. Ultra high quality.\
 {extra_context}
 """
+
+# fal.ai outpaint-v2 enforces a hard 500-character prompt limit
+_HERO_PROMPT_HARD_CAP = 500
 
 
 # ---------------------------------------------------------------------------
@@ -100,18 +100,55 @@ def build_ad_prompt(
     ).strip()
 
 
+def _distill_brand_aesthetic(brand_soul: str, max_len: int = 120) -> str:
+    """Extract a short visual-friendly aesthetic hint from brand soul.
+
+    The brand_soul may be a ``str()``-ified dict (from strategic_intelligence)
+    or plain descriptive text.  Either way we return a concise phrase suitable
+    for an image-generation prompt (archetype + a handful of power words).
+    """
+    import ast
+    import re
+
+    if not brand_soul:
+        return ""
+
+    # Strategic intelligence dict stringified via str()
+    try:
+        data = ast.literal_eval(brand_soul)
+        if isinstance(data, dict):
+            parts: list[str] = []
+            archetype = data.get("archetype", "")
+            if archetype:
+                parts.append(archetype.replace("_", " ").title())
+            words = data.get("power_words", [])
+            if words:
+                parts.append(", ".join(words[:5]))
+            return ". ".join(parts)[:max_len]
+    except (ValueError, SyntaxError):
+        pass
+
+    # Plain text fallback — first meaningful fragment
+    clean = re.sub(r"\s+", " ", brand_soul).strip()
+    return clean[:max_len]
+
+
 def build_hero_prompt(
     brand_soul: str = "",
     extra_context: str = "",
 ) -> str:
-    """Build the hero banner outpainting prompt."""
+    """Build the hero banner outpainting prompt (max 500 chars for fal.ai)."""
     brand_style = ""
     if brand_soul:
-        brand_style = (
-            f"Brand aesthetic: {brand_soul[:500]}. "
-            f"Maintain visual consistency with the brand identity."
-        )
-    return HERO_BANNER_PROMPT_TEMPLATE.format(
+        aesthetic = _distill_brand_aesthetic(brand_soul, max_len=120)
+        if aesthetic:
+            brand_style = f"Brand aesthetic: {aesthetic}.\n"
+
+    prompt = HERO_BANNER_PROMPT_TEMPLATE.format(
         brand_style=brand_style,
         extra_context=extra_context,
     ).strip()
+
+    if len(prompt) > _HERO_PROMPT_HARD_CAP:
+        prompt = prompt[: _HERO_PROMPT_HARD_CAP - 3] + "..."
+    return prompt
