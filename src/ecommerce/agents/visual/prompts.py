@@ -14,8 +14,6 @@ Professional product photography background.
 {brand_style}
 Clean, well-lit studio environment that complements the product.
 Subtle, non-distracting background with consistent global lighting.
-Remove all text, logos, watermarks, Japanese characters, and typographic overlays from the image.
-The final image must contain only the product on a clean background -- no text of any kind.
 High-end e-commerce aesthetic. Premium quality.
 {extra_context}
 """
