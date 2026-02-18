@@ -201,6 +201,7 @@ class VisualService:
     FLUX_PRO_MODEL = "fal-ai/flux-pro/v1.1/redux"
     IDEOGRAM_MODEL = "fal-ai/ideogram/v3"
     SD35_OUTPAINT_MODEL = "fal-ai/stable-diffusion-v35-large"
+    TEXT_REMOVAL_MODEL = "fal-ai/image-editing/text-removal"
 
     def __init__(self, fal_key: str | None = None):
         self._fal_key = fal_key or os.getenv("FAL_KEY", "")
@@ -267,6 +268,56 @@ class VisualService:
         return output_bytes
 
     # ------------------------------------------------------------------
+    # 1b. Text Removal (fal.ai text-removal model)
+    # ------------------------------------------------------------------
+
+    async def remove_text(
+        self,
+        image_bytes: bytes,
+        progress: ProgressCallback = None,
+    ) -> bytes:
+        """
+        Remove all text overlays, logos, and watermarks from an image
+        using the dedicated fal.ai text-removal model.
+
+        Returns:
+            Cleaned PNG image bytes with text removed.
+        """
+        if progress:
+            progress("text_removal", 15, "Removing text overlays from image...")
+
+        fal_client = _get_fal_client()
+
+        b64 = base64.b64encode(image_bytes).decode()
+        image_data_uri = f"data:image/png;base64,{b64}"
+
+        result = await asyncio.to_thread(
+            fal_client.subscribe,
+            self.TEXT_REMOVAL_MODEL,
+            arguments={
+                "image_url": image_data_uri,
+                "output_format": "png",
+            },
+        )
+
+        cleaned_url = self._extract_image_url(result)
+
+        if progress:
+            progress("text_removal", 22, "Text removal complete — downloading cleaned image...")
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(cleaned_url)
+            resp.raise_for_status()
+            cleaned_bytes = resp.content
+
+        logger.info(
+            "[VisualService] remove_text complete input=%d bytes output=%d bytes",
+            len(image_bytes),
+            len(cleaned_bytes),
+        )
+        return cleaned_bytes
+
+    # ------------------------------------------------------------------
     # 2. Background Refinement (Flux 2.0 Pro via fal.ai)
     # ------------------------------------------------------------------
 
@@ -310,14 +361,8 @@ class VisualService:
             arguments={
                 "image_url": image_data_uri,
                 "prompt": brand_prompt,
-                "negative_prompt": (
-                    "text, words, letters, logos, watermarks, typography, "
-                    "Japanese text, kanji, hiragana, katakana, numbers, stamps, "
-                    "overlays, captions, labels"
-                ),
                 "num_images": 1,
                 "image_size": "square_hd",
-                "enable_safety_checker": True,
             },
         )
 

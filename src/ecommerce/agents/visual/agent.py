@@ -169,7 +169,7 @@ class VisualAgent(BaseAgent):
 
         visual_svc = VisualService()
         r2_svc = R2StorageService()
-        mission_id = getattr(state, "mission_id", "unknown")
+        mission_id = state.mission_id or "unknown"
 
         # Build a progress callback that writes to state for SSE streaming
         def _progress(phase: str, pct: int, label: str):
@@ -203,7 +203,13 @@ class VisualAgent(BaseAgent):
                 progress=_progress,
             )
 
-            # Upload masked image to R2 for reference
+            # --- Step 1b: Remove text overlays ---
+            masked_bytes = await visual_svc.remove_text(
+                image_bytes=masked_bytes,
+                progress=_progress,
+            )
+
+            # Upload cleaned image to R2 for reference
             mask_key = R2StorageService.build_key(
                 state.shop_id, mission_id, "masked"
             )

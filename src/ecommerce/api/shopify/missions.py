@@ -421,6 +421,7 @@ async def stream_mission(
             initial_state_dict = mission.current_state or {}
             
             state = MissionState.from_dict(initial_state_dict, db=db)
+            state.mission_id = mission_id
             
             # Create services and mission control (with db/shop for usage tracking)
             services = ServiceRegistry.create_default(db=db, shop_domain=shop)
@@ -682,6 +683,7 @@ async def run_step(
             # Load state from mission record
             state_dict = mission.current_state or {}
             state = MissionState.from_dict(state_dict, db=db)
+            state.mission_id = mission_id
             
             # Create services and mission control (with db/shop for usage tracking)
             services = ServiceRegistry.create_default(db=db, shop_domain=shop)
@@ -849,6 +851,7 @@ async def continue_step(
     # Load state and advance to next step
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
+    state.mission_id = mission_id
     
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)
@@ -1341,6 +1344,7 @@ async def regenerate_step(
     # Load state and prepare for regeneration
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
+    state.mission_id = mission_id
     
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)
@@ -1419,6 +1423,7 @@ async def skip_step(
     # Load state and skip current step
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
+    state.mission_id = mission_id
     
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)

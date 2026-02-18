@@ -315,6 +315,7 @@ class TestActDomainHappyPath:
 
         mock_visual_svc = MagicMock()
         mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
+        mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
         mock_visual_svc.generate_ad = AsyncMock(return_value="https://fal.ai/ad.png")
         mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
@@ -482,6 +483,7 @@ class TestActDomainURLValidation:
 
         mock_visual_svc = MagicMock()
         mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
+        mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
         mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
 
@@ -527,6 +529,7 @@ class TestActDomainNoHook:
 
         mock_visual_svc = MagicMock()
         mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
+        mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
         mock_visual_svc.generate_ad = AsyncMock()  # Should NOT be called
         mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
@@ -624,6 +627,7 @@ class TestActDomainFailure:
 
         mock_visual_svc = MagicMock()
         mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
+        mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.refine_product = AsyncMock(
             side_effect=ValueError("fal.ai returned empty result")
         )
@@ -662,6 +666,7 @@ class TestActDomainFailure:
 
         mock_visual_svc = MagicMock()
         mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
+        mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
         mock_visual_svc.expand_hero = AsyncMock(
             side_effect=TimeoutError("fal.ai timed out")

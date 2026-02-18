@@ -123,6 +123,7 @@ class ShopifyMissionState(GenericMissionState):
             workflow_agents=data.get("workflow_agents", []),
             workflow_config=data.get("workflow_config", []),
             autonomous=data.get("autonomous", False),
+            mission_id=data.get("mission_id"),
             # Shopify-specific fields
             draft_content=data.get("draft_content"),
             draft_title=data.get("draft_title"),
