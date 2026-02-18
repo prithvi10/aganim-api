@@ -496,7 +496,9 @@ class VisualService:
                 "style_type": "DESIGN",
                 "negative_prompt": (
                     "blurry, low quality, distorted text, misspelled words, "
-                    "hashtags, social media captions, watermark"
+                    "hashtags, social media captions, watermark, "
+                    "random text, gibberish, extra text, additional text, "
+                    "unwanted text, placeholder text, decorative text, lorem ipsum"
                 ),
             },
         )
@@ -554,8 +556,8 @@ class VisualService:
                 "prompt": hero_prompt,
                 "image_url": refined_image_url,
                 "image_size": {
-                    "width": 1920,
-                    "height": 1080,
+                    "width": 1280,
+                    "height": 720,
                 },
                 "num_images": 1,
                 "enable_safety_checker": True,
@@ -636,7 +638,9 @@ class VisualService:
                 "Spell every word correctly -- double-check spelling before rendering. "
                 "Do NOT misspell, abbreviate, or alter the provided text in any way. "
                 "Render the text exactly as provided, character for character. "
-                "Do NOT add hashtags, captions, or any extra text beyond what is specified."
+                "The ONLY text in the entire image must be the specified text above. "
+                "Do NOT add any other words, letters, numbers, hashtags, captions, "
+                "random text, or writing of any kind anywhere in the image."
             )
         if brand_name:
             parts.append(
@@ -644,7 +648,7 @@ class VisualService:
             )
         parts.append(
             "High-fidelity, print-ready quality. No watermarks. "
-            "No hashtags. No social media captions. "
+            "No hashtags. No social media captions. No random or decorative text. "
             "Professional lighting and composition."
         )
         return " ".join(parts)

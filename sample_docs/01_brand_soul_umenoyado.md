@@ -1,5 +1,5 @@
 # Brand Soul & Strategic Intelligence — 梅乃宿酒造
-Generated: 2026-02-17 12:00
+
 
 ---
 

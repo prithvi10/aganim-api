@@ -1,5 +1,5 @@
 # Brand Blog Post — Takumi Ceramics
-Generated: 2026-02-18 12:15 | Template: product/blog-post
+Template: product/blog-post
 
 ## The Ancient Art of Wood-Kiln Firing: Where Fire Meets Clay
 **Meta Description:** Discover how Takumi Ceramics transforms raw Arita clay into heirloom pieces through a meticulous 4-day wood-kiln firing process.
