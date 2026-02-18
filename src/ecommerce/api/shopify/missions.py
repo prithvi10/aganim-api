@@ -415,6 +415,7 @@ async def stream_mission(
         
         # Acquire lock
         _mission_locks[mission_id] = True
+        workflow_task = None
         
         try:
             # Load initial state from mission record
@@ -544,6 +545,14 @@ async def stream_mission(
                 pass
         
         finally:
+            # Cancel the workflow task if it's still running (prevents orphaned
+            # pipelines when the SSE connection drops mid-execution).
+            if workflow_task and not workflow_task.done():
+                workflow_task.cancel()
+                logger.warning(
+                    "[MissionStream] cancelled_orphan_workflow rid=%s mission_id=%s",
+                    rid, mission_id,
+                )
             # Always release the lock and clear retry counter on success
             _mission_locks.pop(mission_id, None)
             _mission_retry_counts.pop(mission_id, None)
