@@ -83,8 +83,6 @@ def default_plan():
 def _make_visual_svc_mock():
     mock_svc = MagicMock()
     mock_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
-    mock_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
-    mock_svc.remove_objects = AsyncMock(return_value=FAKE_MASKED)
     mock_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
     return mock_svc
 
@@ -171,8 +169,6 @@ class TestActDomainHappyPath:
             actions, state = await agent._act_domain(pro_state, context, default_plan)
 
         mock_visual_svc.isolate_product.assert_called_once()
-        mock_visual_svc.remove_text.assert_called_once()
-        mock_visual_svc.remove_objects.assert_called_once()
         mock_visual_svc.refine_product.assert_called_once()
 
         assert mock_r2_svc.upload_asset.call_count == 2

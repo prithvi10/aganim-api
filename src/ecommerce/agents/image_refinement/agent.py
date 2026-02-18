@@ -3,9 +3,12 @@ ImageRefinementAgent -- Product image cleanup and background refinement.
 
 Pipeline:
 1.  Product Isolation (rembg local or BiRefNet cloud fallback)
-1b. Text Removal (fal-ai/image-editing/text-removal)
-1c. Object Removal (fal-ai/object-removal) -- second-pass cleanup
 2.  Background Refinement (Flux 2.0 Pro Redux via fal.ai)
+
+Text and object removal steps are intentionally omitted: the background
+is regenerated from scratch by Flux Pro, so background text is already
+eliminated.  Removing text from the product itself (labels, logos, brand
+names) would damage the product image.
 
 Only runs for Pro-tier users.  Produces a single refined product image
 stored in Cloudflare R2.
@@ -142,22 +145,12 @@ class ImageRefinementAgent(BaseAgent):
         state.visual_assets = visual_assets
 
         try:
-            # Step 1: Isolate product
+            # Step 1: Isolate product (background removal)
             masked_bytes = await visual_svc.isolate_product(
                 image_url=image_url, progress=_progress,
             )
 
-            # Step 1b: Remove text overlays
-            masked_bytes = await visual_svc.remove_text(
-                image_bytes=masked_bytes, progress=_progress,
-            )
-
-            # Step 1c: Object removal second pass
-            masked_bytes = await visual_svc.remove_objects(
-                image_bytes=masked_bytes, progress=_progress,
-            )
-
-            # Upload cleaned image to R2
+            # Upload isolated product to R2
             mask_key = R2StorageService.build_key(state.shop_id, mission_id, "masked")
             await r2_svc.upload_asset(masked_bytes, mask_key)
 
