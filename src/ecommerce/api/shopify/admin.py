@@ -1060,3 +1060,17 @@ async def meta_credentials_status(
         "has_meta_credentials": has_creds,
         "meta_page_id": getattr(shop_record, "meta_page_id", None) if has_creds else None,
     }
+
+
+# =============================================================================
+# Retail Calendar
+# =============================================================================
+
+@router.get("/api/retail-calendar")
+async def retail_calendar_endpoint(
+    request: Request,
+    shop: str = Depends(resolve_shop_domain),
+):
+    """Return the full US retail holiday calendar for the current year."""
+    from src.ecommerce.agents.marketing.holidays import get_retail_calendar
+    return {"calendar": get_retail_calendar()}
