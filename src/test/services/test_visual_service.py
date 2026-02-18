@@ -406,7 +406,7 @@ class TestGenerateAd:
 # =============================================================================
 
 class TestExpandHero:
-    """Test expand_hero method (SD 3.5 outpainting via fal.ai)."""
+    """Test expand_hero method (outpaint-v2 via fal.ai)."""
 
     @pytest.mark.asyncio
     async def test_happy_path(self, visual_svc, progress_cb):
@@ -425,12 +425,12 @@ class TestExpandHero:
 
         assert result == "https://fal.ai/hero.png"
         call_args = mock_fal.subscribe.call_args
-        assert call_args[0][0] == VisualService.SD35_OUTPAINT_MODEL
-        # Verify 16:9 dimensions (1280x720 — lower res for faster generation)
-        assert call_args[1]["arguments"]["image_size"]["width"] == 1280
-        assert call_args[1]["arguments"]["image_size"]["height"] == 720
+        assert call_args[0][0] == VisualService.OUTPAINT_V2_MODEL
+        args = call_args[1]["arguments"]
+        assert args["expand_left"] == 400
+        assert args["expand_right"] == 400
         # Brand prompt should be included
-        assert "Zen garden aesthetic" in call_args[1]["arguments"]["prompt"]
+        assert "Zen garden aesthetic" in args["prompt"]
 
         # Progress should be called 3 times
         assert progress_cb.call_count == 3
@@ -451,7 +451,7 @@ class TestExpandHero:
         assert result == "https://fal.ai/hero.png"
         call_args = mock_fal.subscribe.call_args
         prompt = call_args[1]["arguments"]["prompt"]
-        assert "16:9" in prompt
+        assert "consistent lighting" in prompt
 
     @pytest.mark.asyncio
     async def test_fal_error_propagates(self, visual_svc):
@@ -498,4 +498,4 @@ class TestVisualServiceConfig:
     def test_model_endpoints_set(self):
         assert "flux-pro" in VisualService.FLUX_PRO_MODEL
         assert "ideogram" in VisualService.IDEOGRAM_MODEL
-        assert "stable-diffusion" in VisualService.SD35_OUTPAINT_MODEL
+        assert "outpaint" in VisualService.OUTPAINT_V2_MODEL

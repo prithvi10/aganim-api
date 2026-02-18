@@ -132,6 +132,7 @@ class VisualMarketingAgent(BaseAgent):
         brand_soul = context.external_data.get("brand_soul", "")
         hook_text = context.external_data.get("hook_text", "")
         brand_name = context.external_data.get("brand_name", "")
+        product_name = context.external_data.get("product_name", "")
         hero_prompt = build_hero_prompt(brand_soul=brand_soul)
 
         # Initialise or extend visual_assets dict
@@ -152,6 +153,7 @@ class VisualMarketingAgent(BaseAgent):
                     refined_image_url=image_url,
                     hook_text=hook_text,
                     brand_name=brand_name,
+                    product_name=product_name,
                     progress=_progress,
                 )
                 async with httpx.AsyncClient(timeout=30) as client:

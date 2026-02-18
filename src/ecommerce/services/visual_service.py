@@ -201,6 +201,7 @@ class VisualService:
     FLUX_PRO_MODEL = "fal-ai/flux-pro/v1.1/redux"
     IDEOGRAM_MODEL = "fal-ai/ideogram/v3"
     SD35_OUTPAINT_MODEL = "fal-ai/stable-diffusion-v35-large"
+    OUTPAINT_V2_MODEL = "fal-ai/image-apps-v2/outpaint"
     TEXT_REMOVAL_MODEL = "fal-ai/image-editing/text-removal"
     BIREFNET_MODEL = "fal-ai/birefnet/v2"
     OBJECT_REMOVAL_MODEL = "fal-ai/object-removal"
@@ -460,6 +461,7 @@ class VisualService:
         refined_image_url: str,
         hook_text: str,
         brand_name: str = "",
+        product_name: str = "",
         progress: ProgressCallback = None,
     ) -> str:
         """
@@ -471,6 +473,7 @@ class VisualService:
             hook_text: Social media hook text to render on the ad
                        (e.g., "New Collection" or "Artisan Made").
             brand_name: Brand name for additional context.
+            product_name: Product name for context (avoids misidentification).
 
         Returns:
             URL of the generated ad image.
@@ -481,7 +484,7 @@ class VisualService:
         fal_client = _get_fal_client()
 
         clean_hook = self._clean_hook_text(hook_text)
-        ad_prompt = self._build_ad_prompt(clean_hook, brand_name)
+        ad_prompt = self._build_ad_prompt(clean_hook, brand_name, product_name)
 
         if progress:
             progress("ad_generation", 60, "Rendering typography and ad creative...")
@@ -522,8 +525,8 @@ class VisualService:
         progress: ProgressCallback = None,
     ) -> str:
         """
-        Use Stable Diffusion 3.5 outpainting to expand a product shot
-        into a 16:9 hero banner suitable for blog pages and collection headers.
+        Use fal.ai outpaint-v2 to expand a product shot into a 16:9 hero
+        banner suitable for blog pages and collection headers.
 
         Args:
             refined_image_url: URL of the refined product image.
@@ -537,34 +540,30 @@ class VisualService:
 
         fal_client = _get_fal_client()
 
-        hero_prompt = (
-            f"Expand this product photo into a wide 16:9 hero banner. "
-            f"Maintain the product in the center, extend the background "
-            f"seamlessly with consistent lighting and style. "
-            f"Do NOT include any text, words, letters, numbers, logos, or writing of any kind. "
-            f"Purely visual — no typography. "
-            f"{brand_prompt}"
-        ).strip()
+        prompt_hint = (
+            "Seamless product scene with consistent lighting and style. "
+            "No text, no words, no logos, no writing. Purely visual."
+        )
+        if brand_prompt:
+            prompt_hint = f"{prompt_hint} {brand_prompt}"
 
         if progress:
             progress("outpainting", 80, "Expanding to 16:9 hero banner...")
 
         result = await asyncio.to_thread(
             fal_client.subscribe,
-            self.SD35_OUTPAINT_MODEL,
+            self.OUTPAINT_V2_MODEL,
             arguments={
-                "prompt": hero_prompt,
                 "image_url": refined_image_url,
-                "image_size": {
-                    "width": 1280,
-                    "height": 720,
-                },
+                "expand_left": 400,
+                "expand_right": 400,
+                "expand_top": 0,
+                "expand_bottom": 0,
+                "zoom_out_percentage": 15,
+                "prompt": prompt_hint,
                 "num_images": 1,
                 "enable_safety_checker": True,
-                "negative_prompt": (
-                    "text, words, letters, numbers, writing, captions, "
-                    "watermark, logo, hashtags, gibberish, blurry, low quality"
-                ),
+                "output_format": "png",
             },
         )
 
@@ -623,11 +622,15 @@ class VisualService:
         return headline
 
     @staticmethod
-    def _build_ad_prompt(hook_text: str, brand_name: str = "") -> str:
+    def _build_ad_prompt(
+        hook_text: str, brand_name: str = "", product_name: str = "",
+    ) -> str:
         """Build the Ideogram prompt for ad generation with typography."""
+        product_desc = f" for {product_name}" if product_name else ""
         parts = [
-            "Professional social media marketing advertisement.",
-            "Clean, modern design with product prominently featured.",
+            f"Professional social media marketing advertisement{product_desc}.",
+            "Clean, modern design with the actual product prominently featured.",
+            "Keep the product faithful to the reference image — same shape, color, and style.",
         ]
         if hook_text:
             parts.append(
