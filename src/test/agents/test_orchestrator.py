@@ -147,9 +147,10 @@ def test_agent_map_contains_expected_agents():
     assert "MarketingAgent" in AGENT_MAP
     assert "PriceScoutAgent" in AGENT_MAP
     assert "VisualAgent" in AGENT_MAP
+    assert "ContentHeroAgent" in AGENT_MAP
     # ComplianceAgent should NOT be in AGENT_MAP (disabled)
-    # 8 entries: Rewriter, Copywriter(alias), SEO, Marketing, PriceScout, ImageRefinement, VisualMarketing, Visual(compat)
-    assert len(AGENT_MAP) == 8
+    # 9 entries: Rewriter, Copywriter(alias), SEO, Marketing, PriceScout, ImageRefinement, VisualMarketing, Visual(compat), ContentHero
+    assert len(AGENT_MAP) == 9
 
 
 def test_agent_map_maps_to_correct_classes():

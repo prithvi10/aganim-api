@@ -27,6 +27,7 @@ from .agents.compliance import ComplianceAgent  # Kept for reference but disable
 from .agents.visual import VisualAgent
 from .agents.image_refinement import ImageRefinementAgent
 from .agents.visual_marketing import VisualMarketingAgent
+from .agents.content_hero import ContentHeroAgent
 from src.agentic_core.registry import ServiceRegistry
 from src.shared.logging.logger import get_logger
 
@@ -42,6 +43,7 @@ AGENT_MAP: Dict[str, Type[BaseAgent]] = {
     "ImageRefinementAgent": ImageRefinementAgent,
     "VisualMarketingAgent": VisualMarketingAgent,
     "VisualAgent": VisualAgent,  # backward compat for existing missions
+    "ContentHeroAgent": ContentHeroAgent,
     # "ComplianceAgent": ComplianceAgent,  # DISABLED
 }
 
@@ -136,6 +138,10 @@ class MissionControl(_GenericMissionControl):
             return {
                 "visual_assets": state.visual_assets,
                 "visual_progress": state.visual_progress,
+            }
+        elif agent_name == "ContentHeroAgent":
+            return {
+                "content_hero_assets": state.content_hero_assets,
             }
         else:
             return {}

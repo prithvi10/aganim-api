@@ -301,7 +301,7 @@ class TestActDomainHappyPath:
 
     @pytest.mark.asyncio
     async def test_full_pipeline_with_hook(self, agent, pro_state, default_plan):
-        """Test complete pipeline: masking → refine → ad → hero."""
+        """Test complete pipeline: masking -> refine -> ad."""
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
@@ -318,14 +318,12 @@ class TestActDomainHappyPath:
         mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
         mock_visual_svc.generate_ad = AsyncMock(return_value="https://fal.ai/ad.png")
-        mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
 
         mock_r2_svc = MagicMock()
         mock_r2_svc.upload_asset = AsyncMock(side_effect=[
             "r2://masked.png",    # masked upload
             "r2://refined.png",   # refined upload
             "r2://ad.png",        # ad upload
-            "r2://hero.png",      # hero upload
         ])
 
         mock_client = _make_httpx_mock()
@@ -339,27 +337,20 @@ class TestActDomainHappyPath:
 
             actions, state = await agent._act_domain(pro_state, context, default_plan)
 
-        # Verify all services were called
         mock_visual_svc.isolate_product.assert_called_once()
         mock_visual_svc.refine_product.assert_called_once()
         mock_visual_svc.generate_ad.assert_called_once()
-        mock_visual_svc.expand_hero.assert_called_once()
 
-        # Verify R2 uploads (masked + refined + ad + hero = 4)
-        assert mock_r2_svc.upload_asset.call_count == 4
+        assert mock_r2_svc.upload_asset.call_count == 3
 
-        # Verify actions
         assert len(actions) == 1
         assert actions[0].success is True
         assert actions[0].tool_name == "visual.generate"
 
-        # Verify state updated
         assert state.visual_assets is not None
         assert state.visual_assets["refined_url"] == "r2://refined.png"
         assert state.visual_assets["ad_url"] == "r2://ad.png"
-        assert state.visual_assets["hero_url"] == "r2://hero.png"
 
-        # Progress should reach 100%
         assert state.visual_progress["phase"] == "complete"
         assert state.visual_progress["pct"] == 100
 
@@ -485,7 +476,6 @@ class TestActDomainURLValidation:
         mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
-        mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
 
         mock_r2_svc = MagicMock()
         mock_r2_svc.upload_asset = AsyncMock(return_value="r2://asset.png")
@@ -501,7 +491,6 @@ class TestActDomainURLValidation:
 
             actions, state = await agent._act_domain(pro_state, context, default_plan)
 
-        # Pipeline should have started (isolate_product called)
         mock_visual_svc.isolate_product.assert_called_once()
         assert actions[0].success is True
 
@@ -523,7 +512,7 @@ class TestActDomainNoHook:
                 "brand_soul": "",
                 "product_name": "Bowl",
                 "brand_name": "",
-                "hook_text": "",  # No hook
+                "hook_text": "",
             },
         )
 
@@ -531,14 +520,12 @@ class TestActDomainNoHook:
         mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
         mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
-        mock_visual_svc.generate_ad = AsyncMock()  # Should NOT be called
-        mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
+        mock_visual_svc.generate_ad = AsyncMock()
 
         mock_r2_svc = MagicMock()
         mock_r2_svc.upload_asset = AsyncMock(side_effect=[
             "r2://masked.png",
             "r2://refined.png",
-            "r2://hero.png",
         ])
 
         mock_client = _make_httpx_mock()
@@ -552,19 +539,13 @@ class TestActDomainNoHook:
 
             actions, state = await agent._act_domain(pro_state, context, default_plan)
 
-        # Ad generation should NOT be called
         mock_visual_svc.generate_ad.assert_not_called()
 
-        # ad_url should be None
         assert state.visual_assets["ad_url"] is None
-        # refined and hero should still be set
         assert state.visual_assets["refined_url"] is not None
-        assert state.visual_assets["hero_url"] is not None
 
-        # Action should still be successful
         assert actions[0].success is True
 
-        # Should have a log about ad being skipped
         ad_skip_logs = [l for l in state.logs if "Ad generation skipped" in l]
         assert len(ad_skip_logs) > 0
 
@@ -650,49 +631,6 @@ class TestActDomainFailure:
         assert state.visual_assets["original_image_url"] == "https://cdn.shopify.com/product.jpg"
         assert state.visual_assets["refined_url"] is None
 
-    @pytest.mark.asyncio
-    async def test_hero_fails_after_refine(self, agent, pro_state, default_plan):
-        """Test partial failure: refine succeeds but hero expansion fails."""
-        context = AgentContext(
-            raw_input=pro_state.raw_input,
-            external_data={
-                "image_url": "https://cdn.shopify.com/product.jpg",
-                "brand_soul": "",
-                "product_name": "Bowl",
-                "brand_name": "",
-                "hook_text": "",  # no ad
-            },
-        )
-
-        mock_visual_svc = MagicMock()
-        mock_visual_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
-        mock_visual_svc.remove_text = AsyncMock(return_value=FAKE_MASKED)
-        mock_visual_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
-        mock_visual_svc.expand_hero = AsyncMock(
-            side_effect=TimeoutError("fal.ai timed out")
-        )
-
-        mock_r2_svc = MagicMock()
-        mock_r2_svc.upload_asset = AsyncMock(side_effect=[
-            "r2://masked.png",
-            "r2://refined.png",
-        ])
-
-        mock_client = _make_httpx_mock()
-
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
-             patch(_R2_SVC) as mock_r2_cls, \
-             patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client):
-
-            mock_r2_cls.return_value = mock_r2_svc
-            mock_r2_cls.build_key = MagicMock(return_value="key")
-
-            actions, state = await agent._act_domain(pro_state, context, default_plan)
-
-        assert actions[0].success is False
-        # Partial results: refined_url was set before the error
-        assert state.visual_assets["refined_url"] == "r2://refined.png"
-        assert state.visual_assets["hero_url"] is None
 
 
 # =============================================================================
@@ -703,8 +641,8 @@ class TestPublishVisualAssets:
     """Test _publish_visual_assets method."""
 
     @pytest.mark.asyncio
-    async def test_publish_all_three_assets(self, agent):
-        """Test publishing all three asset types to Shopify."""
+    async def test_publish_refined_and_ad_assets(self, agent):
+        """Test publishing refined and ad assets to Shopify."""
         state = MissionState(
             product_id="p1",
             shop_id="shop.myshopify.com",
@@ -715,7 +653,6 @@ class TestPublishVisualAssets:
         state.visual_assets = {
             "refined_url": "https://r2.example.com/refined.png",
             "ad_url": "https://r2.example.com/ad.png",
-            "hero_url": "https://r2.example.com/hero.png",
         }
         creds = {"access_token": "shpat_test"}
 
@@ -727,15 +664,13 @@ class TestPublishVisualAssets:
 
             await agent._publish_visual_assets(state, creds)
 
-        # Refined goes via add_product_image, ad + hero via upload_media
         assert mock_add_img.call_count == 1
-        assert mock_upload.call_count == 2
+        assert mock_upload.call_count == 1
 
-        # Check logs: 1 refined added + 2 media published
         all_logs = "\n".join(state.logs)
         assert "Refined image added" in all_logs or "refined image" in all_logs.lower()
         publish_logs = [l for l in state.logs if "Published" in l]
-        assert len(publish_logs) == 2
+        assert len(publish_logs) == 1
 
     @pytest.mark.asyncio
     async def test_publish_skips_missing_assets(self, agent):
@@ -749,8 +684,7 @@ class TestPublishVisualAssets:
         )
         state.visual_assets = {
             "refined_url": "https://r2.example.com/refined.png",
-            "ad_url": None,  # no ad
-            "hero_url": None,  # no hero
+            "ad_url": None,
         }
         creds = {"access_token": "shpat_test"}
 
@@ -762,7 +696,6 @@ class TestPublishVisualAssets:
 
             await agent._publish_visual_assets(state, creds)
 
-        # Only refined via add_product_image, nothing via upload_media
         assert mock_add_img.call_count == 1
         assert mock_upload.call_count == 0
 
@@ -800,7 +733,7 @@ class TestPublishVisualAssets:
 
     @pytest.mark.asyncio
     async def test_publish_individual_asset_failure_continues(self, agent):
-        """Test that failure to publish one asset doesn't stop others."""
+        """Test that failure to publish ad doesn't break the flow."""
         state = MissionState(
             product_id="p1",
             shop_id="shop.myshopify.com",
@@ -810,18 +743,11 @@ class TestPublishVisualAssets:
         state.visual_assets = {
             "refined_url": "https://r2.example.com/refined.png",
             "ad_url": "https://r2.example.com/ad.png",
-            "hero_url": "https://r2.example.com/hero.png",
         }
         creds = {"access_token": "shpat_test"}
 
-        upload_call_count = 0
-
         async def flaky_upload(**kwargs):
-            nonlocal upload_call_count
-            upload_call_count += 1
-            if upload_call_count == 1:  # first media upload (ad) fails
-                raise Exception("Upload failed for ad")
-            return "gid://shopify/File/123"
+            raise Exception("Upload failed for ad")
 
         mock_client = _make_httpx_mock()
 
@@ -831,15 +757,12 @@ class TestPublishVisualAssets:
 
             await agent._publish_visual_assets(state, creds)
 
-        # Refined via add_product_image, ad + hero via upload_media
         assert mock_add_img.call_count == 1
-        assert upload_call_count == 2  # ad (fail) + hero (success)
 
-        # Should have success and failure logs
-        success_logs = [l for l in state.logs if "Published" in l or "Refined image added" in l]
+        success_logs = [l for l in state.logs if "Refined image added" in l]
         failure_logs = [l for l in state.logs if "Failed" in l]
-        assert len(success_logs) >= 2  # refined added + hero published
-        assert len(failure_logs) >= 1  # ad failed
+        assert len(success_logs) >= 1
+        assert len(failure_logs) >= 1
 
     @pytest.mark.asyncio
     async def test_publish_download_failure(self, agent):
@@ -853,13 +776,11 @@ class TestPublishVisualAssets:
         state.visual_assets = {
             "refined_url": "https://r2.example.com/refined.png",
             "ad_url": None,
-            "hero_url": None,
         }
         creds = {"access_token": "shpat_test"}
 
         with patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
                     side_effect=Exception("productCreateMedia failed")):
-            # Should not raise -- individual failures are caught
             await agent._publish_visual_assets(state, creds)
 
         failure_logs = [l for l in state.logs if "Failed" in l]

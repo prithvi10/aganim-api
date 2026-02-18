@@ -14,6 +14,8 @@ from src.ecommerce.agents.visual.prompts import (
     build_inpaint_prompt,
     build_ad_prompt,
     build_hero_prompt,
+    _distill_brand_aesthetic,
+    _HERO_PROMPT_HARD_CAP,
     INPAINT_BACKGROUND_PROMPT_TEMPLATE,
     AD_COMPOSITION_PROMPT_TEMPLATE,
     HERO_BANNER_PROMPT_TEMPLATE,
@@ -131,7 +133,7 @@ class TestBuildHeroPrompt:
     def test_with_brand_soul(self):
         prompt = build_hero_prompt(brand_soul="Zen garden vibes")
         assert "Zen garden vibes" in prompt
-        assert "visual consistency" in prompt.lower()
+        assert "Brand aesthetic" in prompt
 
     def test_without_brand_soul(self):
         prompt = build_hero_prompt()
@@ -142,19 +144,39 @@ class TestBuildHeroPrompt:
         prompt = build_hero_prompt(extra_context="Include sakura blossoms")
         assert "sakura blossoms" in prompt
 
-    def test_brand_soul_truncated_at_500(self):
+    def test_brand_soul_distilled_to_120_chars(self):
         long_soul = "C" * 1000
         prompt = build_hero_prompt(brand_soul=long_soul)
-        assert "C" * 500 in prompt
-        assert "C" * 501 not in prompt
+        # Brand aesthetic is distilled to max 120 chars, not dumped raw
+        assert "C" * 120 in prompt
+        assert "C" * 121 not in prompt
 
-    def test_hero_mentions_collection_page(self):
-        prompt = build_hero_prompt()
-        assert "collection" in prompt.lower()
+    def test_total_prompt_never_exceeds_500_chars(self):
+        long_soul = "Very important brand " * 50
+        prompt = build_hero_prompt(brand_soul=long_soul)
+        assert len(prompt) <= _HERO_PROMPT_HARD_CAP
 
-    def test_hero_mentions_blog(self):
+    def test_dict_brand_soul_distilled(self):
+        dict_soul = str({
+            "archetype": "innovative_pioneer",
+            "power_words": ["innovation", "tradition", "surprise", "excitement", "essence",
+                            "freshness", "quality", "culture"],
+            "banned_phrases": ["ordinary", "mass-produced"],
+        })
+        prompt = build_hero_prompt(brand_soul=dict_soul)
+        assert "Innovative Pioneer" in prompt
+        assert "innovation" in prompt
+        assert len(prompt) <= _HERO_PROMPT_HARD_CAP
+        # Raw dict syntax should NOT leak into the prompt
+        assert "banned_phrases" not in prompt
+
+    def test_hero_mentions_banner(self):
         prompt = build_hero_prompt()
-        assert "blog" in prompt.lower()
+        assert "hero banner" in prompt.lower()
+
+    def test_hero_no_text_instruction(self):
+        prompt = build_hero_prompt()
+        assert "no text" in prompt.lower()
 
     def test_result_is_stripped(self):
         prompt = build_hero_prompt()
@@ -183,3 +205,65 @@ class TestTemplateConstants:
         assert "{brand_style}" in HERO_BANNER_PROMPT_TEMPLATE
         assert "{extra_context}" in HERO_BANNER_PROMPT_TEMPLATE
         assert "16:9" in HERO_BANNER_PROMPT_TEMPLATE
+
+
+# =============================================================================
+# Tests: _distill_brand_aesthetic (helper)
+# =============================================================================
+
+class TestDistillBrandAesthetic:
+    """Test _distill_brand_aesthetic extracts concise visual hints."""
+
+    def test_empty_string(self):
+        assert _distill_brand_aesthetic("") == ""
+
+    def test_plain_text_returned_as_is(self):
+        assert _distill_brand_aesthetic("Minimalist Kyoto zen") == "Minimalist Kyoto zen"
+
+    def test_plain_text_truncated_to_max_len(self):
+        result = _distill_brand_aesthetic("A" * 200, max_len=50)
+        assert len(result) == 50
+
+    def test_dict_extracts_archetype(self):
+        soul = str({"archetype": "artisan_master", "power_words": []})
+        result = _distill_brand_aesthetic(soul)
+        assert "Artisan Master" in result
+
+    def test_dict_extracts_power_words(self):
+        soul = str({
+            "archetype": "heritage_house",
+            "power_words": ["handcrafted", "heritage", "artisan", "heirloom", "kiln-fired",
+                            "provenance", "timeless"],
+        })
+        result = _distill_brand_aesthetic(soul)
+        assert "Heritage House" in result
+        assert "handcrafted" in result
+        # Only first 5 power words should be included
+        assert "provenance" not in result
+        assert "timeless" not in result
+
+    def test_dict_respects_max_len(self):
+        soul = str({
+            "archetype": "innovative_pioneer",
+            "power_words": ["word"] * 20,
+        })
+        result = _distill_brand_aesthetic(soul, max_len=40)
+        assert len(result) <= 40
+
+    def test_dict_without_archetype(self):
+        soul = str({"power_words": ["fresh", "bold"]})
+        result = _distill_brand_aesthetic(soul)
+        assert "fresh" in result
+
+    def test_dict_without_power_words(self):
+        soul = str({"archetype": "storyteller"})
+        result = _distill_brand_aesthetic(soul)
+        assert "Storyteller" in result
+
+    def test_malformed_dict_string_falls_back(self):
+        result = _distill_brand_aesthetic("{'broken: dict")
+        assert result == "{'broken: dict"
+
+    def test_whitespace_collapsed_in_plain_text(self):
+        result = _distill_brand_aesthetic("  lots   of   spaces  ")
+        assert "  " not in result
