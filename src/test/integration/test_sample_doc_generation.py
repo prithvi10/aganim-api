@@ -19,7 +19,6 @@ Each test validates:
 import json
 import os
 import pytest
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from src.ecommerce.agents.rewriter import RewriterAgent
@@ -667,7 +666,6 @@ class TestBrandSoulReferenceDoc:
         intel = STRATEGIC_INTELLIGENCE
 
         doc = f"""# Brand Soul & Strategic Intelligence — {MERCHANT_NAME}
-Generated: {GENERATED_AT}
 
 ---
 
