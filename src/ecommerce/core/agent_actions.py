@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import os
 import re
@@ -15,6 +14,11 @@ from src.ecommerce.services.openai_legacy_service import OpenAIService
 from src.ecommerce.services import ServiceRegistry, LLMService, SerpService
 from src.shared.utils.llm_parser import parse_llm_json
 from src.ecommerce.services.value_discovery_service import ValueDiscoveryService
+from src.ecommerce.agents.marketing.holidays import (
+    Holiday as _CanonicalHoliday,
+    get_next_upcoming_holiday as _canonical_next_holiday,
+    generate_discount_code as _canonical_discount_code,
+)
 
 logger = get_logger(__name__)
 openai_service = OpenAIService()
@@ -79,70 +83,15 @@ def _format_caption(caption: str, hashtags: list[str]) -> str:
 # ------------------------------------------------------------------------------
 # Seasonal holiday helpers (US)
 # ------------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Holiday:
-    name: str
-    date: date
-
-
-def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date:
-    """
-    weekday: Monday=0 ... Sunday=6
-    n: 1..5
-    """
-    d = date(year, month, 1)
-    days_ahead = (weekday - d.weekday()) % 7
-    first = d + timedelta(days=days_ahead)
-    return first + timedelta(days=7 * (n - 1))
-
-
-def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
-    d = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year + 1, 1, 1) - timedelta(days=1)
-    days_back = (d.weekday() - weekday) % 7
-    return d - timedelta(days=days_back)
-
-
-def _us_holidays_for_year(year: int) -> list[Holiday]:
-    thanksgiving = _nth_weekday_of_month(year, 11, weekday=3, n=4)  # Thu
-    black_friday = thanksgiving + timedelta(days=1)
-    cyber_monday = thanksgiving + timedelta(days=4)
-    mothers_day = _nth_weekday_of_month(year, 5, weekday=6, n=2)  # Sun
-    fathers_day = _nth_weekday_of_month(year, 6, weekday=6, n=3)  # Sun
-    memorial_day = _last_weekday_of_month(year, 5, weekday=0)  # Mon
-    labor_day = _nth_weekday_of_month(year, 9, weekday=0, n=1)  # Mon
-
-    fixed = [
-        Holiday("New Year’s Day", date(year, 1, 1)),
-        Holiday("Valentine’s Day", date(year, 2, 14)),
-        Holiday("Independence Day", date(year, 7, 4)),
-        Holiday("Halloween", date(year, 10, 31)),
-        Holiday("Christmas", date(year, 12, 25)),
-    ]
-    floating = [
-        Holiday("Mother’s Day", mothers_day),
-        Holiday("Memorial Day", memorial_day),
-        Holiday("Father’s Day", fathers_day),
-        Holiday("Labor Day", labor_day),
-        Holiday("Thanksgiving", thanksgiving),
-        Holiday("Black Friday", black_friday),
-        Holiday("Cyber Monday", cyber_monday),
-    ]
-    return fixed + floating
+Holiday = _CanonicalHoliday
 
 
 def _next_upcoming_holiday(today: date) -> Holiday | None:
-    candidates = _us_holidays_for_year(today.year) + _us_holidays_for_year(today.year + 1)
-    candidates = [h for h in candidates if h.date >= today]
-    candidates.sort(key=lambda h: h.date)
-    return candidates[0] if candidates else None
+    return _canonical_next_holiday(today)
 
 
 def _discount_code_name(holiday_name: str, category: str, year: int) -> str:
-    base = re.sub(r"[^A-Za-z0-9]", "", holiday_name).upper()
-    cat = re.sub(r"[^A-Za-z0-9]", "", (category or "SALE")).upper()
-    yy = str(year)[-2:]
-    code = f"{base}{yy}{cat[:6]}"
-    return code[:20]  # keep short-ish
+    return _canonical_discount_code(holiday_name, category, year)
 
 
 # ------------------------------------------------------------------------------
