@@ -244,6 +244,7 @@ class VisualAgent(BaseAgent):
                     refined_image_url=refined_url,
                     hook_text=hook_text,
                     brand_name=brand_name,
+                    product_name=product_name,
                     progress=_progress,
                 )
                 visual_assets["ad_url"] = ad_url
