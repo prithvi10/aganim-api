@@ -1,6 +1,5 @@
 # Brand Soul & Strategic Intelligence — Takumi Ceramics
 
-
 ---
 
 ## Raw Brand Soul Text
