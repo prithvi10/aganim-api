@@ -480,8 +480,8 @@ class VisualService:
 
         fal_client = _get_fal_client()
 
-        # Build the ad prompt with typography instructions
-        ad_prompt = self._build_ad_prompt(hook_text, brand_name)
+        clean_hook = self._clean_hook_text(hook_text)
+        ad_prompt = self._build_ad_prompt(clean_hook, brand_name)
 
         if progress:
             progress("ad_generation", 60, "Rendering typography and ad creative...")
@@ -494,7 +494,10 @@ class VisualService:
                 "image_url": refined_image_url,
                 "aspect_ratio": "1:1",
                 "style_type": "DESIGN",
-                "negative_prompt": "blurry, low quality, distorted text, misspelled",
+                "negative_prompt": (
+                    "blurry, low quality, distorted text, misspelled words, "
+                    "hashtags, social media captions, watermark"
+                ),
             },
         )
 
@@ -536,6 +539,8 @@ class VisualService:
             f"Expand this product photo into a wide 16:9 hero banner. "
             f"Maintain the product in the center, extend the background "
             f"seamlessly with consistent lighting and style. "
+            f"Do NOT include any text, words, letters, numbers, logos, or writing of any kind. "
+            f"Purely visual — no typography. "
             f"{brand_prompt}"
         ).strip()
 
@@ -554,6 +559,10 @@ class VisualService:
                 },
                 "num_images": 1,
                 "enable_safety_checker": True,
+                "negative_prompt": (
+                    "text, words, letters, numbers, writing, captions, "
+                    "watermark, logo, hashtags, gibberish, blurry, low quality"
+                ),
             },
         )
 
@@ -588,6 +597,30 @@ class VisualService:
         raise ValueError(f"Could not extract image URL from fal.ai result: {result}")
 
     @staticmethod
+    def _clean_hook_text(raw_hook: str) -> str:
+        """Extract only the headline from a social hook, stripping hashtags and filler."""
+        import re
+
+        lines = raw_hook.strip().splitlines()
+        clean_lines: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Skip lines that are predominantly hashtags
+            if re.match(r"^[#\s\w]*#\w", stripped) and stripped.count("#") >= 2:
+                continue
+            # Remove inline hashtags
+            stripped = re.sub(r"#\w+", "", stripped).strip()
+            if stripped:
+                clean_lines.append(stripped)
+
+        headline = " ".join(clean_lines).strip()
+        # Final cleanup: collapse whitespace, remove trailing punctuation duplication
+        headline = re.sub(r"\s{2,}", " ", headline)
+        return headline
+
+    @staticmethod
     def _build_ad_prompt(hook_text: str, brand_name: str = "") -> str:
         """Build the Ideogram prompt for ad generation with typography."""
         parts = [
@@ -602,7 +635,8 @@ class VisualService:
             parts.append(
                 "Spell every word correctly -- double-check spelling before rendering. "
                 "Do NOT misspell, abbreviate, or alter the provided text in any way. "
-                "Render the text exactly as provided, character for character."
+                "Render the text exactly as provided, character for character. "
+                "Do NOT add hashtags, captions, or any extra text beyond what is specified."
             )
         if brand_name:
             parts.append(
@@ -610,6 +644,7 @@ class VisualService:
             )
         parts.append(
             "High-fidelity, print-ready quality. No watermarks. "
+            "No hashtags. No social media captions. "
             "Professional lighting and composition."
         )
         return " ".join(parts)

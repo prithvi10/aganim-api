@@ -30,9 +30,10 @@ legible and well-positioned on the image.
 Spell every word correctly -- double-check spelling before rendering.
 Do NOT misspell, abbreviate, or alter the provided text in any way.
 Render the text exactly as provided, character for character.
+Do NOT add hashtags, social media captions, or any extra text beyond what is specified.
 {brand_name_line}
 Modern, eye-catching design. High contrast for mobile viewing.
-Instagram-ready square format. Print-ready quality. No watermarks.
+Instagram-ready square format. Print-ready quality. No watermarks. No hashtags.
 """
 
 # ---------------------------------------------------------------------------
@@ -45,6 +46,8 @@ Keep the product centered and prominent.
 {brand_style}
 Extend the background seamlessly with consistent lighting, color palette, \
 and visual style. Suitable for a Shopify collection page header or blog hero image.
+Do NOT include any text, words, letters, numbers, logos, or writing of any kind.
+Purely visual — no typography whatsoever.
 Professional e-commerce photography. Ultra high quality.
 {extra_context}
 """
