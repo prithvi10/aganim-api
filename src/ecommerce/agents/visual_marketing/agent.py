@@ -1,9 +1,8 @@
 """
-VisualMarketingAgent -- Marketing ad and hero banner generation.
+VisualMarketingAgent -- Marketing ad generation.
 
 Pipeline:
 3. Marketing Ad with Typography (Ideogram 3.0 via fal.ai)
-4. Hero Banner Outpainting (SD 3.5 via fal.ai)
 
 Reads the refined product image from ``state.visual_assets["refined_url"]``
 (set by ImageRefinementAgent earlier in the pipeline) or falls back to
@@ -12,13 +11,11 @@ Reads the refined product image from ``state.visual_assets["refined_url"]``
 
 from __future__ import annotations
 
-import asyncio
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from src.agentic_core.agents.base import BaseAgent
 from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 from src.ecommerce.state import ShopifyMissionState as MissionState
-from src.ecommerce.agents.visual.prompts import build_hero_prompt
 from src.shared.logging.logger import get_logger
 
 if TYPE_CHECKING:
@@ -29,7 +26,7 @@ logger = get_logger(__name__)
 
 class VisualMarketingAgent(BaseAgent):
     """
-    Agent for marketing ad and hero banner image generation.
+    Agent for marketing ad image generation.
 
     Consumes:
         - Refined product image URL from ``state.visual_assets["refined_url"]``
@@ -38,7 +35,7 @@ class VisualMarketingAgent(BaseAgent):
         - Brand Soul context from RAG perception
 
     Produces:
-        - ``state.visual_assets["ad_url"]`` and ``state.visual_assets["hero_url"]``
+        - ``state.visual_assets["ad_url"]``
         - ``state.visual_progress``: dict with phase/pct/label for SSE
 
     LLM Calls: 0 (all generation via fal.ai image models)
@@ -129,78 +126,48 @@ class VisualMarketingAgent(BaseAgent):
             state.visual_progress = {"phase": phase, "pct": pct, "label": label}
             state.add_log(f"VisualMarketing: [{pct}%] {label}")
 
-        brand_soul = context.external_data.get("brand_soul", "")
         hook_text = context.external_data.get("hook_text", "")
         brand_name = context.external_data.get("brand_name", "")
         product_name = context.external_data.get("product_name", "")
-        hero_prompt = build_hero_prompt(brand_soul=brand_soul)
 
-        # Initialise or extend visual_assets dict
         visual_assets: Dict[str, Optional[str]] = dict(
             getattr(state, "visual_assets", None) or {}
         )
         visual_assets.setdefault("original_image_url", image_url)
         visual_assets.setdefault("ad_url", None)
-        visual_assets.setdefault("hero_url", None)
         state.visual_assets = visual_assets
 
         try:
-            import httpx
-
-            async def _gen_ad() -> str:
-                """Generate ad, download from fal CDN, and re-upload to R2."""
-                ad_url = await visual_svc.generate_ad(
-                    refined_image_url=image_url,
-                    hook_text=hook_text,
-                    brand_name=brand_name,
-                    product_name=product_name,
-                    progress=_progress,
-                )
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(ad_url)
-                    resp.raise_for_status()
-                    ad_bytes = resp.content
-                ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
-                return await r2_svc.upload_asset(ad_bytes, ad_key)
-
-            async def _gen_hero() -> str:
-                """Generate hero banner, download from fal CDN, and re-upload to R2."""
-                hero_url = await visual_svc.expand_hero(
-                    refined_image_url=image_url,
-                    brand_prompt=hero_prompt,
-                    progress=_progress,
-                )
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(hero_url)
-                    resp.raise_for_status()
-                    hero_bytes = resp.content
-                hero_key = R2StorageService.build_key(state.shop_id, mission_id, "hero")
-                return await r2_svc.upload_asset(hero_bytes, hero_key)
-
-            # Run ad + hero generation in parallel (they are independent).
-            # return_exceptions=True keeps partial results when one task fails.
-            if hook_text:
-                ad_result, hero_result = await asyncio.gather(
-                    _gen_ad(), _gen_hero(),
-                    return_exceptions=True,
-                )
-
-                if not isinstance(ad_result, BaseException):
-                    visual_assets["ad_url"] = ad_result
-                if not isinstance(hero_result, BaseException):
-                    visual_assets["hero_url"] = hero_result
-                state.visual_assets = visual_assets
-
-                for result in (ad_result, hero_result):
-                    if isinstance(result, BaseException):
-                        raise result
-            else:
+            if not hook_text:
                 _progress("ad_generation", 70, "Ad generation skipped (no hook text)")
                 state.add_log(
                     "VisualMarketing: Ad skipped -- no social hook text available"
                 )
-                visual_assets["hero_url"] = await _gen_hero()
-                state.visual_assets = visual_assets
+                _progress("complete", 100, "Visual marketing complete")
+                actions.append(AgentAction(
+                    tool_name="visual_marketing.generate",
+                    input_params={"image_url": image_url},
+                    output=visual_assets,
+                    success=True,
+                ))
+                return actions, state
+
+            import httpx
+
+            ad_url = await visual_svc.generate_ad(
+                refined_image_url=image_url,
+                hook_text=hook_text,
+                brand_name=brand_name,
+                product_name=product_name,
+                progress=_progress,
+            )
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(ad_url)
+                resp.raise_for_status()
+                ad_bytes = resp.content
+            ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
+            visual_assets["ad_url"] = await r2_svc.upload_asset(ad_bytes, ad_key)
+            state.visual_assets = visual_assets
 
             _progress("complete", 100, "Visual marketing complete")
 
@@ -212,10 +179,9 @@ class VisualMarketingAgent(BaseAgent):
             ))
 
             logger.info(
-                "[VisualMarketingAgent] complete shop=%s ad=%s hero=%s",
+                "[VisualMarketingAgent] complete shop=%s ad=%s",
                 state.shop_id,
                 bool(visual_assets.get("ad_url")),
-                bool(visual_assets.get("hero_url")),
             )
 
         except Exception as e:

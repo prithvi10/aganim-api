@@ -5,7 +5,6 @@ Extends BaseAgent to provide a full visual refinement workflow:
 1. Product Isolation (rembg background removal)
 2. Background Refinement (Flux 2.0 Pro via fal.ai, guided by Brand Soul)
 3. Marketing Ad with Typography (Ideogram 3.0 via fal.ai)
-4. Hero Banner Outpainting (SD 3.5 via fal.ai)
 
 Only runs for Pro-tier users.  Assets are stored in Cloudflare R2 and
 optionally pushed to the Shopify Media Library via autonomous publish.
@@ -19,7 +18,7 @@ from src.agentic_core.agents.base import BaseAgent
 from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 from src.ecommerce.state import ShopifyMissionState as MissionState
 
-from .prompts import build_inpaint_prompt, build_ad_prompt, build_hero_prompt
+from .prompts import build_inpaint_prompt, build_ad_prompt
 from .schemas import VisualAssets, VisualProgress
 from src.shared.logging.logger import get_logger
 
@@ -39,7 +38,7 @@ class VisualAgent(BaseAgent):
         - Social hooks from ``state.social_hooks`` (populated by MarketingAgent)
 
     Produces:
-        - ``state.visual_assets``: dict with refined_url, ad_url, hero_url
+        - ``state.visual_assets``: dict with refined_url, ad_url
         - ``state.visual_progress``: dict with phase/pct/label for SSE
 
     LLM Calls: 0 (all generation is via fal.ai image models)
@@ -121,12 +120,11 @@ class VisualAgent(BaseAgent):
         plan: AgentPlan,
     ) -> Tuple[List[AgentAction], MissionState]:
         """
-        Execute the full visual pipeline:
+        Execute the visual pipeline:
         1. Isolate product (rembg)
         2. Refine background (Flux 2.0 Pro)
         3. Generate marketing ad (Ideogram 3.0)
-        4. Expand hero banner (SD 3.5)
-        5. Upload to R2
+        4. Upload to R2
         """
         from src.ecommerce.services.visual_service import (
             VisualService,
@@ -187,13 +185,11 @@ class VisualAgent(BaseAgent):
         hook_text = context.external_data.get("hook_text", "")
 
         inpaint_prompt = build_inpaint_prompt(brand_soul=brand_soul)
-        hero_prompt = build_hero_prompt(brand_soul=brand_soul)
 
         visual_assets: Dict[str, Optional[str]] = {
             "original_image_url": image_url,
             "refined_url": None,
             "ad_url": None,
-            "hero_url": None,
         }
         state.visual_assets = visual_assets
 
@@ -265,27 +261,6 @@ class VisualAgent(BaseAgent):
                 _progress("ad_generation", 70, "Ad generation skipped (no hook text)")
                 state.add_log("Visual: Ad generation skipped -- no social hook text available")
 
-            # --- Step 4: Hero Banner ---
-            hero_url = await visual_svc.expand_hero(
-                refined_image_url=refined_url,
-                brand_prompt=hero_prompt,
-                progress=_progress,
-            )
-            visual_assets["hero_url"] = hero_url
-
-            # Store hero in R2
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(hero_url)
-                resp.raise_for_status()
-                hero_bytes = resp.content
-
-            hero_key = R2StorageService.build_key(
-                state.shop_id, mission_id, "hero"
-            )
-            hero_r2_url = await r2_svc.upload_asset(hero_bytes, hero_key)
-            visual_assets["hero_url"] = hero_r2_url
-            state.visual_assets = visual_assets
-
             # --- Finalize ---
             _progress("complete", 100, "Visual pipeline complete")
 
@@ -298,11 +273,10 @@ class VisualAgent(BaseAgent):
             actions.append(action)
 
             logger.info(
-                "[VisualAgent] pipeline complete shop=%s refined=%s ad=%s hero=%s",
+                "[VisualAgent] pipeline complete shop=%s refined=%s ad=%s",
                 state.shop_id,
                 bool(visual_assets["refined_url"]),
                 bool(visual_assets["ad_url"]),
-                bool(visual_assets["hero_url"]),
             )
 
         except Exception as e:
@@ -374,8 +348,8 @@ class VisualAgent(BaseAgent):
                     state.shop_id, str(e),
                 )
 
-        # ── 2. Upload ad + hero to Shopify Media Library ──
-        for asset_type in ("ad", "hero"):
+        # ── 2. Upload ad to Shopify Media Library ──
+        for asset_type in ("ad",):
             url = assets.get(f"{asset_type}_url")
             if not url:
                 continue

@@ -1,5 +1,5 @@
 """
-Unit tests for VisualMarketingAgent -- Marketing ad and hero banner generation.
+Unit tests for VisualMarketingAgent -- Marketing ad generation.
 
 Covers:
   - _perceive_domain: context extraction for refined image, hooks, brand soul
@@ -159,13 +159,9 @@ class TestActDomainHappyPath:
 
         mock_visual_svc = MagicMock()
         mock_visual_svc.generate_ad = AsyncMock(return_value="https://fal.ai/ad.png")
-        mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
 
         mock_r2_svc = MagicMock()
-        mock_r2_svc.upload_asset = AsyncMock(side_effect=[
-            "r2://ad.png",
-            "r2://hero.png",
-        ])
+        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://ad.png")
         mock_client = _make_httpx_mock()
 
         with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
@@ -178,16 +174,14 @@ class TestActDomainHappyPath:
             actions, state = await agent._act_domain(pro_state, context, default_plan)
 
         mock_visual_svc.generate_ad.assert_called_once()
-        mock_visual_svc.expand_hero.assert_called_once()
 
-        assert mock_r2_svc.upload_asset.call_count == 2
+        assert mock_r2_svc.upload_asset.call_count == 1
 
         assert len(actions) == 1
         assert actions[0].success is True
         assert actions[0].tool_name == "visual_marketing.generate"
 
         assert state.visual_assets["ad_url"] == "r2://ad.png"
-        assert state.visual_assets["hero_url"] == "r2://hero.png"
 
         assert state.visual_progress["phase"] == "complete"
 
@@ -211,7 +205,6 @@ class TestActDomainHappyPath:
         mock_visual_svc.remove_objects = AsyncMock()
         mock_visual_svc.refine_product = AsyncMock()
         mock_visual_svc.generate_ad = AsyncMock(return_value="https://fal.ai/ad.png")
-        mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
 
         mock_r2_svc = MagicMock()
         mock_r2_svc.upload_asset = AsyncMock(return_value="r2://asset.png")
@@ -235,7 +228,7 @@ class TestActDomainHappyPath:
 class TestActDomainNoHook:
     @pytest.mark.asyncio
     async def test_ad_skipped_no_hook(self, agent, pro_state, default_plan):
-        """Ad generation is skipped when no hook text, but hero still runs."""
+        """Ad generation is skipped when no hook text."""
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
@@ -247,29 +240,11 @@ class TestActDomainNoHook:
             },
         )
 
-        mock_visual_svc = MagicMock()
-        mock_visual_svc.generate_ad = AsyncMock()
-        mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
-
-        mock_r2_svc = MagicMock()
-        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://hero.png")
-        mock_client = _make_httpx_mock()
-
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
-             patch(_R2_SVC) as mock_r2_cls, \
-             patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client):
-
-            mock_r2_cls.return_value = mock_r2_svc
-            mock_r2_cls.build_key = MagicMock(return_value="key")
-
-            actions, state = await agent._act_domain(pro_state, context, default_plan)
-
-        mock_visual_svc.generate_ad.assert_not_called()
-        mock_visual_svc.expand_hero.assert_called_once()
+        actions, state = await agent._act_domain(pro_state, context, default_plan)
 
         assert state.visual_assets.get("ad_url") is None
-        assert state.visual_assets["hero_url"] == "r2://hero.png"
         assert actions[0].success is True
+        assert state.visual_progress["phase"] == "complete"
 
 
 class TestActDomainNoImage:
@@ -317,39 +292,3 @@ class TestActDomainFailure:
         assert "Ideogram 3.0 failed" in actions[0].error
         assert state.visual_progress["phase"] == "error"
 
-    @pytest.mark.asyncio
-    async def test_hero_fails_ad_succeeds_partial(self, agent, pro_state, default_plan):
-        """Ad succeeds but hero fails — partial results saved."""
-        context = AgentContext(
-            raw_input=pro_state.raw_input,
-            external_data={
-                "image_url": "https://r2.example.com/refined.png",
-                "brand_soul": "",
-                "product_name": "Bowl",
-                "brand_name": "",
-                "hook_text": "Hook",
-            },
-        )
-
-        mock_visual_svc = MagicMock()
-        mock_visual_svc.generate_ad = AsyncMock(return_value="https://fal.ai/ad.png")
-        mock_visual_svc.expand_hero = AsyncMock(
-            side_effect=TimeoutError("fal.ai timeout")
-        )
-
-        mock_r2_svc = MagicMock()
-        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://ad.png")
-        mock_client = _make_httpx_mock()
-
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
-             patch(_R2_SVC) as mock_r2_cls, \
-             patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client):
-
-            mock_r2_cls.return_value = mock_r2_svc
-            mock_r2_cls.build_key = MagicMock(return_value="key")
-
-            actions, state = await agent._act_domain(pro_state, context, default_plan)
-
-        assert actions[0].success is False
-        assert state.visual_assets["ad_url"] == "r2://ad.png"
-        assert state.visual_assets.get("hero_url") is None

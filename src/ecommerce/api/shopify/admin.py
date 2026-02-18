@@ -805,13 +805,62 @@ async def generate_content_endpoint(
     # Execute agent
     try:
         new_state = await agent.run(state)
-        
+
+        hero_url = None
+        hero_eligible = {"product/blog-post", "product/collection", "product/landing-hero"}
+        image_url = body.get("image_url", "")
+
+        if template_id in hero_eligible and image_url:
+            try:
+                from src.ecommerce.services.visual_service import VisualService
+                from src.ecommerce.services.r2_storage_service import R2StorageService
+
+                shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+                strategic_intel = getattr(shop_record, "strategic_intelligence", None) if shop_record else None
+                short_soul = str(strategic_intel)[:120] if strategic_intel else ""
+
+                subject_map = {
+                    "product/blog-post": ("Blog", body.get("topic", new_state.draft_title or "")),
+                    "product/collection": ("Collection", body.get("collection_name", "")),
+                    "product/landing-hero": ("Hero section", new_state.draft_title or body.get("title", "")),
+                }
+                subject, context_text = subject_map[template_id]
+                hero_prompt = f"{subject} banner. Theme: {context_text}. Style: {short_soul}"
+
+                visual_svc = VisualService()
+                r2_svc = R2StorageService()
+
+                fal_hero_url = await visual_svc.expand_hero(
+                    refined_image_url=image_url,
+                    brand_prompt=hero_prompt,
+                )
+
+                import httpx
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(fal_hero_url)
+                    resp.raise_for_status()
+                    hero_bytes = resp.content
+
+                hero_key = R2StorageService.build_key(shop, "content-hero", template_id.replace("/", "-"))
+                hero_url = await r2_svc.upload_asset(hero_bytes, hero_key)
+
+                logger.info(
+                    "[Generate] Hero banner created template=%s shop=%s",
+                    template_id, shop,
+                )
+            except Exception as hero_err:
+                logger.warning(
+                    "[Generate] Hero generation failed (non-blocking) template=%s shop=%s err=%s",
+                    template_id, shop, hero_err,
+                )
+
         return {
             "status": "success",
             "template_id": template_id,
             "content": new_state.draft_content or new_state.draft_title or "",
             "title": new_state.draft_title,
             "description": new_state.draft_content,
+            "hero_url": hero_url,
         }
     except Exception as e:
         logger.error(
