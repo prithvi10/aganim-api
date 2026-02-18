@@ -426,9 +426,9 @@ class TestExpandHero:
         assert result == "https://fal.ai/hero.png"
         call_args = mock_fal.subscribe.call_args
         assert call_args[0][0] == VisualService.SD35_OUTPAINT_MODEL
-        # Verify 16:9 dimensions (1920x1080)
-        assert call_args[1]["arguments"]["image_size"]["width"] == 1920
-        assert call_args[1]["arguments"]["image_size"]["height"] == 1080
+        # Verify 16:9 dimensions (1280x720 — lower res for faster generation)
+        assert call_args[1]["arguments"]["image_size"]["width"] == 1280
+        assert call_args[1]["arguments"]["image_size"]["height"] == 720
         # Brand prompt should be included
         assert "Zen garden aesthetic" in call_args[1]["arguments"]["prompt"]
 
