@@ -1,5 +1,5 @@
 # Collection Description — Takumi Ceramics
-Generated: 2026-02-18 10:10 | Template: product/collection
+Generated: 2026-02-18 11:04 | Template: product/collection
 
 ## Collection: Heritage Celadon Collection
 **Products:** Rice Bowl, Sake Cup, Side Plate, Tea Cup, Serving Bowl

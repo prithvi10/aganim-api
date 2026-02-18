@@ -257,7 +257,7 @@ async def test_pro_tier_workflow_contains_all_agents(mock_services):
         services=mock_services,
     )
     
-    assert len(mission.workflow) == 5
+    assert len(mission.workflow) == 6
 
 
 # =============================================================================
@@ -267,7 +267,7 @@ async def test_pro_tier_workflow_contains_all_agents(mock_services):
 @pytest.mark.asyncio
 async def test_all_tiers_have_expected_agent_count(mock_services):
     """Test that all tiers have the expected number of agents."""
-    expected = {"Free": 4, "Basic": 4, "Standard": 4, "Pro": 5}
+    expected = {"Free": 4, "Basic": 4, "Standard": 4, "Pro": 6}
     
     for tier, count in expected.items():
         mission = MissionControl(

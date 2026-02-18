@@ -119,8 +119,8 @@ def test_build_workflow_pro_tier(mock_services):
         services=mock_services,
     )
     
-    # Pro tier should have 5 agents (includes VisualAgent)
-    assert len(mission.workflow) == 5
+    # Pro tier should have 6 agents (includes ImageRefinementAgent + VisualMarketingAgent)
+    assert len(mission.workflow) == 6
 
 
 def test_build_workflow_unknown_tier_defaults(mock_services):
@@ -148,8 +148,8 @@ def test_agent_map_contains_expected_agents():
     assert "PriceScoutAgent" in AGENT_MAP
     assert "VisualAgent" in AGENT_MAP
     # ComplianceAgent should NOT be in AGENT_MAP (disabled)
-    # Note: 6 entries because CopywriterAgent is aliased to RewriterAgent + VisualAgent
-    assert len(AGENT_MAP) == 6
+    # 8 entries: Rewriter, Copywriter(alias), SEO, Marketing, PriceScout, ImageRefinement, VisualMarketing, Visual(compat)
+    assert len(AGENT_MAP) == 8
 
 
 def test_agent_map_maps_to_correct_classes():
@@ -307,8 +307,8 @@ def test_adhoc_none_uses_tier_workflow(mock_services):
         requested_agents=None,
     )
     
-    # None should use tier-based workflow (Pro = 5 agents incl. VisualAgent)
-    assert len(mission.workflow) == 5
+    # None should use tier-based workflow (Pro = 6 agents)
+    assert len(mission.workflow) == 6
 
 
 def test_adhoc_overrides_tier_workflow(mock_services):
@@ -464,7 +464,7 @@ def test_get_workflow_info(mock_services):
     
     assert info["plan_tier"] == "Pro"
     assert info["shop_id"] == "test-shop.myshopify.com"
-    assert info["agent_count"] == 5
+    assert info["agent_count"] == 6
     assert "mission_id" in info
 
 

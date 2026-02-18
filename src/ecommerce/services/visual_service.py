@@ -202,6 +202,8 @@ class VisualService:
     IDEOGRAM_MODEL = "fal-ai/ideogram/v3"
     SD35_OUTPAINT_MODEL = "fal-ai/stable-diffusion-v35-large"
     TEXT_REMOVAL_MODEL = "fal-ai/image-editing/text-removal"
+    BIREFNET_MODEL = "fal-ai/birefnet/v2"
+    OBJECT_REMOVAL_MODEL = "fal-ai/object-removal"
 
     def __init__(self, fal_key: str | None = None):
         self._fal_key = fal_key or os.getenv("FAL_KEY", "")
@@ -243,14 +245,40 @@ class VisualService:
         rembg_remove = _get_rembg()
 
         if rembg_remove is None:
-            # Graceful degradation: skip isolation, return original image
+            # Cloud fallback: use fal-ai/birefnet for background removal
             if progress:
-                progress("masking", 20, "Background removal unavailable — using original image")
-            logger.warning(
-                "[VisualService] rembg unavailable, skipping isolation input=%d bytes",
-                len(input_bytes),
-            )
-            return input_bytes
+                progress("masking", 12, "Using cloud background removal (BiRefNet)...")
+            try:
+                fal_client = _get_fal_client()
+                b64 = base64.b64encode(input_bytes).decode()
+                image_data_uri = f"data:image/png;base64,{b64}"
+                result = await asyncio.to_thread(
+                    fal_client.subscribe,
+                    self.BIREFNET_MODEL,
+                    arguments={
+                        "image_url": image_data_uri,
+                        "output_format": "png",
+                    },
+                )
+                bg_removed_url = self._extract_image_url(result)
+                async with httpx.AsyncClient(timeout=30) as dl:
+                    resp2 = await dl.get(bg_removed_url)
+                    resp2.raise_for_status()
+                    output_bytes = resp2.content
+                if progress:
+                    progress("masking", 20, "Product isolated via cloud service")
+                logger.info(
+                    "[VisualService] isolate_product (birefnet) complete input=%d bytes output=%d bytes",
+                    len(input_bytes), len(output_bytes),
+                )
+                return output_bytes
+            except Exception as e:
+                logger.warning(
+                    "[VisualService] birefnet fallback failed, using original image: %s", e,
+                )
+                if progress:
+                    progress("masking", 20, "Background removal unavailable — using original image")
+                return input_bytes
 
         loop = asyncio.get_running_loop()
         output_bytes: bytes = await loop.run_in_executor(
@@ -314,6 +342,55 @@ class VisualService:
             "[VisualService] remove_text complete input=%d bytes output=%d bytes",
             len(image_bytes),
             len(cleaned_bytes),
+        )
+        return cleaned_bytes
+
+    # ------------------------------------------------------------------
+    # 1c. Object Removal — second-pass cleanup (Florence-2 + SAM2)
+    # ------------------------------------------------------------------
+
+    async def remove_objects(
+        self,
+        image_bytes: bytes,
+        progress: ProgressCallback = None,
+    ) -> bytes:
+        """
+        Remove remaining text, logos, and watermarks using the
+        Florence-2 + SAM2 based object-removal model.
+
+        This is a surgical second pass after the dedicated text-removal
+        model to catch stylized text and fragments it missed.
+        """
+        if progress:
+            progress("object_removal", 22, "Detecting remaining text and logos...")
+
+        fal_client = _get_fal_client()
+
+        b64 = base64.b64encode(image_bytes).decode()
+        image_data_uri = f"data:image/png;base64,{b64}"
+
+        result = await asyncio.to_thread(
+            fal_client.subscribe,
+            self.OBJECT_REMOVAL_MODEL,
+            arguments={
+                "image_url": image_data_uri,
+                "prompt": "text, writing, watermark, logo",
+            },
+        )
+
+        cleaned_url = self._extract_image_url(result)
+
+        if progress:
+            progress("object_removal", 25, "Object removal complete — downloading result...")
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(cleaned_url)
+            resp.raise_for_status()
+            cleaned_bytes = resp.content
+
+        logger.info(
+            "[VisualService] remove_objects complete input=%d bytes output=%d bytes",
+            len(image_bytes), len(cleaned_bytes),
         )
         return cleaned_bytes
 

@@ -25,6 +25,8 @@ from .agents.marketing import MarketingAgent
 from .agents.price_scout import PriceScoutAgent
 from .agents.compliance import ComplianceAgent  # Kept for reference but disabled
 from .agents.visual import VisualAgent
+from .agents.image_refinement import ImageRefinementAgent
+from .agents.visual_marketing import VisualMarketingAgent
 from src.agentic_core.registry import ServiceRegistry
 from src.shared.logging.logger import get_logger
 
@@ -37,7 +39,9 @@ AGENT_MAP: Dict[str, Type[BaseAgent]] = {
     "SEOAgent": SEOAgent,
     "MarketingAgent": MarketingAgent,
     "PriceScoutAgent": PriceScoutAgent,
-    "VisualAgent": VisualAgent,
+    "ImageRefinementAgent": ImageRefinementAgent,
+    "VisualMarketingAgent": VisualMarketingAgent,
+    "VisualAgent": VisualAgent,  # backward compat for existing missions
     # "ComplianceAgent": ComplianceAgent,  # DISABLED
 }
 
@@ -54,7 +58,7 @@ class MissionControl(_GenericMissionControl):
         "Free": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
         "Basic": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
         "Standard": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
-        "Pro": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent, VisualAgent],
+        "Pro": [RewriterAgent, ImageRefinementAgent, SEOAgent, PriceScoutAgent, MarketingAgent, VisualMarketingAgent],
     }
 
     # Default fallback workflow for unknown tiers
@@ -119,6 +123,16 @@ class MissionControl(_GenericMissionControl):
                 "compliance_flags": state.compliance_flags,
             }
         elif agent_name == "VisualAgent":
+            return {
+                "visual_assets": state.visual_assets,
+                "visual_progress": state.visual_progress,
+            }
+        elif agent_name == "ImageRefinementAgent":
+            return {
+                "visual_assets": state.visual_assets,
+                "visual_progress": state.visual_progress,
+            }
+        elif agent_name == "VisualMarketingAgent":
             return {
                 "visual_assets": state.visual_assets,
                 "visual_progress": state.visual_progress,

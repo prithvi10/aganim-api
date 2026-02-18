@@ -195,6 +195,7 @@ class VisualAgent(BaseAgent):
             "ad_url": None,
             "hero_url": None,
         }
+        state.visual_assets = visual_assets
 
         try:
             # --- Step 1: Isolate product ---
@@ -235,6 +236,7 @@ class VisualAgent(BaseAgent):
             )
             refined_r2_url = await r2_svc.upload_asset(refined_bytes, refined_key)
             visual_assets["refined_url"] = refined_r2_url
+            state.visual_assets = visual_assets
 
             # --- Step 3: Marketing Ad ---
             if hook_text:
@@ -257,6 +259,7 @@ class VisualAgent(BaseAgent):
                 )
                 ad_r2_url = await r2_svc.upload_asset(ad_bytes, ad_key)
                 visual_assets["ad_url"] = ad_r2_url
+                state.visual_assets = visual_assets
             else:
                 _progress("ad_generation", 70, "Ad generation skipped (no hook text)")
                 state.add_log("Visual: Ad generation skipped -- no social hook text available")
@@ -280,10 +283,9 @@ class VisualAgent(BaseAgent):
             )
             hero_r2_url = await r2_svc.upload_asset(hero_bytes, hero_key)
             visual_assets["hero_url"] = hero_r2_url
+            state.visual_assets = visual_assets
 
             # --- Finalize ---
-            _progress("uploading", 95, "Syncing assets...")
-            state.visual_assets = visual_assets
             _progress("complete", 100, "Visual pipeline complete")
 
             action = AgentAction(
