@@ -1,15 +1,13 @@
 """
 VisualMarketingAgent -- Marketing ad generation with style-aware pipeline.
 
-Pipeline (Marketing Studio):
+Styled pipeline (Marketing Studio, when ``ad_style`` is provided):
 1. Product Isolation (rembg/BiRefNet background removal)
-2. Style-aware Background Refinement (Flux 2.0 Pro via fal.ai)
-3. Marketing Ad with Typography (Ideogram 3.0 via fal.ai)
+2. Style-aware scene generation (Flux 2.0 Pro via fal.ai)
+   -- The styled image IS the final ad. No Ideogram typography step.
 
-When ``ad_style`` is provided in extra_context, runs the full isolation +
-styled refinement pipeline to preserve product fidelity while applying
-the selected visual style. Falls back to the legacy single-step ad
-generation when no ad_style is specified.
+Legacy pipeline (no ``ad_style``):
+1. Ideogram 3.0 typography ad from the product image directly.
 """
 
 from __future__ import annotations
@@ -171,7 +169,8 @@ class VisualMarketingAgent(BaseAgent):
             use_styled_pipeline = bool(ad_style)
 
             if use_styled_pipeline:
-                # Full pipeline: isolate -> styled refinement -> ad typography
+                # Styled pipeline: isolate product -> generate styled scene
+                # The styled refinement IS the final ad image (no Ideogram).
                 _progress("masking", 5, "Starting product isolation...")
                 masked_bytes = await visual_svc.isolate_product(
                     image_url=image_url, progress=_progress,
@@ -180,7 +179,7 @@ class VisualMarketingAgent(BaseAgent):
                 mask_key = R2StorageService.build_key(state.shop_id, mission_id, "masked")
                 await r2_svc.upload_asset(masked_bytes, mask_key)
 
-                refined_url = await visual_svc.refine_product_styled(
+                styled_url = await visual_svc.refine_product_styled(
                     masked_image_bytes=masked_bytes,
                     ad_style=ad_style,
                     product_name=product_name,
@@ -188,51 +187,47 @@ class VisualMarketingAgent(BaseAgent):
                     progress=_progress,
                 )
 
+                _progress("uploading", 70, "Uploading final marketing image...")
                 async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(refined_url)
+                    resp = await client.get(styled_url)
                     resp.raise_for_status()
-                    refined_bytes = resp.content
-                refined_key = R2StorageService.build_key(state.shop_id, mission_id, "refined")
-                refined_r2_url = await r2_svc.upload_asset(refined_bytes, refined_key)
-                visual_assets["refined_url"] = refined_r2_url
+                    styled_bytes = resp.content
+                ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
+                ad_r2_url = await r2_svc.upload_asset(styled_bytes, ad_key)
+                visual_assets["ad_url"] = ad_r2_url
+                visual_assets["refined_url"] = ad_r2_url
                 state.visual_assets = visual_assets
 
-                ad_image_url = refined_url
-                prestyled = True
             else:
-                # Legacy path: use image directly (or pre-refined from earlier agent)
-                ad_image_url = image_url
-                prestyled = False
+                # Legacy path: Ideogram ad with typography
+                if not hook_text and not product_name:
+                    _progress("ad_generation", 70, "Ad generation skipped (no text to render)")
+                    state.add_log(
+                        "VisualMarketing: Ad skipped -- no hook text or product name"
+                    )
+                    _progress("complete", 100, "Visual marketing complete")
+                    actions.append(AgentAction(
+                        tool_name="visual_marketing.generate",
+                        input_params={"image_url": image_url},
+                        output=visual_assets,
+                        success=True,
+                    ))
+                    return actions, state
 
-            if not hook_text and not product_name:
-                _progress("ad_generation", 70, "Ad generation skipped (no text to render)")
-                state.add_log(
-                    "VisualMarketing: Ad skipped -- no hook text or product name"
+                ad_url = await visual_svc.generate_ad(
+                    refined_image_url=image_url,
+                    hook_text=hook_text,
+                    brand_name=brand_name,
+                    product_name=product_name,
+                    progress=_progress,
                 )
-                _progress("complete", 100, "Visual marketing complete")
-                actions.append(AgentAction(
-                    tool_name="visual_marketing.generate",
-                    input_params={"image_url": image_url},
-                    output=visual_assets,
-                    success=True,
-                ))
-                return actions, state
-
-            ad_url = await visual_svc.generate_ad(
-                refined_image_url=ad_image_url,
-                hook_text=hook_text,
-                brand_name=brand_name,
-                product_name=product_name,
-                progress=_progress,
-                prestyled=prestyled,
-            )
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(ad_url)
-                resp.raise_for_status()
-                ad_bytes = resp.content
-            ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
-            visual_assets["ad_url"] = await r2_svc.upload_asset(ad_bytes, ad_key)
-            state.visual_assets = visual_assets
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(ad_url)
+                    resp.raise_for_status()
+                    ad_bytes = resp.content
+                ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
+                visual_assets["ad_url"] = await r2_svc.upload_asset(ad_bytes, ad_key)
+                state.visual_assets = visual_assets
 
             _progress("complete", 100, "Visual marketing complete")
 

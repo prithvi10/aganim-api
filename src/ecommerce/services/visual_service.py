@@ -560,21 +560,19 @@ class VisualService:
         brand_name: str = "",
         product_name: str = "",
         progress: ProgressCallback = None,
-        prestyled: bool = False,
     ) -> str:
         """
         Use Ideogram 3.0 to generate a marketing ad with high-fidelity
         typography rendered directly onto the image.
 
+        This is the **legacy** path used when no ``ad_style`` is selected.
+        The styled pipeline bypasses this method entirely.
+
         Args:
             refined_image_url: URL of the refined product image.
-            hook_text: Social media hook text to render on the ad
-                       (e.g., "New Collection" or "Artisan Made").
+            hook_text: Social media hook text to render on the ad.
             brand_name: Brand name for additional context.
-            product_name: Product name for context (avoids misidentification).
-            prestyled: If True, the image already has a styled background
-                       from ``refine_product_styled`` -- prompt focuses on
-                       typography only.
+            product_name: Product name for context.
 
         Returns:
             URL of the generated ad image.
@@ -585,9 +583,7 @@ class VisualService:
         fal_client = _get_fal_client()
 
         clean_hook = self._clean_hook_text(hook_text)
-        ad_prompt = self._build_ad_prompt(
-            clean_hook, brand_name, product_name, prestyled=prestyled,
-        )
+        ad_prompt = self._build_ad_prompt(clean_hook, brand_name, product_name)
 
         if progress:
             progress("ad_generation", 60, "Rendering typography and ad creative...")
@@ -732,31 +728,16 @@ class VisualService:
         hook_text: str,
         brand_name: str = "",
         product_name: str = "",
-        prestyled: bool = False,
     ) -> str:
-        """Build the Ideogram prompt for ad generation with typography.
-
-        When ``prestyled=True`` the input image already has a styled background
-        from ``refine_product_styled``, so the prompt focuses on adding
-        typography without altering the product or scene.
-        """
+        """Build the Ideogram prompt for legacy ad generation with typography."""
         product_desc = f" for {product_name}" if product_name else ""
 
-        if prestyled:
-            parts = [
-                f"Social media marketing advertisement{product_desc}.",
-                "The product photo and styled background in the reference image are FINAL.",
-                "PRESERVE the reference image EXACTLY as-is — same product, same background, same composition, same colors.",
-                "Do NOT replace, redraw, reinterpret, or alter the product or scene in any way.",
-                "ONLY overlay bold, legible marketing typography onto the existing photograph.",
-            ]
-        else:
-            parts = [
-                f"Professional social media marketing advertisement{product_desc}.",
-                "Clean, modern design with the actual product prominently featured.",
-                "Keep the product IDENTICAL to the reference image — same shape, color, label, packaging, and count.",
-                "Do NOT replace or reinterpret the product. Reproduce it faithfully.",
-            ]
+        parts = [
+            f"Professional social media marketing advertisement{product_desc}.",
+            "Clean, modern design with the actual product prominently featured.",
+            "Keep the product IDENTICAL to the reference image — same shape, color, label, packaging, and count.",
+            "Do NOT replace or reinterpret the product. Reproduce it faithfully.",
+        ]
 
         text_lines: list[str] = []
         if product_name:
