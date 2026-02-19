@@ -476,78 +476,184 @@ class VisualService:
         return image_url
 
     # ------------------------------------------------------------------
-    # 2b. Style-aware Background Refinement (Marketing Studio)
+    # 2b. Styled Marketing Ad (Flux Fill inpainting pipeline)
     # ------------------------------------------------------------------
 
-    async def refine_product_styled(
+    @staticmethod
+    def _composite_product_on_canvas(
+        isolated_png_bytes: bytes,
+        canvas_size: int = 1024,
+        product_scale: float = 0.70,
+    ) -> Tuple[bytes, bytes]:
+        """Composite an isolated RGBA product onto a canvas and generate an inpainting mask.
+
+        Returns:
+            (canvas_png_bytes, mask_png_bytes) -- both 1024x1024 PNGs.
+            In the mask: black (0) = product (keep), white (255) = background (inpaint).
+        """
+        from PIL import Image as PILImage
+
+        product = PILImage.open(io.BytesIO(isolated_png_bytes)).convert("RGBA")
+
+        max_dim = int(canvas_size * product_scale)
+        ratio = min(max_dim / product.width, max_dim / product.height)
+        new_w = int(product.width * ratio)
+        new_h = int(product.height * ratio)
+        product = product.resize((new_w, new_h), PILImage.LANCZOS)
+
+        x_off = (canvas_size - new_w) // 2
+        y_off = (canvas_size - new_h) // 2
+
+        canvas = PILImage.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
+        canvas.paste(product, (x_off, y_off), product)
+
+        alpha = product.getchannel("A")
+        mask = PILImage.new("L", (canvas_size, canvas_size), 255)
+        mask.paste(alpha, (x_off, y_off))
+        mask = PILImage.eval(mask, lambda px: 0 if px > 128 else 255)
+
+        canvas_buf = io.BytesIO()
+        canvas.save(canvas_buf, "PNG")
+
+        mask_buf = io.BytesIO()
+        mask.save(mask_buf, "PNG")
+
+        return canvas_buf.getvalue(), mask_buf.getvalue()
+
+    @staticmethod
+    def _overlay_product_name(
+        image_bytes: bytes,
+        product_name: str,
+        canvas_size: int = 1024,
+    ) -> bytes:
+        """Overlay the product name as bold white text at the bottom of the image.
+
+        Uses PIL ImageDraw for deterministic typography instead of relying
+        on AI models which produce inconsistent text.
+        """
+        from PIL import Image as PILImage, ImageDraw, ImageFont
+
+        img = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        draw = ImageDraw.Draw(img)
+        font_size = max(28, canvas_size // 20)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except (OSError, IOError):
+            try:
+                font = ImageFont.truetype("arial.ttf", font_size)
+            except (OSError, IOError):
+                font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), product_name, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        x = (img.width - text_w) // 2
+        y = img.height - text_h - max(30, canvas_size // 20)
+
+        shadow_offset = max(2, font_size // 20)
+        draw.text((x + shadow_offset, y + shadow_offset), product_name, fill=(0, 0, 0, 180), font=font)
+        draw.text((x, y), product_name, fill=(255, 255, 255), font=font)
+
+        out_buf = io.BytesIO()
+        img.save(out_buf, "PNG")
+        return out_buf.getvalue()
+
+    async def generate_styled_ad(
         self,
         masked_image_bytes: bytes,
         ad_style: str = "aesthetic",
         product_name: str = "",
         brand_soul: str = "",
         progress: ProgressCallback = None,
-    ) -> str:
-        """
-        Use Flux 2.0 Pro Redux to regenerate the background behind the
-        isolated product using a style-specific prompt.
+    ) -> bytes:
+        """Generate a marketing ad using Flux Fill inpainting.
 
-        Uses the same proven approach as ``refine_product``: the masked
-        RGBA image (transparent background) is sent as a base64 data URI
-        to Flux Redux, which uses it as a reference and regenerates the
-        background guided by the styled prompt.
+        Pipeline:
+        1. Composite the isolated product onto a 1024x1024 canvas + generate mask.
+        2. Call Flux Fill to inpaint the background around the mask-protected product.
+        3. Overlay the product name using PIL (deterministic typography).
+
+        The product pixels are **identical** in the output because the mask
+        tells Flux Fill to only generate in the white (background) regions.
 
         Args:
             masked_image_bytes: RGBA PNG bytes from ``isolate_product``.
             ad_style: Style key from AD_STYLE_PROMPTS.
-            product_name: Product name for prompt context.
+            product_name: Product name for text overlay.
             brand_soul: Brand Soul text for aesthetic alignment.
 
         Returns:
-            URL of the styled product image (hosted on fal.ai CDN).
+            Final ad image as PNG bytes (ready for R2 upload).
         """
         from src.ecommerce.agents.visual.prompts import build_styled_background_prompt
 
         if progress:
-            progress("inpainting", 25, f"Preparing {ad_style} styled background...")
+            progress("compositing", 25, "Compositing product onto canvas...")
+
+        canvas_bytes, mask_bytes = await asyncio.to_thread(
+            self._composite_product_on_canvas, masked_image_bytes,
+        )
+
+        if progress:
+            progress("inpainting", 30, f"Preparing {ad_style} styled background...")
 
         fal_client = _get_fal_client()
 
         styled_prompt = build_styled_background_prompt(
             ad_style=ad_style,
-            product_name=product_name,
             brand_soul=brand_soul,
         )
 
-        if progress:
-            progress("inpainting", 30, "Encoding isolated product for styled generation...")
+        canvas_b64 = base64.b64encode(canvas_bytes).decode()
+        mask_b64 = base64.b64encode(mask_bytes).decode()
+        canvas_uri = f"data:image/png;base64,{canvas_b64}"
+        mask_uri = f"data:image/png;base64,{mask_b64}"
 
-        b64 = base64.b64encode(masked_image_bytes).decode()
-        image_data_uri = f"data:image/png;base64,{b64}"
-
         if progress:
-            progress("inpainting", 35, f"Generating {ad_style} background...")
+            progress("inpainting", 40, f"Generating {ad_style} background (Flux Fill)...")
 
         result = await asyncio.to_thread(
             fal_client.subscribe,
-            self.FLUX_PRO_MODEL,
+            self.FLUX_FILL_MODEL,
             arguments={
-                "image_url": image_data_uri,
+                "image_url": canvas_uri,
+                "mask_url": mask_uri,
                 "prompt": styled_prompt,
+                "output_format": "png",
                 "num_images": 1,
-                "image_size": "square_hd",
+                "safety_tolerance": "2",
             },
         )
 
-        image_url = self._extract_image_url(result)
+        inpainted_url = self._extract_image_url(result)
 
         if progress:
-            progress("inpainting", 50, "Styled background complete")
+            progress("inpainting", 60, "Downloading inpainted result...")
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(inpainted_url)
+            resp.raise_for_status()
+            inpainted_bytes = resp.content
+
+        if progress:
+            progress("text_overlay", 70, "Overlaying product name...")
+
+        if product_name:
+            final_bytes = await asyncio.to_thread(
+                self._overlay_product_name, inpainted_bytes, product_name,
+            )
+        else:
+            final_bytes = inpainted_bytes
+
+        if progress:
+            progress("text_overlay", 80, "Marketing ad complete")
 
         logger.info(
-            "[VisualService] refine_product_styled style=%s url=%s",
-            ad_style, image_url,
+            "[VisualService] generate_styled_ad style=%s size=%d bytes",
+            ad_style, len(final_bytes),
         )
-        return image_url
+        return final_bytes
 
     # ------------------------------------------------------------------
     # 3. Marketing Ad Generation (Ideogram 3.0 via fal.ai)
