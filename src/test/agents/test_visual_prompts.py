@@ -260,9 +260,9 @@ class TestDistillBrandAesthetic:
         result = _distill_brand_aesthetic(soul)
         assert "Storyteller" in result
 
-    def test_malformed_dict_string_falls_back(self):
+    def test_malformed_dict_string_returns_empty(self):
         result = _distill_brand_aesthetic("{'broken: dict")
-        assert result == "{'broken: dict"
+        assert result == ""
 
     def test_whitespace_collapsed_in_plain_text(self):
         result = _distill_brand_aesthetic("  lots   of   spaces  ")

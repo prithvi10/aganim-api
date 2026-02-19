@@ -48,7 +48,7 @@ class PlacementSlot:
 # ---------------------------------------------------------------------------
 
 _ALPHA_THRESHOLD = 30
-_MIN_OBJECT_AREA = 500
+_MIN_OBJECT_AREA = 5000
 
 
 def split_objects(isolated_rgba_bytes: bytes) -> List[ObjectCutout]:
@@ -238,6 +238,10 @@ def _fit_scale(w: int, h: int, max_dim: int) -> float:
 # 3. Composite + mask generation
 # ---------------------------------------------------------------------------
 
+_MASK_FEATHER_RADIUS = 6
+_MASK_ERODE_PX = 3
+
+
 def composite_and_mask(
     cutouts: List[ObjectCutout],
     slots: List[PlacementSlot],
@@ -245,14 +249,18 @@ def composite_and_mask(
 ) -> Tuple[bytes, bytes]:
     """Paste cutouts onto a canvas and generate the binary inpainting mask.
 
+    The mask is feathered (Gaussian blur on edges) so the AI-generated
+    background blends smoothly into the product silhouette with no
+    visible seam.
+
     Returns:
         (canvas_png_bytes, mask_png_bytes)
         Mask: 0 = product (keep), 255 = background (inpaint).
     """
-    from PIL import Image as PILImage, ImageChops
+    from PIL import Image as PILImage, ImageChops, ImageFilter
 
     canvas = PILImage.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
-    mask = PILImage.new("L", (canvas_size, canvas_size), 255)
+    product_alpha = PILImage.new("L", (canvas_size, canvas_size), 0)
 
     ordered = sorted(zip(cutouts, slots), key=lambda pair: pair[1].z_order)
 
@@ -265,10 +273,23 @@ def composite_and_mask(
         canvas.paste(obj, (slot.x, slot.y), obj)
 
         alpha = obj.getchannel("A")
-        binary_alpha = alpha.point(lambda px: 255 if px > _ALPHA_THRESHOLD else 0)
-        product_stamp = PILImage.new("L", (canvas_size, canvas_size), 0)
-        product_stamp.paste(binary_alpha, (slot.x, slot.y))
-        mask = ImageChops.subtract(mask, product_stamp)
+        stamp = PILImage.new("L", (canvas_size, canvas_size), 0)
+        stamp.paste(alpha, (slot.x, slot.y))
+        product_alpha = ImageChops.lighter(product_alpha, stamp)
+
+    # Erode the product region slightly so the mask covers a thin rim
+    # around the product edge; the AI will repaint that rim, creating a
+    # natural shadow/reflection transition instead of a hard seam.
+    eroded = product_alpha
+    if _MASK_ERODE_PX > 0:
+        eroded = eroded.filter(ImageFilter.MinFilter(size=_MASK_ERODE_PX * 2 + 1))
+
+    # Invert: high alpha (product) -> 0 (keep), low alpha (bg) -> 255 (inpaint)
+    mask = PILImage.eval(eroded, lambda px: max(0, 255 - px))
+
+    # Feather edges with Gaussian blur for smooth blending
+    if _MASK_FEATHER_RADIUS > 0:
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=_MASK_FEATHER_RADIUS))
 
     canvas_buf = io.BytesIO()
     canvas.save(canvas_buf, "PNG")
@@ -276,7 +297,7 @@ def composite_and_mask(
     mask.save(mask_buf, "PNG")
 
     logger.info(
-        "[visual_layout] composite_and_mask objects=%d canvas=%dx%d",
-        len(cutouts), canvas_size, canvas_size,
+        "[visual_layout] composite_and_mask objects=%d canvas=%dx%d feather=%dpx",
+        len(cutouts), canvas_size, canvas_size, _MASK_FEATHER_RADIUS,
     )
     return canvas_buf.getvalue(), mask_buf.getvalue()
