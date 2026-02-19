@@ -5,7 +5,7 @@ Handles admin UI endpoints including usage, brand context, and onboarding.
 """
 
 import json
-from fastapi import APIRouter, HTTPException, Depends, Request, Response, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, BackgroundTasks, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
@@ -1123,3 +1123,38 @@ async def retail_calendar_endpoint(
     """Return the full US retail holiday calendar for the current year."""
     from src.ecommerce.agents.marketing.holidays import get_retail_calendar
     return {"calendar": get_retail_calendar()}
+
+
+# =============================================================================
+# Upload Product Image (for Marketing Studio)
+# =============================================================================
+
+_UPLOAD_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_UPLOAD_ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+@router.post("/api/upload-product-image")
+async def upload_product_image(
+    request: Request,
+    file: UploadFile = File(...),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """Upload a custom product image for ad generation, stored in R2."""
+    if file.content_type not in _UPLOAD_ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {file.content_type}. Allowed: {', '.join(sorted(_UPLOAD_ALLOWED_TYPES))}",
+        )
+
+    data = await file.read()
+    if len(data) > _UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+
+    from src.ecommerce.services.r2_storage_service import R2StorageService
+    import uuid
+
+    r2_svc = R2StorageService()
+    ext = (file.filename or "upload.png").rsplit(".", 1)[-1] or "png"
+    key = R2StorageService.build_key(shop, f"custom-{uuid.uuid4().hex[:12]}", f"upload.{ext}")
+    url = await r2_svc.upload_asset(data, key, content_type=file.content_type or "image/png")
+
+    return {"url": url, "key": key}

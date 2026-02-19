@@ -57,7 +57,21 @@ class ImageURLValidationError(ValueError):
     pass
 
 
-def validate_image_url(url: str, *, allow_fal_media: bool = False) -> str:
+def _get_r2_public_host() -> str:
+    """Extract the hostname from R2_PUBLIC_URL for allow-listing."""
+    r2_url = os.getenv("R2_PUBLIC_URL", "")
+    if r2_url:
+        parsed = urlparse(r2_url.strip().rstrip("/"))
+        return (parsed.hostname or "").lower()
+    return ""
+
+
+def validate_image_url(
+    url: str,
+    *,
+    allow_fal_media: bool = False,
+    allow_r2: bool = False,
+) -> str:
     """
     Validate that an image URL is from a trusted source before sending it
     to fal.ai models.  This prevents SSRF (Server-Side Request Forgery)
@@ -69,6 +83,8 @@ def validate_image_url(url: str, *, allow_fal_media: bool = False) -> str:
         allow_fal_media: If True, also allow ``fal.media`` and
             ``storage.googleapis.com/fal-*`` URLs (used for intermediate
             pipeline results that come back from fal.ai).
+        allow_r2: If True, also allow URLs hosted on the R2_PUBLIC_URL
+            domain (used for custom-uploaded product images).
 
     Returns:
         The validated URL (stripped of whitespace).
@@ -110,6 +126,12 @@ def validate_image_url(url: str, *, allow_fal_media: bool = False) -> str:
         or (host.endswith(".googleapis.com") and "/fal-" in parsed.path)
     ):
         is_trusted = True
+
+    # 4. R2 storage URLs (custom-uploaded product images)
+    elif allow_r2:
+        r2_host = _get_r2_public_host()
+        if r2_host and host == r2_host:
+            is_trusted = True
 
     if not is_trusted:
         raise ImageURLValidationError(
@@ -453,6 +475,77 @@ class VisualService:
         return image_url
 
     # ------------------------------------------------------------------
+    # 2b. Style-aware Background Refinement (Marketing Studio)
+    # ------------------------------------------------------------------
+
+    async def refine_product_styled(
+        self,
+        masked_image_bytes: bytes,
+        ad_style: str = "aesthetic",
+        product_name: str = "",
+        brand_soul: str = "",
+        progress: ProgressCallback = None,
+    ) -> str:
+        """
+        Use Flux 2.0 Pro to regenerate the background behind an isolated
+        product using a style-specific prompt (for Marketing Studio).
+
+        The product pixels are preserved via the RGBA mask; only the
+        transparent background region is filled by the model.
+
+        Args:
+            masked_image_bytes: RGBA PNG bytes from ``isolate_product``.
+            ad_style: Style key from AD_STYLE_PROMPTS.
+            product_name: Product name for prompt context.
+            brand_soul: Brand Soul text for aesthetic alignment.
+
+        Returns:
+            URL of the styled product image (hosted on fal.ai CDN).
+        """
+        from src.ecommerce.agents.visual.prompts import build_styled_background_prompt
+
+        if progress:
+            progress("inpainting", 25, f"Preparing {ad_style} styled background...")
+
+        fal_client = _get_fal_client()
+        styled_prompt = build_styled_background_prompt(
+            ad_style=ad_style,
+            product_name=product_name,
+            brand_soul=brand_soul,
+        )
+
+        if progress:
+            progress("inpainting", 30, "Encoding isolated product for styled generation...")
+
+        b64 = base64.b64encode(masked_image_bytes).decode()
+        image_data_uri = f"data:image/png;base64,{b64}"
+
+        if progress:
+            progress("inpainting", 35, f"Generating {ad_style} background...")
+
+        result = await asyncio.to_thread(
+            fal_client.subscribe,
+            self.FLUX_PRO_MODEL,
+            arguments={
+                "image_url": image_data_uri,
+                "prompt": styled_prompt,
+                "num_images": 1,
+                "image_size": "square_hd",
+            },
+        )
+
+        image_url = self._extract_image_url(result)
+
+        if progress:
+            progress("inpainting", 50, "Styled background complete")
+
+        logger.info(
+            "[VisualService] refine_product_styled style=%s url=%s",
+            ad_style, image_url,
+        )
+        return image_url
+
+    # ------------------------------------------------------------------
     # 3. Marketing Ad Generation (Ideogram 3.0 via fal.ai)
     # ------------------------------------------------------------------
 
@@ -463,6 +556,7 @@ class VisualService:
         brand_name: str = "",
         product_name: str = "",
         progress: ProgressCallback = None,
+        prestyled: bool = False,
     ) -> str:
         """
         Use Ideogram 3.0 to generate a marketing ad with high-fidelity
@@ -474,6 +568,9 @@ class VisualService:
                        (e.g., "New Collection" or "Artisan Made").
             brand_name: Brand name for additional context.
             product_name: Product name for context (avoids misidentification).
+            prestyled: If True, the image already has a styled background
+                       from ``refine_product_styled`` -- prompt focuses on
+                       typography only.
 
         Returns:
             URL of the generated ad image.
@@ -484,7 +581,9 @@ class VisualService:
         fal_client = _get_fal_client()
 
         clean_hook = self._clean_hook_text(hook_text)
-        ad_prompt = self._build_ad_prompt(clean_hook, brand_name, product_name)
+        ad_prompt = self._build_ad_prompt(
+            clean_hook, brand_name, product_name, prestyled=prestyled,
+        )
 
         if progress:
             progress("ad_generation", 60, "Rendering typography and ad creative...")
@@ -624,18 +723,43 @@ class VisualService:
 
     @staticmethod
     def _build_ad_prompt(
-        hook_text: str, brand_name: str = "", product_name: str = "",
+        hook_text: str,
+        brand_name: str = "",
+        product_name: str = "",
+        prestyled: bool = False,
     ) -> str:
-        """Build the Ideogram prompt for ad generation with typography."""
+        """Build the Ideogram prompt for ad generation with typography.
+
+        When ``prestyled=True`` the input image already has a styled background
+        from ``refine_product_styled``, so the prompt focuses on adding
+        typography without altering the product or scene.
+        """
         product_desc = f" for {product_name}" if product_name else ""
-        parts = [
-            f"Professional social media marketing advertisement{product_desc}.",
-            "Clean, modern design with the actual product prominently featured.",
-            "Keep the product faithful to the reference image — same shape, color, and style.",
-        ]
+
+        if prestyled:
+            parts = [
+                f"Social media marketing advertisement{product_desc}.",
+                "The product and background are already finalized in the reference image.",
+                "Do NOT change, redraw, or alter the product or background in any way.",
+                "ONLY add typography overlay onto the existing image.",
+            ]
+        else:
+            parts = [
+                f"Professional social media marketing advertisement{product_desc}.",
+                "Clean, modern design with the actual product prominently featured.",
+                "Keep the product faithful to the reference image — same shape, color, and style.",
+            ]
+
+        text_lines: list[str] = []
+        if product_name:
+            text_lines.append(product_name)
         if hook_text:
+            text_lines.append(hook_text)
+
+        if text_lines:
+            combined = '" and "'.join(text_lines)
             parts.append(
-                f'Render the text "{hook_text}" in bold, elegant typography '
+                f'Render the text "{combined}" in bold, elegant typography '
                 f"that is clearly legible and well-positioned."
             )
             parts.append(
