@@ -92,15 +92,11 @@ class VisualMarketingAgent(BaseAgent):
         )
         context.external_data["brand_name"] = raw.get("brand_name", "")
 
-        extra = raw.get("extra_context") or {}
-        if isinstance(extra, dict):
-            context.external_data["ad_style"] = extra.get("ad_style", "")
-        else:
-            context.external_data["ad_style"] = ""
+        # extra_context fields are flattened into raw_input by the missions endpoint
+        context.external_data["ad_style"] = raw.get("ad_style", "")
 
-        # Override hook_text from extra_context if provided directly
-        if not context.external_data["hook_text"] and isinstance(extra, dict):
-            context.external_data["hook_text"] = extra.get("hook_text", "")
+        if not context.external_data["hook_text"]:
+            context.external_data["hook_text"] = raw.get("hook_text", "")
 
         return context
 
