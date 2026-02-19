@@ -186,7 +186,6 @@ class VisualMarketingAgent(BaseAgent):
 
                 refined_url = await visual_svc.refine_product_styled(
                     masked_image_bytes=masked_bytes,
-                    original_image_url=image_url,
                     ad_style=ad_style,
                     product_name=product_name,
                     brand_soul=brand_soul,
