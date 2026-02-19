@@ -1,15 +1,11 @@
 """
-VisualMarketingAgent -- Marketing ad generation with pixel-perfect pipeline.
+VisualMarketingAgent -- Marketing ad generation via Nano Banana.
 
-Styled pipeline (Marketing Studio, when ``ad_style`` is provided):
-1. Product Isolation (BiRefNet background removal)
-2. Object splitting (connected-components on alpha)
-3. Auto-layout + canvas compositing + binary mask
-4. Flux Fill inpainting (background & props only; products are mask-protected)
-5. PIL text overlay (product name)
+Primary pipeline (when product image is available):
+  Product image + prompt → fal-ai/nano-banana/edit → marketing ad
 
-Legacy pipeline (no ``ad_style``):
-1. Ideogram 3.0 typography ad from the product image directly.
+Legacy fallback (no product image):
+  Ideogram 3.0 typography ad.
 """
 
 from __future__ import annotations
@@ -34,13 +30,12 @@ class VisualMarketingAgent(BaseAgent):
     Consumes:
         - Product image URL from ``state.raw_input["image_url"]``
           or refined image from ``state.visual_assets["refined_url"]``
-        - Social hook text from ``state.social_hooks`` or ``raw_input``
-        - Brand Soul context from RAG perception
-        - ``ad_style`` from ``raw_input`` (Marketing Studio)
+        - Product name from ``raw_input``
+        - Brand Soul context from RAG perception (passed through, disabled by default)
 
     Produces:
         - ``state.visual_assets["ad_url"]``
-        - ``state.visual_assets["refined_url"]`` (when running full pipeline)
+        - ``state.visual_assets["refined_url"]``
         - ``state.visual_progress``: dict with phase/pct/label for SSE
 
     LLM Calls: 0 (all generation via fal.ai image models)
@@ -91,21 +86,6 @@ class VisualMarketingAgent(BaseAgent):
             "product_name", raw.get("title", "")
         )
         context.external_data["brand_name"] = raw.get("brand_name", "")
-
-        # extra_context fields are flattened into raw_input by the missions endpoint
-        context.external_data["ad_style"] = raw.get("ad_style", "")
-        context.external_data["product_type"] = raw.get(
-            "product_type", raw.get("productType", raw.get("category", "")),
-        )
-        raw_tags = raw.get("tags", [])
-        context.external_data["tags"] = (
-            raw_tags if isinstance(raw_tags, list)
-            else [t.strip() for t in raw_tags.split(",") if t.strip()]
-            if isinstance(raw_tags, str) else []
-        )
-
-        if not context.external_data["hook_text"]:
-            context.external_data["hook_text"] = raw.get("hook_text", "")
 
         return context
 
@@ -159,13 +139,8 @@ class VisualMarketingAgent(BaseAgent):
             state.visual_progress = {"phase": phase, "pct": pct, "label": label}
             state.add_log(f"VisualMarketing: [{pct}%] {label}")
 
-        hook_text = context.external_data.get("hook_text", "")
-        brand_name = context.external_data.get("brand_name", "")
         product_name = context.external_data.get("product_name", "")
         brand_soul = context.external_data.get("brand_soul", "")
-        ad_style = context.external_data.get("ad_style", "")
-        product_type = context.external_data.get("product_type", "")
-        tags = context.external_data.get("tags", [])
 
         visual_assets: Dict[str, Optional[str]] = dict(
             getattr(state, "visual_assets", None) or {}
@@ -176,75 +151,35 @@ class VisualMarketingAgent(BaseAgent):
         state.visual_assets = visual_assets
 
         try:
-            use_styled_pipeline = bool(ad_style)
+            ad_gen = ProductAdGenerator()
+            ad_bytes = await ad_gen.generate(
+                image_url=image_url,
+                product_name=product_name,
+                brand_soul=brand_soul,
+                use_brand_style=False,
+                progress=_progress,
+            )
 
-            if use_styled_pipeline:
-                ad_gen = ProductAdGenerator()
-                ad_bytes = await ad_gen.generate(
-                    image_url=image_url,
-                    ad_style=ad_style,
-                    product_name=product_name,
-                    product_type=product_type,
-                    tags=tags,
-                    brand_soul=brand_soul,
-                    progress=_progress,
-                )
-
-                _progress("uploading", 92, "Uploading final marketing image...")
-                ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
-                ad_r2_url = await r2_svc.upload_asset(ad_bytes, ad_key)
-                visual_assets["ad_url"] = ad_r2_url
-                visual_assets["refined_url"] = ad_r2_url
-                state.visual_assets = visual_assets
-
-            else:
-                # Legacy path: Ideogram ad with typography
-                if not hook_text and not product_name:
-                    _progress("ad_generation", 70, "Ad generation skipped (no text to render)")
-                    state.add_log(
-                        "VisualMarketing: Ad skipped -- no hook text or product name"
-                    )
-                    _progress("complete", 100, "Visual marketing complete")
-                    actions.append(AgentAction(
-                        tool_name="visual_marketing.generate",
-                        input_params={"image_url": image_url},
-                        output=visual_assets,
-                        success=True,
-                    ))
-                    return actions, state
-
-                import httpx
-                visual_svc = VisualService()
-
-                ad_url = await visual_svc.generate_ad(
-                    refined_image_url=image_url,
-                    hook_text=hook_text,
-                    brand_name=brand_name,
-                    product_name=product_name,
-                    progress=_progress,
-                )
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(ad_url)
-                    resp.raise_for_status()
-                    ad_bytes = resp.content
-                ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
-                visual_assets["ad_url"] = await r2_svc.upload_asset(ad_bytes, ad_key)
-                state.visual_assets = visual_assets
+            _progress("uploading", 92, "Uploading final marketing image...")
+            ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
+            ad_r2_url = await r2_svc.upload_asset(ad_bytes, ad_key)
+            visual_assets["ad_url"] = ad_r2_url
+            visual_assets["refined_url"] = ad_r2_url
+            state.visual_assets = visual_assets
 
             _progress("complete", 100, "Visual marketing complete")
 
             actions.append(AgentAction(
                 tool_name="visual_marketing.generate",
-                input_params={"image_url": image_url, "ad_style": ad_style},
+                input_params={"image_url": image_url},
                 output=visual_assets,
                 success=True,
             ))
 
             logger.info(
-                "[VisualMarketingAgent] complete shop=%s ad=%s style=%s",
+                "[VisualMarketingAgent] complete shop=%s ad=%s",
                 state.shop_id,
                 bool(visual_assets.get("ad_url")),
-                ad_style or "legacy",
             )
 
         except Exception as e:

@@ -158,12 +158,19 @@ def _distill_brand_aesthetic(brand_soul: str, max_len: int = 120) -> str:
             words = data.get("power_words", [])
             if words:
                 parts.append(", ".join(words[:5]))
-            return ". ".join(parts)[:max_len]
+            result = ". ".join(parts)[:max_len]
+            return result if result else ""
     except (ValueError, SyntaxError):
         pass
 
+    # If it looks like a stringified dict/list that we failed to parse
+    # (e.g. truncated), discard it to avoid leaking raw code into prompts.
+    stripped = brand_soul.strip()
+    if stripped.startswith(("{", "[", "OrderedDict")):
+        return ""
+
     # Plain text fallback — first meaningful fragment
-    clean = re.sub(r"\s+", " ", brand_soul).strip()
+    clean = re.sub(r"\s+", " ", stripped)
     return clean[:max_len]
 
 
@@ -279,7 +286,7 @@ def infer_props(
 
 
 # ---------------------------------------------------------------------------
-# Style-aware background prompt (Marketing Studio -- Flux Fill)
+# Style-aware background prompt (Marketing Studio -- Flux Fill) [LEGACY]
 # ---------------------------------------------------------------------------
 
 STYLED_BACKGROUND_PROMPT_TEMPLATE = """\
@@ -324,3 +331,48 @@ def build_styled_background_prompt(
         props_line=props_line,
         brand_style=brand_style,
     ).strip()
+
+
+# ---------------------------------------------------------------------------
+# Nano Banana marketing prompt (fal-ai/nano-banana/edit)
+# ---------------------------------------------------------------------------
+
+NANO_BANANA_MARKETING_TEMPLATE = """\
+Professional marketing product photo for Instagram.
+Place the exact product from the reference image in a beautiful, well-lit setting with complementary styling and props.
+Preserve the product faithfully -- same shape, colors, labels, and packaging.
+{brand_style}High-quality e-commerce photography. Eye-catching composition.
+No text, words, letters, logos, or watermarks.
+"""
+
+
+def build_nano_banana_prompt(
+    product_name: str = "",
+    brand_soul: str = "",
+) -> str:
+    """Build a fidelity-first prompt for Nano Banana /edit.
+
+    The prompt prioritises faithful reproduction of the reference product.
+    ``brand_soul`` is supported but the caller should only pass a non-empty
+    value when brand styling is explicitly enabled (``use_brand_style=True``
+    on ProductAdGenerator); by default it is empty so the model focuses
+    entirely on the reference image.
+    """
+    brand_style = ""
+    if brand_soul:
+        aesthetic = _distill_brand_aesthetic(brand_soul, max_len=120)
+        if aesthetic:
+            brand_style = f"{aesthetic} aesthetic. "
+
+    product_name_line = ""
+    if product_name:
+        product_name_line = f"Product: {product_name}. "
+
+    prompt = NANO_BANANA_MARKETING_TEMPLATE.format(
+        brand_style=brand_style,
+    ).strip()
+
+    if product_name_line:
+        prompt = product_name_line + prompt
+
+    return prompt
