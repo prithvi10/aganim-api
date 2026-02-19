@@ -221,6 +221,7 @@ class VisualService:
 
     # fal.ai model endpoints
     FLUX_PRO_MODEL = "fal-ai/flux-pro/v1.1/redux"
+    FLUX_FILL_MODEL = "fal-ai/flux-pro/v1/fill"
     IDEOGRAM_MODEL = "fal-ai/ideogram/v3"
     SD35_OUTPAINT_MODEL = "fal-ai/stable-diffusion-v35-large"
     OUTPAINT_V2_MODEL = "fal-ai/image-apps-v2/outpaint"
@@ -481,20 +482,25 @@ class VisualService:
     async def refine_product_styled(
         self,
         masked_image_bytes: bytes,
+        original_image_url: str,
         ad_style: str = "aesthetic",
         product_name: str = "",
         brand_soul: str = "",
         progress: ProgressCallback = None,
     ) -> str:
         """
-        Use Flux 2.0 Pro to regenerate the background behind an isolated
-        product using a style-specific prompt (for Marketing Studio).
+        Use Flux Pro Fill (inpainting) to regenerate ONLY the background
+        behind the product while preserving the exact product pixels.
 
-        The product pixels are preserved via the RGBA mask; only the
-        transparent background region is filled by the model.
+        This sends the original image + an inverted-alpha mask to the
+        ``fal-ai/flux-pro/v1/fill`` model.  The mask marks the background
+        (white = regenerate) and the product (black = keep untouched).
 
         Args:
-            masked_image_bytes: RGBA PNG bytes from ``isolate_product``.
+            masked_image_bytes: RGBA PNG bytes from ``isolate_product``
+                (used to derive the inpainting mask).
+            original_image_url: URL of the original product image
+                (sent as the base image for inpainting).
             ad_style: Style key from AD_STYLE_PROMPTS.
             product_name: Product name for prompt context.
             brand_soul: Brand Soul text for aesthetic alignment.
@@ -508,6 +514,8 @@ class VisualService:
             progress("inpainting", 25, f"Preparing {ad_style} styled background...")
 
         fal_client = _get_fal_client()
+        Image = _get_pil()
+
         styled_prompt = build_styled_background_prompt(
             ad_style=ad_style,
             product_name=product_name,
@@ -515,22 +523,31 @@ class VisualService:
         )
 
         if progress:
-            progress("inpainting", 30, "Encoding isolated product for styled generation...")
+            progress("inpainting", 28, "Building inpainting mask from isolated product...")
 
-        b64 = base64.b64encode(masked_image_bytes).decode()
-        image_data_uri = f"data:image/png;base64,{b64}"
+        # Build mask: white = background (regenerate), black = product (keep)
+        rgba = Image.open(io.BytesIO(masked_image_bytes)).convert("RGBA")
+        alpha = rgba.split()[-1]  # A channel
+        from PIL import ImageOps
+        mask = ImageOps.invert(alpha).convert("L")
+
+        mask_buf = io.BytesIO()
+        mask.save(mask_buf, format="PNG")
+        mask_b64 = base64.b64encode(mask_buf.getvalue()).decode()
+        mask_data_uri = f"data:image/png;base64,{mask_b64}"
 
         if progress:
-            progress("inpainting", 35, f"Generating {ad_style} background...")
+            progress("inpainting", 35, f"Generating {ad_style} background (inpainting)...")
 
         result = await asyncio.to_thread(
             fal_client.subscribe,
-            self.FLUX_PRO_MODEL,
+            self.FLUX_FILL_MODEL,
             arguments={
-                "image_url": image_data_uri,
+                "image_url": original_image_url,
+                "mask_url": mask_data_uri,
                 "prompt": styled_prompt,
                 "num_images": 1,
-                "image_size": "square_hd",
+                "output_format": "png",
             },
         )
 
@@ -600,7 +617,9 @@ class VisualService:
                     "blurry, low quality, distorted text, misspelled words, "
                     "hashtags, social media captions, watermark, "
                     "random text, gibberish, extra text, additional text, "
-                    "unwanted text, placeholder text, decorative text, lorem ipsum"
+                    "unwanted text, placeholder text, decorative text, lorem ipsum, "
+                    "different product, wrong product, altered product, redrawn product, "
+                    "changed packaging, modified label, wrong number of items"
                 ),
             },
         )
@@ -739,15 +758,17 @@ class VisualService:
         if prestyled:
             parts = [
                 f"Social media marketing advertisement{product_desc}.",
-                "The product and background are already finalized in the reference image.",
-                "Do NOT change, redraw, or alter the product or background in any way.",
-                "ONLY add typography overlay onto the existing image.",
+                "The product photo and styled background in the reference image are FINAL.",
+                "PRESERVE the reference image EXACTLY as-is — same product, same background, same composition, same colors.",
+                "Do NOT replace, redraw, reinterpret, or alter the product or scene in any way.",
+                "ONLY overlay bold, legible marketing typography onto the existing photograph.",
             ]
         else:
             parts = [
                 f"Professional social media marketing advertisement{product_desc}.",
                 "Clean, modern design with the actual product prominently featured.",
-                "Keep the product faithful to the reference image — same shape, color, and style.",
+                "Keep the product IDENTICAL to the reference image — same shape, color, label, packaging, and count.",
+                "Do NOT replace or reinterpret the product. Reproduce it faithfully.",
             ]
 
         text_lines: list[str] = []
