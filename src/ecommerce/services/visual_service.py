@@ -482,25 +482,22 @@ class VisualService:
     async def refine_product_styled(
         self,
         masked_image_bytes: bytes,
-        original_image_url: str,
         ad_style: str = "aesthetic",
         product_name: str = "",
         brand_soul: str = "",
         progress: ProgressCallback = None,
     ) -> str:
         """
-        Use Flux Pro Fill (inpainting) to regenerate ONLY the background
-        behind the product while preserving the exact product pixels.
+        Use Flux 2.0 Pro Redux to regenerate the background behind the
+        isolated product using a style-specific prompt.
 
-        This sends the original image + an inverted-alpha mask to the
-        ``fal-ai/flux-pro/v1/fill`` model.  The mask marks the background
-        (white = regenerate) and the product (black = keep untouched).
+        Uses the same proven approach as ``refine_product``: the masked
+        RGBA image (transparent background) is sent as a base64 data URI
+        to Flux Redux, which uses it as a reference and regenerates the
+        background guided by the styled prompt.
 
         Args:
-            masked_image_bytes: RGBA PNG bytes from ``isolate_product``
-                (used to derive the inpainting mask).
-            original_image_url: URL of the original product image
-                (sent as the base image for inpainting).
+            masked_image_bytes: RGBA PNG bytes from ``isolate_product``.
             ad_style: Style key from AD_STYLE_PROMPTS.
             product_name: Product name for prompt context.
             brand_soul: Brand Soul text for aesthetic alignment.
@@ -514,7 +511,6 @@ class VisualService:
             progress("inpainting", 25, f"Preparing {ad_style} styled background...")
 
         fal_client = _get_fal_client()
-        Image = _get_pil()
 
         styled_prompt = build_styled_background_prompt(
             ad_style=ad_style,
@@ -523,31 +519,22 @@ class VisualService:
         )
 
         if progress:
-            progress("inpainting", 28, "Building inpainting mask from isolated product...")
+            progress("inpainting", 30, "Encoding isolated product for styled generation...")
 
-        # Build mask: white = background (regenerate), black = product (keep)
-        rgba = Image.open(io.BytesIO(masked_image_bytes)).convert("RGBA")
-        alpha = rgba.split()[-1]  # A channel
-        from PIL import ImageOps
-        mask = ImageOps.invert(alpha).convert("L")
-
-        mask_buf = io.BytesIO()
-        mask.save(mask_buf, format="PNG")
-        mask_b64 = base64.b64encode(mask_buf.getvalue()).decode()
-        mask_data_uri = f"data:image/png;base64,{mask_b64}"
+        b64 = base64.b64encode(masked_image_bytes).decode()
+        image_data_uri = f"data:image/png;base64,{b64}"
 
         if progress:
-            progress("inpainting", 35, f"Generating {ad_style} background (inpainting)...")
+            progress("inpainting", 35, f"Generating {ad_style} background...")
 
         result = await asyncio.to_thread(
             fal_client.subscribe,
-            self.FLUX_FILL_MODEL,
+            self.FLUX_PRO_MODEL,
             arguments={
-                "image_url": original_image_url,
-                "mask_url": mask_data_uri,
+                "image_url": image_data_uri,
                 "prompt": styled_prompt,
                 "num_images": 1,
-                "output_format": "png",
+                "image_size": "square_hd",
             },
         )
 
