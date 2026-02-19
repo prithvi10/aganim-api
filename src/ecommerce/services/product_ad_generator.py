@@ -166,11 +166,16 @@ class ProductAdGenerator:
                     "width": self.canvas_size,
                     "height": self.canvas_size,
                 },
-                "sync_mode": True,
             },
         )
 
         fill_url = self._extract_url(result)
+
+        if fill_url.startswith("data:"):
+            if progress:
+                progress("inpainting", 70, "Decoding inpainted image...")
+            header, encoded = fill_url.split(",", 1)
+            return base64.b64decode(encoded)
 
         if progress:
             progress("inpainting", 70, "Downloading inpainted image...")
