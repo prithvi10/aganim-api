@@ -3,9 +3,8 @@ VisualMarketingAgent -- Marketing ad generation with style-aware pipeline.
 
 Styled pipeline (Marketing Studio, when ``ad_style`` is provided):
 1. Product Isolation (rembg/BiRefNet background removal)
-2. PIL compositing: product centered on 1024x1024 canvas + binary mask
-3. Flux Fill inpainting: mask-protected product, AI-generated styled background
-4. PIL text overlay: deterministic product-name typography
+2. Style-aware scene generation (Flux 2.0 Pro via fal.ai)
+   -- The styled image IS the final ad. No Ideogram typography step.
 
 Legacy pipeline (no ``ad_style``):
 1. Ideogram 3.0 typography ad from the product image directly.
@@ -170,7 +169,8 @@ class VisualMarketingAgent(BaseAgent):
             use_styled_pipeline = bool(ad_style)
 
             if use_styled_pipeline:
-                # Styled pipeline: isolate -> composite + mask -> Flux Fill inpainting -> PIL text
+                # Styled pipeline: isolate product -> generate styled scene
+                # The styled refinement IS the final ad image (no Ideogram).
                 _progress("masking", 5, "Starting product isolation...")
                 masked_bytes = await visual_svc.isolate_product(
                     image_url=image_url, progress=_progress,
@@ -179,7 +179,7 @@ class VisualMarketingAgent(BaseAgent):
                 mask_key = R2StorageService.build_key(state.shop_id, mission_id, "masked")
                 await r2_svc.upload_asset(masked_bytes, mask_key)
 
-                ad_bytes = await visual_svc.generate_styled_ad(
+                styled_url = await visual_svc.refine_product_styled(
                     masked_image_bytes=masked_bytes,
                     ad_style=ad_style,
                     product_name=product_name,
@@ -187,9 +187,13 @@ class VisualMarketingAgent(BaseAgent):
                     progress=_progress,
                 )
 
-                _progress("uploading", 85, "Uploading final marketing image...")
+                _progress("uploading", 70, "Uploading final marketing image...")
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(styled_url)
+                    resp.raise_for_status()
+                    styled_bytes = resp.content
                 ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
-                ad_r2_url = await r2_svc.upload_asset(ad_bytes, ad_key)
+                ad_r2_url = await r2_svc.upload_asset(styled_bytes, ad_key)
                 visual_assets["ad_url"] = ad_r2_url
                 visual_assets["refined_url"] = ad_r2_url
                 state.visual_assets = visual_assets

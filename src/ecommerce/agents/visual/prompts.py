@@ -189,22 +189,25 @@ def build_hero_prompt(
 # ---------------------------------------------------------------------------
 
 STYLED_BACKGROUND_PROMPT_TEMPLATE = """\
-Professional marketing product photography.
-The product is placed in a {style_description}.
-{brand_style} High-end e-commerce quality, 8k resolution.
-The lighting is consistent, casting realistic soft shadows from the product onto the generated environment.
-No text, words, letters, logos, or writing of any kind. Purely visual.
+{style_description}
+Professional marketing product photography for {product_name}.
+{brand_style}
+{product_name_line}
+High-end e-commerce aesthetic. Premium quality. Consistent global lighting.
+Complementary background that makes the product stand out.
+Do NOT add any other text, hashtags, captions, or writing beyond what is specified.
 """
 
 
 def build_styled_background_prompt(
     ad_style: str,
+    product_name: str = "",
     brand_soul: str = "",
 ) -> str:
-    """Build a Flux Fill prompt for style-aware background inpainting.
+    """Build a Flux Pro prompt for style-aware marketing image generation.
 
-    The prompt is purely visual -- text overlay is handled by PIL
-    post-processing, not by the AI model.
+    The styled image is the FINAL ad output. If a product name is provided,
+    it is rendered as the only text element on the image.
     """
     style_description = AD_STYLE_PROMPTS.get(ad_style, AD_STYLE_PROMPTS["aesthetic"])
 
@@ -214,7 +217,18 @@ def build_styled_background_prompt(
         if aesthetic:
             brand_style = f"Brand aesthetic: {aesthetic}."
 
+    product_name_line = ""
+    if product_name:
+        product_name_line = (
+            f'Render the product name "{product_name}" in bold, legible typography '
+            f"on the image. This must be the ONLY text in the entire image."
+        )
+    else:
+        product_name_line = "No text, words, letters, logos, or writing of any kind. Purely visual."
+
     return STYLED_BACKGROUND_PROMPT_TEMPLATE.format(
+        product_name=product_name or "product",
         style_description=style_description,
         brand_style=brand_style,
+        product_name_line=product_name_line,
     ).strip()
