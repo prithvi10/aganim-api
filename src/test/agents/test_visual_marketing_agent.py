@@ -59,7 +59,7 @@ def pro_state():
         },
     )
     state.visual_assets = {
-        "refined_url": "https://r2.example.com/refined.png",
+        "refined_url": "https://cdn.shopify.com/refined.png",
         "original_image_url": "https://cdn.shopify.com/product.jpg",
     }
     return state
@@ -102,7 +102,7 @@ class TestPerceiveDomain:
     async def test_prefers_refined_url(self, agent, pro_state, context_base):
         """Should use refined_url from visual_assets when available."""
         ctx = await agent._perceive_domain(pro_state, context_base)
-        assert ctx.external_data["image_url"] == "https://r2.example.com/refined.png"
+        assert ctx.external_data["image_url"] == "https://cdn.shopify.com/refined.png"
 
     @pytest.mark.asyncio
     async def test_falls_back_to_raw_image(self, agent, context_base):
@@ -149,7 +149,7 @@ class TestActDomainHappyPath:
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
-                "image_url": "https://r2.example.com/refined.png",
+                "image_url": "https://cdn.shopify.com/refined.png",
                 "brand_soul": "Minimalist Kyoto",
                 "product_name": "Bowl",
                 "brand_name": "Kyoto",
@@ -191,7 +191,7 @@ class TestActDomainHappyPath:
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
-                "image_url": "https://r2.example.com/refined.png",
+                "image_url": "https://cdn.shopify.com/refined.png",
                 "brand_soul": "",
                 "product_name": "Bowl",
                 "brand_name": "",
@@ -227,14 +227,14 @@ class TestActDomainHappyPath:
 
 class TestActDomainNoHook:
     @pytest.mark.asyncio
-    async def test_ad_skipped_no_hook(self, agent, pro_state, default_plan):
-        """Ad generation is skipped when no hook text."""
+    async def test_ad_skipped_no_text(self, agent, pro_state, default_plan):
+        """Ad generation is skipped when no hook text and no product name."""
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
-                "image_url": "https://r2.example.com/refined.png",
+                "image_url": "https://cdn.shopify.com/refined.png",
                 "brand_soul": "",
-                "product_name": "Bowl",
+                "product_name": "",
                 "brand_name": "",
                 "hook_text": "",
             },
@@ -271,7 +271,7 @@ class TestActDomainFailure:
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
-                "image_url": "https://r2.example.com/refined.png",
+                "image_url": "https://cdn.shopify.com/refined.png",
                 "brand_soul": "",
                 "product_name": "Bowl",
                 "brand_name": "",
