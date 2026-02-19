@@ -1,10 +1,12 @@
 """
-VisualMarketingAgent -- Marketing ad generation with style-aware pipeline.
+VisualMarketingAgent -- Marketing ad generation with pixel-perfect pipeline.
 
 Styled pipeline (Marketing Studio, when ``ad_style`` is provided):
-1. Product Isolation (rembg/BiRefNet background removal)
-2. Style-aware scene generation (Flux 2.0 Pro via fal.ai)
-   -- The styled image IS the final ad. No Ideogram typography step.
+1. Product Isolation (BiRefNet background removal)
+2. Object splitting (connected-components on alpha)
+3. Auto-layout + canvas compositing + binary mask
+4. Flux Fill inpainting (background & props only; products are mask-protected)
+5. PIL text overlay (product name)
 
 Legacy pipeline (no ``ad_style``):
 1. Ideogram 3.0 typography ad from the product image directly.
@@ -92,6 +94,15 @@ class VisualMarketingAgent(BaseAgent):
 
         # extra_context fields are flattened into raw_input by the missions endpoint
         context.external_data["ad_style"] = raw.get("ad_style", "")
+        context.external_data["product_type"] = raw.get(
+            "product_type", raw.get("productType", raw.get("category", "")),
+        )
+        raw_tags = raw.get("tags", [])
+        context.external_data["tags"] = (
+            raw_tags if isinstance(raw_tags, list)
+            else [t.strip() for t in raw_tags.split(",") if t.strip()]
+            if isinstance(raw_tags, str) else []
+        )
 
         if not context.external_data["hook_text"]:
             context.external_data["hook_text"] = raw.get("hook_text", "")
@@ -110,6 +121,7 @@ class VisualMarketingAgent(BaseAgent):
             ImageURLValidationError,
         )
         from src.ecommerce.services.r2_storage_service import R2StorageService
+        from src.ecommerce.services.product_ad_generator import ProductAdGenerator
 
         actions: List[AgentAction] = []
         image_url = context.external_data.get("image_url", "")
@@ -125,7 +137,6 @@ class VisualMarketingAgent(BaseAgent):
             ))
             return actions, state
 
-        # Validate URL (allow R2 for custom-uploaded images)
         try:
             image_url = validate_image_url(image_url, allow_r2=True)
         except ImageURLValidationError as e:
@@ -141,7 +152,6 @@ class VisualMarketingAgent(BaseAgent):
             ))
             return actions, state
 
-        visual_svc = VisualService()
         r2_svc = R2StorageService()
         mission_id = state.mission_id or "unknown"
 
@@ -154,6 +164,8 @@ class VisualMarketingAgent(BaseAgent):
         product_name = context.external_data.get("product_name", "")
         brand_soul = context.external_data.get("brand_soul", "")
         ad_style = context.external_data.get("ad_style", "")
+        product_type = context.external_data.get("product_type", "")
+        tags = context.external_data.get("tags", [])
 
         visual_assets: Dict[str, Optional[str]] = dict(
             getattr(state, "visual_assets", None) or {}
@@ -164,36 +176,23 @@ class VisualMarketingAgent(BaseAgent):
         state.visual_assets = visual_assets
 
         try:
-            import httpx
-
             use_styled_pipeline = bool(ad_style)
 
             if use_styled_pipeline:
-                # Styled pipeline: isolate product -> generate styled scene
-                # The styled refinement IS the final ad image (no Ideogram).
-                _progress("masking", 5, "Starting product isolation...")
-                masked_bytes = await visual_svc.isolate_product(
-                    image_url=image_url, progress=_progress,
-                )
-
-                mask_key = R2StorageService.build_key(state.shop_id, mission_id, "masked")
-                await r2_svc.upload_asset(masked_bytes, mask_key)
-
-                styled_url = await visual_svc.refine_product_styled(
-                    masked_image_bytes=masked_bytes,
+                ad_gen = ProductAdGenerator()
+                ad_bytes = await ad_gen.generate(
+                    image_url=image_url,
                     ad_style=ad_style,
                     product_name=product_name,
+                    product_type=product_type,
+                    tags=tags,
                     brand_soul=brand_soul,
                     progress=_progress,
                 )
 
-                _progress("uploading", 70, "Uploading final marketing image...")
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(styled_url)
-                    resp.raise_for_status()
-                    styled_bytes = resp.content
+                _progress("uploading", 92, "Uploading final marketing image...")
                 ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
-                ad_r2_url = await r2_svc.upload_asset(styled_bytes, ad_key)
+                ad_r2_url = await r2_svc.upload_asset(ad_bytes, ad_key)
                 visual_assets["ad_url"] = ad_r2_url
                 visual_assets["refined_url"] = ad_r2_url
                 state.visual_assets = visual_assets
@@ -213,6 +212,9 @@ class VisualMarketingAgent(BaseAgent):
                         success=True,
                     ))
                     return actions, state
+
+                import httpx
+                visual_svc = VisualService()
 
                 ad_url = await visual_svc.generate_ad(
                     refined_image_url=image_url,
