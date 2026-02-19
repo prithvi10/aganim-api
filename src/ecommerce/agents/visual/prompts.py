@@ -189,13 +189,12 @@ def build_hero_prompt(
 # ---------------------------------------------------------------------------
 
 STYLED_BACKGROUND_PROMPT_TEMPLATE = """\
-Professional product photography background for {product_name}.
-Style: {style_description}
+{style_description}
+Professional product photography scene for {product_name}.
 {brand_style}
-The product is already isolated on a transparent background.
-Generate ONLY the background and surrounding scene — the product will be composited on top.
 No text, words, letters, logos, or writing of any kind. Purely visual.
 High-end e-commerce aesthetic. Premium quality. Consistent global lighting.
+Complementary background that makes the product stand out.
 """
 
 
