@@ -6,6 +6,36 @@ to drive the fal.ai image generation models.
 """
 
 # ---------------------------------------------------------------------------
+# Ad Style Definitions (used by Marketing Studio)
+# ---------------------------------------------------------------------------
+
+AD_STYLE_PROMPTS: dict[str, str] = {
+    "aesthetic": "Soft pastel tones, minimalist layout, clean negative space, subtle shadows, elegant simplicity",
+    "trendy": "Bold vibrant colors, geometric patterns, modern pop art style, dynamic angles, eye-catching contrast",
+    "nature": "Natural earth tones, botanical leaves and greenery, wooden or stone surface, organic textures, warm sunlight",
+    "ingredients": "Related ingredients artfully arranged around the product, e.g. coffee beans near coffee, oranges near juice, herbs near tea",
+    "luxury": "Dark moody background, dramatic spotlight from above, metallic and gold accents, premium feel, rich textures",
+    "studio": "Clean white or light grey studio background, professional product photography lighting, soft diffused shadows",
+    "seasonal": "Festive seasonal decorations matching current holiday, warm celebratory atmosphere, themed props and colors",
+    "lifestyle": "Product placed naturally in a real-world setting, cozy home interior, modern cafe, or stylish workspace",
+    "flat_lay": "Top-down flat lay arrangement with complementary props, styled on a textured surface, organized composition",
+    "gradient": "Modern smooth gradient background with soft color transition, product centered with clean negative space",
+}
+
+AD_STYLE_LABELS: dict[str, str] = {
+    "aesthetic": "Aesthetic",
+    "trendy": "Trendy",
+    "nature": "Nature",
+    "ingredients": "Ingredients",
+    "luxury": "Luxury",
+    "studio": "Studio",
+    "seasonal": "Seasonal",
+    "lifestyle": "Lifestyle",
+    "flat_lay": "Flat Lay",
+    "gradient": "Gradient",
+}
+
+# ---------------------------------------------------------------------------
 # Background refinement (Flux 2.0 Pro inpainting)
 # ---------------------------------------------------------------------------
 
@@ -152,3 +182,39 @@ def build_hero_prompt(
     if len(prompt) > _HERO_PROMPT_HARD_CAP:
         prompt = prompt[: _HERO_PROMPT_HARD_CAP - 3] + "..."
     return prompt
+
+
+# ---------------------------------------------------------------------------
+# Style-aware background prompt (Marketing Studio)
+# ---------------------------------------------------------------------------
+
+STYLED_BACKGROUND_PROMPT_TEMPLATE = """\
+Professional product photography background for {product_name}.
+Style: {style_description}
+{brand_style}
+The product is already isolated on a transparent background.
+Generate ONLY the background and surrounding scene — the product will be composited on top.
+No text, words, letters, logos, or writing of any kind. Purely visual.
+High-end e-commerce aesthetic. Premium quality. Consistent global lighting.
+"""
+
+
+def build_styled_background_prompt(
+    ad_style: str,
+    product_name: str = "",
+    brand_soul: str = "",
+) -> str:
+    """Build a Flux Pro prompt for style-aware background generation."""
+    style_description = AD_STYLE_PROMPTS.get(ad_style, AD_STYLE_PROMPTS["aesthetic"])
+
+    brand_style = ""
+    if brand_soul:
+        aesthetic = _distill_brand_aesthetic(brand_soul, max_len=200)
+        if aesthetic:
+            brand_style = f"Brand aesthetic: {aesthetic}."
+
+    return STYLED_BACKGROUND_PROMPT_TEMPLATE.format(
+        product_name=product_name or "product",
+        style_description=style_description,
+        brand_style=brand_style,
+    ).strip()

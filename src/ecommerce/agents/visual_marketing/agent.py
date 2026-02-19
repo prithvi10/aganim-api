@@ -1,12 +1,15 @@
 """
-VisualMarketingAgent -- Marketing ad generation.
+VisualMarketingAgent -- Marketing ad generation with style-aware pipeline.
 
-Pipeline:
+Pipeline (Marketing Studio):
+1. Product Isolation (rembg/BiRefNet background removal)
+2. Style-aware Background Refinement (Flux 2.0 Pro via fal.ai)
 3. Marketing Ad with Typography (Ideogram 3.0 via fal.ai)
 
-Reads the refined product image from ``state.visual_assets["refined_url"]``
-(set by ImageRefinementAgent earlier in the pipeline) or falls back to
-``context.external_data["image_url"]`` for standalone use.
+When ``ad_style`` is provided in extra_context, runs the full isolation +
+styled refinement pipeline to preserve product fidelity while applying
+the selected visual style. Falls back to the legacy single-step ad
+generation when no ad_style is specified.
 """
 
 from __future__ import annotations
@@ -29,13 +32,15 @@ class VisualMarketingAgent(BaseAgent):
     Agent for marketing ad image generation.
 
     Consumes:
-        - Refined product image URL from ``state.visual_assets["refined_url"]``
-          or product image URL from ``state.raw_input["image_url"]``
+        - Product image URL from ``state.raw_input["image_url"]``
+          or refined image from ``state.visual_assets["refined_url"]``
         - Social hook text from ``state.social_hooks`` or ``raw_input``
         - Brand Soul context from RAG perception
+        - ``ad_style`` from ``raw_input`` (Marketing Studio)
 
     Produces:
         - ``state.visual_assets["ad_url"]``
+        - ``state.visual_assets["refined_url"]`` (when running full pipeline)
         - ``state.visual_progress``: dict with phase/pct/label for SSE
 
     LLM Calls: 0 (all generation via fal.ai image models)
@@ -52,7 +57,6 @@ class VisualMarketingAgent(BaseAgent):
     ) -> AgentContext:
         raw = state.raw_input or {}
 
-        # Prefer refined image from earlier pipeline step
         existing_assets = getattr(state, "visual_assets", None) or {}
         refined_url = existing_assets.get("refined_url", "")
         fallback_url = (
@@ -70,8 +74,6 @@ class VisualMarketingAgent(BaseAgent):
             brand_soul = str(raw["brand_context"])[:600]
         context.external_data["brand_soul"] = brand_soul
 
-        # Short overlay text for ad typography (overlay is <=28 chars,
-        # which image-gen models render reliably; full captions cause misspelling)
         hooks = getattr(state, "social_hooks", None) or []
         first_hook = ""
         if hooks:
@@ -90,6 +92,16 @@ class VisualMarketingAgent(BaseAgent):
         )
         context.external_data["brand_name"] = raw.get("brand_name", "")
 
+        extra = raw.get("extra_context") or {}
+        if isinstance(extra, dict):
+            context.external_data["ad_style"] = extra.get("ad_style", "")
+        else:
+            context.external_data["ad_style"] = ""
+
+        # Override hook_text from extra_context if provided directly
+        if not context.external_data["hook_text"] and isinstance(extra, dict):
+            context.external_data["hook_text"] = extra.get("hook_text", "")
+
         return context
 
     async def _act_domain(
@@ -100,6 +112,7 @@ class VisualMarketingAgent(BaseAgent):
     ) -> Tuple[List[AgentAction], MissionState]:
         from src.ecommerce.services.visual_service import (
             VisualService,
+            validate_image_url,
             ImageURLValidationError,
         )
         from src.ecommerce.services.r2_storage_service import R2StorageService
@@ -118,6 +131,22 @@ class VisualMarketingAgent(BaseAgent):
             ))
             return actions, state
 
+        # Validate URL (allow R2 for custom-uploaded images)
+        try:
+            image_url = validate_image_url(image_url, allow_r2=True)
+        except ImageURLValidationError as e:
+            msg = f"Image URL rejected: {e}"
+            logger.warning("[VisualMarketingAgent] %s url=%s", msg, image_url)
+            state.add_log(f"VisualMarketing: {msg}")
+            actions.append(AgentAction(
+                tool_name="visual_marketing.generate",
+                input_params={"reason": "url_validation_failed", "image_url": image_url},
+                output={},
+                success=False,
+                error=msg,
+            ))
+            return actions, state
+
         visual_svc = VisualService()
         r2_svc = R2StorageService()
         mission_id = state.mission_id or "unknown"
@@ -129,19 +158,60 @@ class VisualMarketingAgent(BaseAgent):
         hook_text = context.external_data.get("hook_text", "")
         brand_name = context.external_data.get("brand_name", "")
         product_name = context.external_data.get("product_name", "")
+        brand_soul = context.external_data.get("brand_soul", "")
+        ad_style = context.external_data.get("ad_style", "")
 
         visual_assets: Dict[str, Optional[str]] = dict(
             getattr(state, "visual_assets", None) or {}
         )
         visual_assets.setdefault("original_image_url", image_url)
+        visual_assets.setdefault("refined_url", None)
         visual_assets.setdefault("ad_url", None)
         state.visual_assets = visual_assets
 
         try:
-            if not hook_text:
-                _progress("ad_generation", 70, "Ad generation skipped (no hook text)")
+            import httpx
+
+            use_styled_pipeline = bool(ad_style)
+
+            if use_styled_pipeline:
+                # Full pipeline: isolate -> styled refinement -> ad typography
+                _progress("masking", 5, "Starting product isolation...")
+                masked_bytes = await visual_svc.isolate_product(
+                    image_url=image_url, progress=_progress,
+                )
+
+                mask_key = R2StorageService.build_key(state.shop_id, mission_id, "masked")
+                await r2_svc.upload_asset(masked_bytes, mask_key)
+
+                refined_url = await visual_svc.refine_product_styled(
+                    masked_image_bytes=masked_bytes,
+                    ad_style=ad_style,
+                    product_name=product_name,
+                    brand_soul=brand_soul,
+                    progress=_progress,
+                )
+
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(refined_url)
+                    resp.raise_for_status()
+                    refined_bytes = resp.content
+                refined_key = R2StorageService.build_key(state.shop_id, mission_id, "refined")
+                refined_r2_url = await r2_svc.upload_asset(refined_bytes, refined_key)
+                visual_assets["refined_url"] = refined_r2_url
+                state.visual_assets = visual_assets
+
+                ad_image_url = refined_url
+                prestyled = True
+            else:
+                # Legacy path: use image directly (or pre-refined from earlier agent)
+                ad_image_url = image_url
+                prestyled = False
+
+            if not hook_text and not product_name:
+                _progress("ad_generation", 70, "Ad generation skipped (no text to render)")
                 state.add_log(
-                    "VisualMarketing: Ad skipped -- no social hook text available"
+                    "VisualMarketing: Ad skipped -- no hook text or product name"
                 )
                 _progress("complete", 100, "Visual marketing complete")
                 actions.append(AgentAction(
@@ -152,14 +222,13 @@ class VisualMarketingAgent(BaseAgent):
                 ))
                 return actions, state
 
-            import httpx
-
             ad_url = await visual_svc.generate_ad(
-                refined_image_url=image_url,
+                refined_image_url=ad_image_url,
                 hook_text=hook_text,
                 brand_name=brand_name,
                 product_name=product_name,
                 progress=_progress,
+                prestyled=prestyled,
             )
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.get(ad_url)
@@ -173,15 +242,16 @@ class VisualMarketingAgent(BaseAgent):
 
             actions.append(AgentAction(
                 tool_name="visual_marketing.generate",
-                input_params={"image_url": image_url},
+                input_params={"image_url": image_url, "ad_style": ad_style},
                 output=visual_assets,
                 success=True,
             ))
 
             logger.info(
-                "[VisualMarketingAgent] complete shop=%s ad=%s",
+                "[VisualMarketingAgent] complete shop=%s ad=%s style=%s",
                 state.shop_id,
                 bool(visual_assets.get("ad_url")),
+                ad_style or "legacy",
             )
 
         except Exception as e:
