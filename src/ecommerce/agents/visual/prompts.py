@@ -5,6 +5,10 @@ These prompts are injected with Brand Soul context and product metadata
 to drive the fal.ai image generation models.
 """
 
+from __future__ import annotations
+
+from typing import List, Optional
+
 # ---------------------------------------------------------------------------
 # Ad Style Definitions (used by Marketing Studio)
 # ---------------------------------------------------------------------------
@@ -185,50 +189,138 @@ def build_hero_prompt(
 
 
 # ---------------------------------------------------------------------------
-# Style-aware background prompt (Marketing Studio)
+# Prop inference (deterministic, keyword-based)
+# ---------------------------------------------------------------------------
+
+_PROP_KEYWORDS = {
+    "beverage": [
+        (["coffee", "espresso", "latte", "mocha"], "roasted coffee beans, cinnamon sticks"),
+        (["tea", "matcha", "chai", "green tea"], "dried tea leaves, matcha powder"),
+        (["juice", "orange", "lemon", "citrus"], "fresh citrus slices, mint leaves"),
+        (["sake", "rice wine"], "cedar masu box, cherry blossom petals"),
+        (["wine", "cabernet", "merlot"], "wine cork, dark grapes"),
+        (["beer", "ale", "lager", "ipa"], "hops, wheat stalks"),
+        (["smoothie", "berry"], "fresh berries, sliced banana"),
+        (["water", "sparkling"], "ice cubes, lime wedge"),
+        (["soda", "cola"], "ice cubes, condensation droplets"),
+    ],
+    "food": [
+        (["chocolate", "cocoa"], "cocoa beans, dark chocolate shavings"),
+        (["honey"], "honeycomb, wooden dipper"),
+        (["jam", "preserve", "marmalade"], "fresh fruit, rustic bread slices"),
+        (["olive oil", "olive"], "green olives, rosemary sprig"),
+        (["spice", "curry", "masala"], "whole spices, cardamom pods, star anise"),
+        (["snack", "chips", "cracker"], "scattered crumbs, herbs"),
+        (["pasta", "noodle"], "dried herbs, garlic cloves, parmesan"),
+        (["sauce", "ketchup", "mustard"], "fresh tomatoes, herb sprigs"),
+    ],
+    "skincare": [
+        (["vitamin c", "citrus", "brightening"], "orange slices, golden serum drops"),
+        (["retinol", "anti-aging"], "smooth pebbles, gold flakes"),
+        (["aloe", "soothing"], "aloe vera leaves, water droplets"),
+        (["hyaluronic", "hydrating", "moistur"], "water splash, dewy petals"),
+        (["charcoal", "detox"], "activated charcoal chunks, eucalyptus"),
+        (["rose", "floral"], "dried rose petals, rose buds"),
+        (["lavender"], "lavender sprigs, purple fabric"),
+        (["sunscreen", "spf", "sun"], "sand grains, tropical leaf"),
+    ],
+    "fragrance": [
+        (["wood", "cedar", "sandalwood", "oud"], "cedar shavings, bark pieces"),
+        (["floral", "jasmine", "rose", "lily"], "scattered flower petals"),
+        (["citrus", "bergamot", "neroli"], "citrus zest, orange peel curls"),
+        (["vanilla", "amber"], "vanilla pods, warm amber stones"),
+        (["musk", "leather"], "leather swatch, dark fabric"),
+    ],
+    "general": [
+        (["organic", "natural", "eco"], "green leaves, raw cotton"),
+        (["premium", "luxury", "gold"], "gold leaf accents, silk fabric"),
+        (["handmade", "artisan", "craft"], "raw materials, textured linen"),
+        (["japanese", "japan", "zen"], "bamboo mat, zen stones"),
+        (["minimalist", "modern", "clean"], "geometric shapes, clean surfaces"),
+    ],
+}
+
+_STYLE_SURFACES = {
+    "aesthetic": "polished marble surface",
+    "trendy": "terrazzo surface with geometric tiles",
+    "nature": "weathered oak wood surface with moss accents",
+    "ingredients": "dark slate surface",
+    "luxury": "black marble surface with gold veining",
+    "studio": "clean light grey seamless backdrop",
+    "seasonal": "festive surface with seasonal decorations",
+    "lifestyle": "styled table in a modern living space",
+    "flat_lay": "textured linen surface shot from above",
+    "gradient": "smooth gradient backdrop",
+}
+
+
+def infer_props(
+    product_name: str = "",
+    product_type: str = "",
+    tags: Optional[List[str]] = None,
+) -> str:
+    """Infer decorative props from product signals (name, type, tags).
+
+    Returns a short comma-separated phrase suitable for an image prompt,
+    or an empty string if nothing matches.
+    """
+    signals = " ".join([
+        product_name.lower(),
+        product_type.lower(),
+        " ".join(t.lower() for t in (tags or [])),
+    ])
+
+    for _category, rules in _PROP_KEYWORDS.items():
+        for keywords, prop_phrase in rules:
+            if any(kw in signals for kw in keywords):
+                return prop_phrase
+
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Style-aware background prompt (Marketing Studio -- Flux Fill)
 # ---------------------------------------------------------------------------
 
 STYLED_BACKGROUND_PROMPT_TEMPLATE = """\
+Professional marketing product photography.
+The product is placed on a {surface}.
 {style_description}
-Professional marketing product photography for {product_name}.
+{props_line}\
 {brand_style}
-{product_name_line}
-High-end e-commerce aesthetic. Premium quality. Consistent global lighting.
-Complementary background that makes the product stand out.
-Do NOT add any other text, hashtags, captions, or writing beyond what is specified.
+High-end e-commerce quality, 8k resolution.
+The lighting is consistent, casting realistic soft shadows from the product onto the generated environment.
+No text, words, letters, logos, or writing of any kind. Purely visual.
 """
 
 
 def build_styled_background_prompt(
     ad_style: str,
-    product_name: str = "",
     brand_soul: str = "",
+    product_name: str = "",
+    product_type: str = "",
+    tags: Optional[List[str]] = None,
 ) -> str:
-    """Build a Flux Pro prompt for style-aware marketing image generation.
+    """Build a purely visual Flux Fill prompt for masked inpainting.
 
-    The styled image is the FINAL ad output. If a product name is provided,
-    it is rendered as the only text element on the image.
+    Text overlay is handled separately by PIL; this prompt must NOT request
+    any text rendering from the model.
     """
     style_description = AD_STYLE_PROMPTS.get(ad_style, AD_STYLE_PROMPTS["aesthetic"])
+    surface = _STYLE_SURFACES.get(ad_style, "clean surface")
 
     brand_style = ""
     if brand_soul:
         aesthetic = _distill_brand_aesthetic(brand_soul, max_len=200)
         if aesthetic:
-            brand_style = f"Brand aesthetic: {aesthetic}."
+            brand_style = f"{aesthetic} aesthetic. "
 
-    product_name_line = ""
-    if product_name:
-        product_name_line = (
-            f'Render the product name "{product_name}" in bold, legible typography '
-            f"on the image. This must be the ONLY text in the entire image."
-        )
-    else:
-        product_name_line = "No text, words, letters, logos, or writing of any kind. Purely visual."
+    props = infer_props(product_name, product_type, tags)
+    props_line = f"Accompanied by {props}. " if props else ""
 
     return STYLED_BACKGROUND_PROMPT_TEMPLATE.format(
-        product_name=product_name or "product",
+        surface=surface,
         style_description=style_description,
+        props_line=props_line,
         brand_style=brand_style,
-        product_name_line=product_name_line,
     ).strip()
