@@ -5,7 +5,7 @@ Handles admin UI endpoints including usage, brand context, and onboarding.
 """
 
 import json
-from fastapi import APIRouter, HTTPException, Depends, Request, Response, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, BackgroundTasks, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
@@ -805,13 +805,73 @@ async def generate_content_endpoint(
     # Execute agent
     try:
         new_state = await agent.run(state)
-        
+
+        hero_url = None
+        hero_eligible = {"product/blog-post", "product/collection", "product/landing-hero"}
+
+        if template_id in hero_eligible:
+            try:
+                from src.ecommerce.services.hero_image_generator import HeroImageGenerator
+                from src.ecommerce.services.r2_storage_service import R2StorageService
+                from src.ecommerce.agents.visual.prompts import (
+                    build_collection_hero_prompt,
+                    build_blog_hero_prompt,
+                    build_hero_section_prompt,
+                )
+
+                shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+                strategic_intel = getattr(shop_record, "strategic_intelligence", None) if shop_record else None
+                brand_soul = str(strategic_intel)[:300] if strategic_intel else ""
+
+                if template_id == "product/blog-post":
+                    hero_prompt = build_blog_hero_prompt(
+                        subject=body.get("topic", new_state.draft_title or ""),
+                        category=body.get("category", "General"),
+                        context=body.get("context", ""),
+                        brand_soul=brand_soul,
+                    )
+                elif template_id == "product/collection":
+                    product_names = body.get("product_names", [])
+                    if isinstance(product_names, str):
+                        product_names = [n.strip() for n in product_names.split(",") if n.strip()]
+                    hero_prompt = build_collection_hero_prompt(
+                        collection_name=body.get("collection_name", ""),
+                        description=body.get("description", ""),
+                        product_names=product_names,
+                        brand_soul=brand_soul,
+                    )
+                else:
+                    hero_prompt = build_hero_section_prompt(
+                        subject=body.get("subject_text", new_state.draft_title or body.get("title", "")),
+                        overlay_text=body.get("overlay_text", ""),
+                        brand_soul=brand_soul,
+                    )
+
+                hero_gen = HeroImageGenerator()
+                r2_svc = R2StorageService()
+
+                hero_bytes = await hero_gen.generate(prompt=hero_prompt)
+
+                hero_key = R2StorageService.build_key(shop, "content-hero", template_id.replace("/", "-"))
+                hero_url = await r2_svc.upload_asset(hero_bytes, hero_key)
+
+                logger.info(
+                    "[Generate] Hero banner created template=%s shop=%s",
+                    template_id, shop,
+                )
+            except Exception as hero_err:
+                logger.warning(
+                    "[Generate] Hero generation failed (non-blocking) template=%s shop=%s err=%s",
+                    template_id, shop, hero_err,
+                )
+
         return {
             "status": "success",
             "template_id": template_id,
             "content": new_state.draft_content or new_state.draft_title or "",
             "title": new_state.draft_title,
             "description": new_state.draft_content,
+            "hero_url": hero_url,
         }
     except Exception as e:
         logger.error(
@@ -1060,3 +1120,52 @@ async def meta_credentials_status(
         "has_meta_credentials": has_creds,
         "meta_page_id": getattr(shop_record, "meta_page_id", None) if has_creds else None,
     }
+
+
+# =============================================================================
+# Retail Calendar
+# =============================================================================
+
+@router.get("/api/retail-calendar")
+async def retail_calendar_endpoint(
+    request: Request,
+    shop: str = Depends(resolve_shop_domain),
+):
+    """Return the full US retail holiday calendar for the current year."""
+    from src.ecommerce.agents.marketing.holidays import get_retail_calendar
+    return {"calendar": get_retail_calendar()}
+
+
+# =============================================================================
+# Upload Product Image (for Marketing Studio)
+# =============================================================================
+
+_UPLOAD_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_UPLOAD_ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+@router.post("/api/upload-product-image")
+async def upload_product_image(
+    request: Request,
+    file: UploadFile = File(...),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """Upload a custom product image for ad generation, stored in R2."""
+    if file.content_type not in _UPLOAD_ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {file.content_type}. Allowed: {', '.join(sorted(_UPLOAD_ALLOWED_TYPES))}",
+        )
+
+    data = await file.read()
+    if len(data) > _UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
+
+    from src.ecommerce.services.r2_storage_service import R2StorageService
+    import uuid
+
+    r2_svc = R2StorageService()
+    ext = (file.filename or "upload.png").rsplit(".", 1)[-1] or "png"
+    key = R2StorageService.build_key(shop, f"custom-{uuid.uuid4().hex[:12]}", f"upload.{ext}")
+    url = await r2_svc.upload_asset(data, key, content_type=file.content_type or "image/png")
+
+    return {"url": url, "key": key}

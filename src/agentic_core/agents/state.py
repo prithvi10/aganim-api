@@ -58,6 +58,9 @@ class GenericMissionState:
     # Autonomous execution flag
     autonomous: bool = False
 
+    # Mission identifier (set by the API layer, used for R2 storage paths etc.)
+    mission_id: Optional[str] = None
+
     # ------------------------------------------------------------------
     # Generic property aliases -- new code should prefer these names.
     # ------------------------------------------------------------------
@@ -115,6 +118,7 @@ class GenericMissionState:
             "workflow_agents": self.workflow_agents,
             "workflow_config": self.workflow_config,
             "autonomous": self.autonomous,
+            "mission_id": self.mission_id,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -144,6 +148,7 @@ class GenericMissionState:
             workflow_agents=data.get("workflow_agents", []),
             workflow_config=data.get("workflow_config", []),
             autonomous=data.get("autonomous", False),
+            mission_id=data.get("mission_id"),
         )
 
     def add_log(self, message: str) -> None:

@@ -161,6 +161,54 @@ async def create_mission(
             "target_locale": mission_req.target_locale,
             "brand_soul_enabled": mission_req.brand_soul_enabled,
     }
+    # Include product image URL for VisualAgent
+    if mission_req.image_url:
+        raw_input["image_url"] = mission_req.image_url
+
+    # Fallback: if VisualAgent is in the pipeline but no image_url was provided,
+    # fetch the product's featured image from Shopify directly.
+    if not raw_input.get("image_url") and "VisualAgent" in workflow_agents:
+        try:
+            from src.ecommerce.db.transactions import get_shop_access_token
+            import httpx
+
+            access_token = get_shop_access_token(db, shop)
+            if access_token:
+                product_gid = f"gid://shopify/Product/{mission_req.product_id}"
+                gql_query = (
+                    '{"query":"{ product(id: \\\"%s\\\") { featuredImage { url } } }"}'
+                    % product_gid
+                )
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        f"https://{shop}/admin/api/2024-10/graphql.json",
+                        content=gql_query,
+                        headers={
+                            "X-Shopify-Access-Token": access_token,
+                            "Content-Type": "application/json",
+                        },
+                        timeout=10,
+                    )
+                    if resp.status_code == 200:
+                        img_url = (
+                            resp.json()
+                            .get("data", {})
+                            .get("product", {})
+                            .get("featuredImage", {})
+                            .get("url", "")
+                        )
+                        if img_url:
+                            raw_input["image_url"] = img_url
+                            logger.info(
+                                "[Mission] fetched_image_fallback rid=%s shop=%s image_url=%s",
+                                rid, shop, img_url[:120],
+                            )
+        except Exception as e:
+            logger.warning(
+                "[Mission] image_fallback_failed rid=%s shop=%s err=%s",
+                rid, shop, str(e)[:200],
+            )
+
     if mission_req.extra_context:
         raw_input.update(mission_req.extra_context)
     
@@ -222,6 +270,10 @@ async def create_mission(
 # Simple in-memory lock to prevent concurrent mission execution
 # In production, consider using Redis or database locks
 _mission_locks: dict[str, bool] = {}
+
+# Track retry counts to prevent infinite reconnection loops
+_mission_retry_counts: dict[str, int] = {}
+_MAX_STREAM_RETRIES = 3
 
 
 @router.get("/api/missions/{mission_id}/stream")
@@ -314,10 +366,41 @@ async def stream_mission(
         )
     
     # Reset stuck IN_PROGRESS missions (no lock held but status is IN_PROGRESS)
+    # Cap retries to prevent infinite reconnection loops (e.g. from EventSource auto-reconnect)
     if mission.status == "IN_PROGRESS":
+        retry_count = _mission_retry_counts.get(mission_id, 0) + 1
+        _mission_retry_counts[mission_id] = retry_count
+
+        if retry_count > _MAX_STREAM_RETRIES:
+            logger.warning(
+                "[MissionStream] max_retries_exceeded rid=%s mission_id=%s retries=%s — marking ERROR",
+                rid, mission_id, retry_count,
+            )
+            mission.status = "ERROR"
+            mission.error_message = "Mission execution exceeded maximum retries"
+            db.add(mission)
+            db.commit()
+            # Fall through to the already-complete check above on next request
+            async def retry_exceeded_gen():
+                error_data = json.dumps({
+                    "error": "Mission exceeded maximum retries",
+                    "mission_id": mission_id,
+                    "status": "ERROR",
+                })
+                yield f"event: error\ndata: {error_data}\n\n"
+            return StreamingResponse(
+                retry_exceeded_gen(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
         logger.warning(
-            "[MissionStream] resetting_stuck_mission rid=%s mission_id=%s from IN_PROGRESS to PENDING",
-            rid, mission_id
+            "[MissionStream] resetting_stuck_mission rid=%s mission_id=%s from IN_PROGRESS to PENDING (retry %s/%s)",
+            rid, mission_id, retry_count, _MAX_STREAM_RETRIES,
         )
         mission.status = "PENDING"
         db.add(mission)
@@ -332,12 +415,14 @@ async def stream_mission(
         
         # Acquire lock
         _mission_locks[mission_id] = True
+        workflow_task = None
         
         try:
             # Load initial state from mission record
             initial_state_dict = mission.current_state or {}
             
             state = MissionState.from_dict(initial_state_dict, db=db)
+            state.mission_id = mission_id
             
             # Create services and mission control (with db/shop for usage tracking)
             services = ServiceRegistry.create_default(db=db, shop_domain=shop)
@@ -359,18 +444,36 @@ async def stream_mission(
             # Send initial heartbeat
             yield f": heartbeat\n\n"
             
-            # Execute workflow and yield events
-            async for updated_state in mission_control.execute(state):
-                # Update mission record in DB
+            # Track the latest state from execute() for final event
+            last_state = None
+
+            # Run orchestrator in a background task so we can emit interim
+            # progress snapshots every few seconds (critical for long-running
+            # visual pipelines where a single agent may run for minutes).
+            _PROGRESS_POLL_INTERVAL = 2.0  # seconds
+            update_queue: asyncio.Queue = asyncio.Queue()
+
+            async def _run_workflow():
                 try:
-                    mission.current_state = updated_state.to_dict()
-                    mission.status = updated_state.status
-                    mission.logs = updated_state.logs
-                    if updated_state.status in ("COMPLETED", "ERROR"):
+                    async for s in mission_control.execute(state):
+                        await update_queue.put(("state", s))
+                    await update_queue.put(("done", None))
+                except Exception as exc:
+                    await update_queue.put(("error", exc))
+
+            workflow_task = asyncio.create_task(_run_workflow())
+
+            def _persist_state(s):
+                """Write state snapshot to DB (best-effort)."""
+                try:
+                    mission.current_state = s.to_dict()
+                    mission.status = s.status
+                    mission.logs = s.logs
+                    if s.status in ("COMPLETED", "ERROR"):
                         from datetime import datetime, timezone
                         mission.completed_at = datetime.now(timezone.utc)
-                    if updated_state.error_message:
-                        mission.error_message = updated_state.error_message
+                    if s.error_message:
+                        mission.error_message = s.error_message
                     db.add(mission)
                     db.commit()
                 except Exception as e:
@@ -379,19 +482,53 @@ async def stream_mission(
                         db.rollback()
                     except Exception:
                         pass
-                
-                # Yield SSE event
+
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(
+                        update_queue.get(), timeout=_PROGRESS_POLL_INTERVAL,
+                    )
+                except asyncio.TimeoutError:
+                    # No orchestrator yield yet — emit interim state snapshot
+                    # so the frontend sees visual_progress / visual_assets updates.
+                    state_json = json.dumps(state.to_dict())
+                    yield f"event: state_update\ndata: {state_json}\n\n"
+                    yield f": heartbeat\n\n"
+                    continue
+
+                if kind == "done":
+                    break
+                if kind == "error":
+                    raise payload
+
+                updated_state = payload
+                last_state = updated_state
+                _persist_state(updated_state)
+
                 state_json = json.dumps(updated_state.to_dict())
                 yield f"event: state_update\ndata: {state_json}\n\n"
-                
-                # Heartbeat to keep connection alive
                 yield f": heartbeat\n\n"
-                
-                # Small delay to prevent overwhelming the client
                 await asyncio.sleep(0.1)
+
+            # Ensure the task is awaited to surface any unhandled exceptions
+            await workflow_task
             
+            # Safety net: ensure mission is marked as terminal in DB.
+            final_status = getattr(last_state, "status", "COMPLETED") if last_state else "COMPLETED"
+            if final_status not in ("COMPLETED", "ERROR", "COMPLIANCE_REVIEW"):
+                final_status = "COMPLETED"
+            try:
+                mission.status = final_status
+                if not mission.completed_at:
+                    from datetime import datetime, timezone
+                    mission.completed_at = datetime.now(timezone.utc)
+                db.add(mission)
+                db.commit()
+            except Exception:
+                pass
+
             # Final completion event
-            yield f"event: complete\ndata: {json.dumps({'mission_id': mission_id, 'status': state.status})}\n\n"
+            yield f"event: complete\ndata: {json.dumps({'mission_id': mission_id, 'status': final_status})}\n\n"
             
         except Exception as e:
             logger.exception("[MissionStream] Error in mission %s", mission_id)
@@ -408,8 +545,17 @@ async def stream_mission(
                 pass
         
         finally:
-            # Always release the lock
+            # Cancel the workflow task if it's still running (prevents orphaned
+            # pipelines when the SSE connection drops mid-execution).
+            if workflow_task and not workflow_task.done():
+                workflow_task.cancel()
+                logger.warning(
+                    "[MissionStream] cancelled_orphan_workflow rid=%s mission_id=%s",
+                    rid, mission_id,
+                )
+            # Always release the lock and clear retry counter on success
             _mission_locks.pop(mission_id, None)
+            _mission_retry_counts.pop(mission_id, None)
             logger.info("[MissionStream] released_lock rid=%s mission_id=%s", rid, mission_id)
     
     return StreamingResponse(
@@ -578,6 +724,7 @@ async def run_step(
             # Load state from mission record
             state_dict = mission.current_state or {}
             state = MissionState.from_dict(state_dict, db=db)
+            state.mission_id = mission_id
             
             # Create services and mission control (with db/shop for usage tracking)
             services = ServiceRegistry.create_default(db=db, shop_domain=shop)
@@ -593,40 +740,71 @@ async def run_step(
                 mission_id=mission_id,  # Pass DB mission_id for consistent logging
                 workflow_config=wf_config,
             )
-            # Execute single step and chain auto-proceed steps
-            while True:
-                async for updated_state in mission_control.execute_single_step(state):
-                    # Update mission record in DB
+            _STEP_POLL_INTERVAL = 2.0
+
+            def _persist_step_state(s: MissionState):
+                try:
+                    mission.current_state = s.to_dict()
+                    mission.status = s.status
+                    mission.logs = s.logs
+                    if s.status == "COMPLETED":
+                        from datetime import datetime, timezone
+                        mission.completed_at = datetime.now(timezone.utc)
+                    if s.error_message:
+                        mission.error_message = s.error_message
+                    db.add(mission)
+                    db.commit()
+                except Exception as e:
+                    logger.warning("[MissionStep] DB update failed: %s", e)
                     try:
-                        mission.current_state = updated_state.to_dict()
-                        mission.status = updated_state.status
-                        mission.logs = updated_state.logs
-                        if updated_state.status == "COMPLETED":
-                            from datetime import datetime, timezone
-                            mission.completed_at = datetime.now(timezone.utc)
-                        if updated_state.error_message:
-                            mission.error_message = updated_state.error_message
-                        db.add(mission)
-                        db.commit()
-                    except Exception as e:
-                        logger.warning("[MissionStep] DB update failed: %s", e)
+                        db.rollback()
+                    except Exception:
+                        pass
+
+            # Execute single step with interim state polling so that
+            # long-running visual agents can surface images incrementally.
+            while True:
+                step_queue: asyncio.Queue = asyncio.Queue()
+
+                async def _run_step():
+                    async for updated_state in mission_control.execute_single_step(state):
+                        await step_queue.put(("state", updated_state))
+                    await step_queue.put(("done", None))
+
+                step_task = asyncio.create_task(_run_step())
+
+                try:
+                    while True:
                         try:
-                            db.rollback()
-                        except Exception:
-                            pass
-                    
-                    # Yield SSE event
-                    state_json = json.dumps(updated_state.to_dict())
-                    yield f"event: state_update\ndata: {state_json}\n\n"
-                    
-                    # Keep state reference updated for potential chaining
-                    state = updated_state
-                    
-                    await asyncio.sleep(0.1)
-                
+                            kind, payload = await asyncio.wait_for(
+                                step_queue.get(), timeout=_STEP_POLL_INTERVAL,
+                            )
+                        except asyncio.TimeoutError:
+                            # Emit interim state snapshot (visual_assets / visual_progress)
+                            state_json = json.dumps(state.to_dict())
+                            yield f"event: state_update\ndata: {state_json}\n\n"
+                            yield f": heartbeat\n\n"
+                            continue
+
+                        if kind == "done":
+                            break
+
+                        updated_state = payload
+                        _persist_step_state(updated_state)
+
+                        state_json = json.dumps(updated_state.to_dict())
+                        yield f"event: state_update\ndata: {state_json}\n\n"
+
+                        state = updated_state
+                        await asyncio.sleep(0.1)
+
+                    await step_task
+                finally:
+                    if step_task and not step_task.done():
+                        step_task.cancel()
+
                 # Check if auto-proceeded (status PENDING means no gate, keep running)
                 if state.status == "PENDING" and state.current_agent_index < len(mission_control.workflow):
-                    # Emit auto-proceed event so frontend can update UI
                     auto_data = {
                         "mission_id": mission_id,
                         "auto_proceeded_from": state.current_agent_index - 1,
@@ -634,10 +812,8 @@ async def run_step(
                         "next_agent": state.workflow_agents[state.current_agent_index] if state.current_agent_index < len(state.workflow_agents) else None,
                     }
                     yield f"event: step_auto_proceeded\ndata: {json.dumps(auto_data)}\n\n"
-                    # Continue the loop to run the next agent immediately
                     continue
                 else:
-                    # Gated (AWAITING_APPROVAL), completed, or error – break
                     break
             
             # Get final state info
@@ -745,6 +921,7 @@ async def continue_step(
     # Load state and advance to next step
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
+    state.mission_id = mission_id
     
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)
@@ -1237,6 +1414,7 @@ async def regenerate_step(
     # Load state and prepare for regeneration
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
+    state.mission_id = mission_id
     
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)
@@ -1315,6 +1493,7 @@ async def skip_step(
     # Load state and skip current step
     state_dict = mission.current_state or {}
     state = MissionState.from_dict(state_dict, db=db)
+    state.mission_id = mission_id
     
     # Create services with db/shop for usage tracking
     services = ServiceRegistry.create_default(db=db, shop_domain=shop)

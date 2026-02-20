@@ -19,7 +19,6 @@ Each test validates:
 import json
 import os
 import pytest
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from src.ecommerce.agents.rewriter import RewriterAgent
@@ -57,7 +56,6 @@ SAMPLE_DOCS_DIR = os.path.join(
 )
 
 MERCHANT_NAME = "Takumi Ceramics"
-GENERATED_AT = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
 # =============================================================================
@@ -139,7 +137,7 @@ class TestRewriterSampleDocs:
         parsed = json.loads(mock_response)
 
         doc = f"""# Brand Blog Post — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: product/blog-post
+Template: product/blog-post
 
 ## {parsed['title']}
 **Meta Description:** {parsed['meta_description']}
@@ -184,7 +182,7 @@ Generated: {GENERATED_AT} | Template: product/blog-post
         parsed = json.loads(MOCK_COLLECTION_RESPONSE)
 
         doc = f"""# Collection Description — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: product/collection
+Template: product/collection
 
 ## Collection: Heritage Celadon Collection
 **Products:** Rice Bowl, Sake Cup, Side Plate, Tea Cup, Serving Bowl
@@ -234,7 +232,7 @@ Characters: {len(parsed.get('meta_description', ''))} / 160
         parsed = json.loads(MOCK_FAQ_RESPONSE)
 
         doc = f"""# Product FAQ — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: product/faq
+Template: product/faq
 
 ## Product: {PRODUCT_CELADON_BOWL['title']}
 
@@ -288,7 +286,7 @@ Generated: {GENERATED_AT} | Template: product/faq
         parsed = json.loads(MOCK_LANDING_HERO_RESPONSE)
 
         doc = f"""# Landing Page Hero — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: product/landing-hero
+Template: product/landing-hero
 
 ---
 
@@ -349,7 +347,7 @@ class TestMarketingSampleDocs:
         parsed = json.loads(MOCK_SOCIAL_HOOKS_RESPONSE)
 
         doc = f"""# Social Media Hooks — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: marketing/social-tiktok
+Template: marketing/social-tiktok
 
 ## Product: {PRODUCT_CELADON_BOWL['title']}
 
@@ -413,7 +411,7 @@ Generated: {GENERATED_AT} | Template: marketing/social-tiktok
         parsed = json.loads(MOCK_EMAIL_LAUNCH_RESPONSE)
 
         doc = f"""# Product Launch Email — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: marketing/email-launch
+Template: marketing/email-launch
 
 ---
 
@@ -465,7 +463,7 @@ Generated: {GENERATED_AT} | Template: marketing/email-launch
         parsed = json.loads(MOCK_EMAIL_ABANDONED_RESPONSE)
 
         doc = f"""# Abandoned Cart Email — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: marketing/email-abandoned
+Template: marketing/email-abandoned
 
 ---
 
@@ -517,7 +515,7 @@ Generated: {GENERATED_AT} | Template: marketing/email-abandoned
         parsed = json.loads(MOCK_EMAIL_WELCOME_RESPONSE)
 
         doc = f"""# Welcome Email — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: marketing/email-welcome
+Template: marketing/email-welcome
 
 ---
 
@@ -569,7 +567,7 @@ Generated: {GENERATED_AT} | Template: marketing/email-welcome
         parsed = json.loads(MOCK_AD_FACEBOOK_RESPONSE)
 
         doc = f"""# Facebook / Instagram Ad — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: marketing/ad-facebook
+Template: marketing/ad-facebook
 
 ---
 
@@ -624,7 +622,7 @@ Generated: {GENERATED_AT} | Template: marketing/ad-facebook
         parsed = json.loads(MOCK_AD_GOOGLE_RESPONSE)
 
         doc = f"""# Google Ads — {MERCHANT_NAME}
-Generated: {GENERATED_AT} | Template: marketing/ad-google
+Template: marketing/ad-google
 
 ---
 
@@ -668,7 +666,6 @@ class TestBrandSoulReferenceDoc:
         intel = STRATEGIC_INTELLIGENCE
 
         doc = f"""# Brand Soul & Strategic Intelligence — {MERCHANT_NAME}
-Generated: {GENERATED_AT}
 
 ---
 

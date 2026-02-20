@@ -1,5 +1,5 @@
 # Blog Post — Takumi Ceramics
-Generated: 2026-02-10 17:08 | Template: marketing/blog-post
+Template: marketing/blog-post
 
 ---
 
