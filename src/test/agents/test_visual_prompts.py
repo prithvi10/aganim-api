@@ -14,11 +14,17 @@ from src.ecommerce.agents.visual.prompts import (
     build_inpaint_prompt,
     build_ad_prompt,
     build_hero_prompt,
+    build_collection_hero_prompt,
+    build_blog_hero_prompt,
+    build_hero_section_prompt,
     _distill_brand_aesthetic,
     _HERO_PROMPT_HARD_CAP,
     INPAINT_BACKGROUND_PROMPT_TEMPLATE,
     AD_COMPOSITION_PROMPT_TEMPLATE,
     HERO_BANNER_PROMPT_TEMPLATE,
+    COLLECTION_HERO_TEMPLATE,
+    BLOG_HERO_TEMPLATE,
+    HERO_SECTION_TEMPLATE,
 )
 
 
@@ -267,3 +273,147 @@ class TestDistillBrandAesthetic:
     def test_whitespace_collapsed_in_plain_text(self):
         result = _distill_brand_aesthetic("  lots   of   spaces  ")
         assert "  " not in result
+
+
+# =============================================================================
+# Tests: Hero prompt templates (Nano Banana text-to-image)
+# =============================================================================
+
+class TestHeroPromptTemplateConstants:
+    """Test that hero prompt template constants have expected placeholders."""
+
+    def test_collection_template_has_placeholders(self):
+        assert "{collection_name}" in COLLECTION_HERO_TEMPLATE
+        assert "{description_line}" in COLLECTION_HERO_TEMPLATE
+        assert "{products_line}" in COLLECTION_HERO_TEMPLATE
+        assert "{brand_style}" in COLLECTION_HERO_TEMPLATE
+
+    def test_blog_template_has_placeholders(self):
+        assert "{subject}" in BLOG_HERO_TEMPLATE
+        assert "{category}" in BLOG_HERO_TEMPLATE
+        assert "{context_line}" in BLOG_HERO_TEMPLATE
+        assert "{brand_style}" in BLOG_HERO_TEMPLATE
+
+    def test_hero_section_template_has_placeholders(self):
+        assert "{subject}" in HERO_SECTION_TEMPLATE
+        assert "{overlay_line}" in HERO_SECTION_TEMPLATE
+        assert "{brand_style}" in HERO_SECTION_TEMPLATE
+
+
+class TestBuildCollectionHeroPrompt:
+    """Test build_collection_hero_prompt."""
+
+    def test_basic(self):
+        prompt = build_collection_hero_prompt(collection_name="Summer Sake")
+        assert "Summer Sake" in prompt
+        assert "no text" in prompt.lower()
+        assert "collection" in prompt.lower()
+
+    def test_with_description(self):
+        prompt = build_collection_hero_prompt(
+            collection_name="Summer Sake",
+            description="Our best summer picks",
+        )
+        assert "summer picks" in prompt.lower()
+
+    def test_with_product_names(self):
+        prompt = build_collection_hero_prompt(
+            collection_name="Summer Sake",
+            product_names=["Yuzu Sake", "Plum Sake"],
+        )
+        assert "Yuzu Sake" in prompt
+        assert "Plum Sake" in prompt
+
+    def test_product_names_capped_at_8(self):
+        names = [f"Product {i}" for i in range(12)]
+        prompt = build_collection_hero_prompt(
+            collection_name="Big Collection",
+            product_names=names,
+        )
+        assert "Product 7" in prompt
+        assert "Product 8" not in prompt
+
+    def test_with_brand_soul(self):
+        prompt = build_collection_hero_prompt(
+            collection_name="Artisan",
+            brand_soul="Minimalist Kyoto zen",
+        )
+        assert "Minimalist Kyoto zen" in prompt
+
+    def test_without_brand_soul(self):
+        prompt = build_collection_hero_prompt(collection_name="Test")
+        assert "aesthetic" not in prompt.lower()
+
+    def test_result_is_stripped(self):
+        prompt = build_collection_hero_prompt(collection_name="Test")
+        assert not prompt.startswith("\n")
+        assert not prompt.endswith("\n")
+
+
+class TestBuildBlogHeroPrompt:
+    """Test build_blog_hero_prompt."""
+
+    def test_basic(self):
+        prompt = build_blog_hero_prompt(subject="Japanese ceramics")
+        assert "Japanese ceramics" in prompt
+        assert "no text" in prompt.lower()
+        assert "blog" in prompt.lower()
+
+    def test_with_category(self):
+        prompt = build_blog_hero_prompt(
+            subject="Kiln firing",
+            category="Manufacturing",
+        )
+        assert "Manufacturing" in prompt
+
+    def test_with_context(self):
+        prompt = build_blog_hero_prompt(
+            subject="Our story",
+            context="Founded in 1920",
+        )
+        assert "1920" in prompt
+
+    def test_with_brand_soul(self):
+        prompt = build_blog_hero_prompt(
+            subject="Tea ceremony",
+            brand_soul="Traditional Japanese artisan",
+        )
+        assert "Traditional Japanese artisan" in prompt
+
+    def test_result_is_stripped(self):
+        prompt = build_blog_hero_prompt(subject="Test")
+        assert not prompt.startswith("\n")
+        assert not prompt.endswith("\n")
+
+
+class TestBuildHeroSectionPrompt:
+    """Test build_hero_section_prompt."""
+
+    def test_basic(self):
+        prompt = build_hero_section_prompt(subject="Spring Flowers")
+        assert "Spring Flowers" in prompt
+        assert "no text" in prompt.lower()
+        assert "hero banner" in prompt.lower()
+
+    def test_with_overlay_text(self):
+        prompt = build_hero_section_prompt(
+            subject="Winter Sale",
+            overlay_text="50% off everything",
+        )
+        assert "50% off" in prompt
+
+    def test_with_brand_soul(self):
+        prompt = build_hero_section_prompt(
+            subject="Beach Vibes",
+            brand_soul="Modern coastal lifestyle",
+        )
+        assert "Modern coastal lifestyle" in prompt
+
+    def test_without_overlay(self):
+        prompt = build_hero_section_prompt(subject="Mountains")
+        assert "overlay" not in prompt.lower()
+
+    def test_result_is_stripped(self):
+        prompt = build_hero_section_prompt(subject="Test")
+        assert not prompt.startswith("\n")
+        assert not prompt.endswith("\n")
