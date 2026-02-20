@@ -70,6 +70,7 @@ class HeroImageGenerator:
                 "prompt": prompt,
                 "aspect_ratio": aspect_ratio,
                 "num_images": 1,
+                "safety_tolerance": "6",
             },
         )
 
