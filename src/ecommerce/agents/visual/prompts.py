@@ -383,30 +383,30 @@ def build_nano_banana_prompt(
 # ---------------------------------------------------------------------------
 
 COLLECTION_HERO_TEMPLATE = """\
-Wide cinematic hero banner for an e-commerce product collection called "{collection_name}".
+Wide photorealistic hero banner photograph for an e-commerce product collection called "{collection_name}".
 {description_line}\
 {products_line}\
 {brand_style}\
-Professional product photography composition with beautiful lighting and styling.
-High-end e-commerce visual, 8k resolution.
+Shot on a professional DSLR camera with natural lighting. Real-world scene, not illustrated or CGI.
+Professional product photography composition. High-end e-commerce visual, 8k resolution.
 No text, words, letters, logos, or watermarks. Purely visual.
 """
 
 BLOG_HERO_TEMPLATE = """\
-Wide cinematic hero banner for a blog article about "{subject}" in the {category} category.
+Wide photorealistic hero banner photograph for a blog article about "{subject}" in the {category} category.
 {context_line}\
 {brand_style}\
-Editorial photography style with atmospheric mood and beautiful lighting.
+Shot on a professional DSLR camera with natural lighting. Real-world editorial photography, not illustrated or CGI.
 High-end visual, 8k resolution.
 No text, words, letters, logos, or watermarks. Purely visual.
 """
 
 HERO_SECTION_TEMPLATE = """\
-Wide cinematic hero banner with a "{subject}" theme.
+Wide photorealistic hero banner photograph with a "{subject}" theme.
 {overlay_line}\
 {brand_style}\
-Atmospheric, high-end visual with dramatic lighting and rich composition.
-Suitable for a landing page hero section. 8k resolution.
+Shot on a professional DSLR camera with natural lighting. Real-world scene, not illustrated or CGI.
+Clean, modern composition suitable for a landing page hero section. 8k resolution.
 No text, words, letters, logos, or watermarks. Purely visual.
 """
 
