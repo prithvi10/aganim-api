@@ -58,7 +58,7 @@ class ProductAdGenerator:
         logger.info("[ProductAdGenerator] prompt: %s", prompt[:300])
 
         if progress:
-            progress("generating", 20, "Generating marketing ad with Nano Banana...")
+            progress("generating", 20, "Generating marketing ad...")
 
         result_bytes = await self._nano_banana_edit(image_url, prompt, progress)
 

@@ -376,3 +376,107 @@ def build_nano_banana_prompt(
         prompt = product_name_line + prompt
 
     return prompt
+
+
+# ---------------------------------------------------------------------------
+# Hero banner prompts (fal-ai/nano-banana text-to-image)
+# ---------------------------------------------------------------------------
+
+COLLECTION_HERO_TEMPLATE = """\
+Wide cinematic hero banner for an e-commerce product collection called "{collection_name}".
+{description_line}\
+{products_line}\
+{brand_style}\
+Professional product photography composition with beautiful lighting and styling.
+High-end e-commerce visual, 8k resolution.
+No text, words, letters, logos, or watermarks. Purely visual.
+"""
+
+BLOG_HERO_TEMPLATE = """\
+Wide cinematic hero banner for a blog article about "{subject}" in the {category} category.
+{context_line}\
+{brand_style}\
+Editorial photography style with atmospheric mood and beautiful lighting.
+High-end visual, 8k resolution.
+No text, words, letters, logos, or watermarks. Purely visual.
+"""
+
+HERO_SECTION_TEMPLATE = """\
+Wide cinematic hero banner with a "{subject}" theme.
+{overlay_line}\
+{brand_style}\
+Atmospheric, high-end visual with dramatic lighting and rich composition.
+Suitable for a landing page hero section. 8k resolution.
+No text, words, letters, logos, or watermarks. Purely visual.
+"""
+
+
+def build_collection_hero_prompt(
+    collection_name: str,
+    description: str = "",
+    product_names: Optional[List[str]] = None,
+    brand_soul: str = "",
+) -> str:
+    """Build a hero banner prompt for a product collection."""
+    brand_style = ""
+    if brand_soul:
+        aesthetic = _distill_brand_aesthetic(brand_soul, max_len=120)
+        if aesthetic:
+            brand_style = f"{aesthetic} aesthetic. "
+
+    description_line = f"{description}. " if description else ""
+    products_line = ""
+    if product_names:
+        names = ", ".join(product_names[:8])
+        products_line = f"Featuring products: {names}. "
+
+    return COLLECTION_HERO_TEMPLATE.format(
+        collection_name=collection_name,
+        description_line=description_line,
+        products_line=products_line,
+        brand_style=brand_style,
+    ).strip()
+
+
+def build_blog_hero_prompt(
+    subject: str,
+    category: str = "General",
+    context: str = "",
+    brand_soul: str = "",
+) -> str:
+    """Build a hero banner prompt for a blog post."""
+    brand_style = ""
+    if brand_soul:
+        aesthetic = _distill_brand_aesthetic(brand_soul, max_len=120)
+        if aesthetic:
+            brand_style = f"{aesthetic} aesthetic. "
+
+    context_line = f"{context}. " if context else ""
+
+    return BLOG_HERO_TEMPLATE.format(
+        subject=subject,
+        category=category,
+        context_line=context_line,
+        brand_style=brand_style,
+    ).strip()
+
+
+def build_hero_section_prompt(
+    subject: str,
+    overlay_text: str = "",
+    brand_soul: str = "",
+) -> str:
+    """Build a hero banner prompt for a landing page hero section."""
+    brand_style = ""
+    if brand_soul:
+        aesthetic = _distill_brand_aesthetic(brand_soul, max_len=120)
+        if aesthetic:
+            brand_style = f"{aesthetic} aesthetic. "
+
+    overlay_line = f"Visual theme inspired by: {overlay_text}. " if overlay_text else ""
+
+    return HERO_SECTION_TEMPLATE.format(
+        subject=subject,
+        overlay_line=overlay_line,
+        brand_style=brand_style,
+    ).strip()

@@ -1,9 +1,11 @@
 """
 Unit tests for ContentHeroAgent -- Hero image generation for blog/collection content.
 
+Uses HeroImageGenerator (Nano Banana text-to-image) instead of VisualService.expand_hero.
+
 Covers:
   - _perceive_domain: context extraction from agent_outputs for blog/collection/hero
-  - _act_domain: happy path, no image skip, no preceding content skip, error handling
+  - _act_domain: happy path, no preceding content skip, error handling
 """
 
 import pytest
@@ -13,22 +15,10 @@ from src.ecommerce.agents.content_hero.agent import ContentHeroAgent
 from src.ecommerce.state import MissionState
 from src.agentic_core.agents.context import AgentContext, AgentPlan
 
-_VISUAL_SVC = "src.ecommerce.services.visual_service.VisualService"
+_HERO_GEN = "src.ecommerce.services.hero_image_generator.HeroImageGenerator"
 _R2_SVC = "src.ecommerce.services.r2_storage_service.R2StorageService"
-_HTTPX_ASYNC_CLIENT = "httpx.AsyncClient"
 
 FAKE_IMAGE_BYTES = b"fake-hero-image-bytes"
-
-
-def _make_httpx_mock(response_content=FAKE_IMAGE_BYTES):
-    mock_response = MagicMock()
-    mock_response.content = response_content
-    mock_response.raise_for_status = MagicMock()
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-    return mock_client
 
 
 @pytest.fixture
@@ -72,7 +62,7 @@ class TestPerceiveDomain:
             product_id="p1",
             shop_id="s1",
             plan_tier="Pro",
-            raw_input={"image_url": "https://cdn.shopify.com/p.jpg", "topic": "Japanese ceramics"},
+            raw_input={"topic": "Japanese ceramics", "category": "Artisan"},
         )
         state.agent_outputs = {
             "RewriterAgent_0": {
@@ -84,9 +74,9 @@ class TestPerceiveDomain:
         ctx = AgentContext(raw_input=state.raw_input)
         ctx = await agent._perceive_domain(state, ctx)
 
-        assert ctx.external_data["subject"] == "Blog"
-        assert ctx.external_data["context_text"] == "The Art of Japanese Ceramics"
-        assert ctx.external_data["image_url"] == "https://cdn.shopify.com/p.jpg"
+        assert ctx.external_data["template_id"] == "product/blog-post"
+        assert ctx.external_data["context_data"]["subject"] == "The Art of Japanese Ceramics"
+        assert ctx.external_data["context_data"]["category"] == "Artisan"
 
     @pytest.mark.asyncio
     async def test_extracts_collection_context(self, agent):
@@ -95,8 +85,9 @@ class TestPerceiveDomain:
             shop_id="s1",
             plan_tier="Pro",
             raw_input={
-                "image_url": "https://cdn.shopify.com/p.jpg",
                 "collection_name": "Summer Collection",
+                "description": "Our best summer picks",
+                "product_names": ["Sake A", "Sake B"],
             },
         )
         state.agent_outputs = {
@@ -108,8 +99,10 @@ class TestPerceiveDomain:
         ctx = AgentContext(raw_input=state.raw_input)
         ctx = await agent._perceive_domain(state, ctx)
 
-        assert ctx.external_data["subject"] == "Collection"
-        assert ctx.external_data["context_text"] == "Summer Collection"
+        assert ctx.external_data["template_id"] == "product/collection"
+        assert ctx.external_data["context_data"]["collection_name"] == "Summer Collection"
+        assert ctx.external_data["context_data"]["description"] == "Our best summer picks"
+        assert ctx.external_data["context_data"]["product_names"] == ["Sake A", "Sake B"]
 
     @pytest.mark.asyncio
     async def test_extracts_landing_hero_context(self, agent):
@@ -117,7 +110,7 @@ class TestPerceiveDomain:
             product_id="p1",
             shop_id="s1",
             plan_tier="Pro",
-            raw_input={"image_url": "https://cdn.shopify.com/p.jpg", "title": "Featured"},
+            raw_input={"subject_text": "Spring Flowers"},
         )
         state.agent_outputs = {
             "RewriterAgent_0": {
@@ -128,8 +121,8 @@ class TestPerceiveDomain:
         ctx = AgentContext(raw_input=state.raw_input)
         ctx = await agent._perceive_domain(state, ctx)
 
-        assert ctx.external_data["subject"] == "Hero section"
-        assert ctx.external_data["context_text"] == "Elevate Your Space"
+        assert ctx.external_data["template_id"] == "product/landing-hero"
+        assert ctx.external_data["context_data"]["subject"] == "Elevate Your Space"
 
     @pytest.mark.asyncio
     async def test_no_preceding_content(self, agent):
@@ -137,14 +130,14 @@ class TestPerceiveDomain:
             product_id="p1",
             shop_id="s1",
             plan_tier="Pro",
-            raw_input={"image_url": "https://cdn.shopify.com/p.jpg"},
+            raw_input={},
         )
         state.agent_outputs = {}
         ctx = AgentContext(raw_input=state.raw_input)
         ctx = await agent._perceive_domain(state, ctx)
 
-        assert ctx.external_data["subject"] == ""
-        assert ctx.external_data["context_text"] == ""
+        assert ctx.external_data["template_id"] == ""
+        assert ctx.external_data["context_data"] == {}
 
     @pytest.mark.asyncio
     async def test_brand_soul_from_strategic_intelligence(self, agent):
@@ -152,7 +145,7 @@ class TestPerceiveDomain:
             product_id="p1",
             shop_id="s1",
             plan_tier="Pro",
-            raw_input={"image_url": "https://cdn.shopify.com/p.jpg"},
+            raw_input={},
         )
         state.agent_outputs = {}
         ctx = AgentContext(
@@ -160,8 +153,26 @@ class TestPerceiveDomain:
             strategic_intelligence={"archetype": "Artisan", "tone": "refined"},
         )
         ctx = await agent._perceive_domain(state, ctx)
-        assert len(ctx.external_data["short_soul"]) > 0
-        assert len(ctx.external_data["short_soul"]) <= 120
+        assert len(ctx.external_data["brand_soul"]) > 0
+        assert len(ctx.external_data["brand_soul"]) <= 300
+
+    @pytest.mark.asyncio
+    async def test_collection_product_names_as_csv_string(self, agent):
+        state = MissionState(
+            product_id="p1",
+            shop_id="s1",
+            plan_tier="Pro",
+            raw_input={
+                "collection_name": "Premium",
+                "product_names": "Sake A, Sake B, Sake C",
+            },
+        )
+        state.agent_outputs = {
+            "RewriterAgent_0": {"template_id": "product/collection"}
+        }
+        ctx = AgentContext(raw_input=state.raw_input)
+        ctx = await agent._perceive_domain(state, ctx)
+        assert ctx.external_data["context_data"]["product_names"] == ["Sake A", "Sake B", "Sake C"]
 
 
 class TestActDomainHappyPath:
@@ -171,43 +182,38 @@ class TestActDomainHappyPath:
             product_id="p1",
             shop_id="test-shop.myshopify.com",
             plan_tier="Pro",
-            raw_input={"image_url": "https://cdn.shopify.com/p.jpg", "topic": "Japanese ceramics"},
+            raw_input={"topic": "Japanese ceramics"},
         )
-        state.agent_outputs = {
-            "RewriterAgent_0": {
-                "template_id": "product/blog-post",
-                "draft_title": "The Art of Japanese Ceramics",
-            }
-        }
 
         context = AgentContext(
             raw_input=state.raw_input,
             external_data={
-                "image_url": "https://cdn.shopify.com/p.jpg",
-                "subject": "Blog",
-                "context_text": "The Art of Japanese Ceramics",
-                "short_soul": "Minimalist Kyoto",
+                "template_id": "product/blog-post",
+                "context_data": {
+                    "subject": "The Art of Japanese Ceramics",
+                    "category": "Artisan",
+                    "context": "",
+                },
+                "brand_soul": "Minimalist Kyoto",
             },
         )
 
-        mock_visual_svc = MagicMock()
-        mock_visual_svc.expand_hero = AsyncMock(return_value="https://fal.ai/hero.png")
+        mock_hero_gen = MagicMock()
+        mock_hero_gen.generate = AsyncMock(return_value=FAKE_IMAGE_BYTES)
 
         mock_r2_svc = MagicMock()
         mock_r2_svc.upload_asset = AsyncMock(return_value="r2://content-hero.png")
-        mock_client = _make_httpx_mock()
 
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
-             patch(_R2_SVC) as mock_r2_cls, \
-             patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client):
-
+        with patch(_HERO_GEN, return_value=mock_hero_gen), \
+             patch(_R2_SVC) as mock_r2_cls:
             mock_r2_cls.return_value = mock_r2_svc
             mock_r2_cls.build_key = MagicMock(return_value="test-key")
-
             actions, new_state = await agent._act_domain(state, context, default_plan)
 
-        mock_visual_svc.expand_hero.assert_called_once()
-        assert mock_r2_svc.upload_asset.call_count == 1
+        mock_hero_gen.generate.assert_called_once()
+        call_kwargs = mock_hero_gen.generate.call_args
+        assert "blog" in call_kwargs.kwargs.get("prompt", call_kwargs.args[0] if call_kwargs.args else "").lower() or \
+               "blog" in str(call_kwargs).lower()
 
         assert len(actions) == 1
         assert actions[0].success is True
@@ -215,49 +221,61 @@ class TestActDomainHappyPath:
         assert new_state.content_hero_assets is not None
         assert new_state.content_hero_assets["hero_url"] == "r2://content-hero.png"
         assert new_state.content_hero_assets["content_type"] == "blog"
-        assert new_state.content_hero_assets["theme_context"] == "The Art of Japanese Ceramics"
 
-
-class TestActDomainSkips:
     @pytest.mark.asyncio
-    async def test_no_image_url_skips(self, agent, default_plan):
+    async def test_collection_hero_generation(self, agent, default_plan):
         state = MissionState(
             product_id="p1",
-            shop_id="s1",
+            shop_id="test-shop.myshopify.com",
             plan_tier="Pro",
-            raw_input={},
+            raw_input={"collection_name": "Summer Sake"},
         )
+
         context = AgentContext(
-            raw_input={},
+            raw_input=state.raw_input,
             external_data={
-                "image_url": "",
-                "subject": "Blog",
-                "context_text": "Some topic",
-                "short_soul": "",
+                "template_id": "product/collection",
+                "context_data": {
+                    "collection_name": "Summer Sake",
+                    "description": "Our best summer picks",
+                    "product_names": ["Yuzu Sake", "Plum Sake"],
+                },
+                "brand_soul": "",
             },
         )
 
-        actions, _ = await agent._act_domain(state, context, default_plan)
+        mock_hero_gen = MagicMock()
+        mock_hero_gen.generate = AsyncMock(return_value=FAKE_IMAGE_BYTES)
 
-        assert len(actions) == 1
-        assert actions[0].success is False
-        assert "no_image_url" in str(actions[0].input_params)
+        mock_r2_svc = MagicMock()
+        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://collection-hero.png")
 
+        with patch(_HERO_GEN, return_value=mock_hero_gen), \
+             patch(_R2_SVC) as mock_r2_cls:
+            mock_r2_cls.return_value = mock_r2_svc
+            mock_r2_cls.build_key = MagicMock(return_value="test-key")
+            actions, new_state = await agent._act_domain(state, context, default_plan)
+
+        assert actions[0].success is True
+        assert new_state.content_hero_assets["content_type"] == "collection"
+        assert new_state.content_hero_assets["theme_context"] == "Summer Sake"
+
+
+class TestActDomainSkips:
     @pytest.mark.asyncio
     async def test_no_preceding_content_skips(self, agent, default_plan):
         state = MissionState(
             product_id="p1",
             shop_id="s1",
             plan_tier="Pro",
-            raw_input={"image_url": "https://cdn.shopify.com/p.jpg"},
+            raw_input={},
         )
         context = AgentContext(
             raw_input={},
             external_data={
-                "image_url": "https://cdn.shopify.com/p.jpg",
-                "subject": "",
-                "context_text": "",
-                "short_soul": "",
+                "template_id": "",
+                "context_data": {},
+                "brand_soul": "",
             },
         )
 
@@ -270,29 +288,28 @@ class TestActDomainSkips:
 
 class TestActDomainFailure:
     @pytest.mark.asyncio
-    async def test_expand_hero_fails(self, agent, default_plan):
+    async def test_hero_gen_fails(self, agent, default_plan):
         state = MissionState(
             product_id="p1",
             shop_id="test-shop.myshopify.com",
             plan_tier="Pro",
-            raw_input={"image_url": "https://cdn.shopify.com/p.jpg"},
+            raw_input={},
         )
         context = AgentContext(
             raw_input=state.raw_input,
             external_data={
-                "image_url": "https://cdn.shopify.com/p.jpg",
-                "subject": "Blog",
-                "context_text": "Test",
-                "short_soul": "",
+                "template_id": "product/blog-post",
+                "context_data": {"subject": "Test", "category": "General", "context": ""},
+                "brand_soul": "",
             },
         )
 
-        mock_visual_svc = MagicMock()
-        mock_visual_svc.expand_hero = AsyncMock(
+        mock_hero_gen = MagicMock()
+        mock_hero_gen.generate = AsyncMock(
             side_effect=TimeoutError("fal.ai timeout")
         )
 
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
+        with patch(_HERO_GEN, return_value=mock_hero_gen), \
              patch(_R2_SVC):
             actions, new_state = await agent._act_domain(state, context, default_plan)
 
