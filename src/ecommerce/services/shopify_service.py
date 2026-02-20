@@ -657,6 +657,7 @@ async def create_article(
     blog_id: int | str,
     title: str,
     body_html: str,
+    image_url: str | None = None,
 ) -> dict:
     """
     Create a blog article via REST API.
@@ -672,13 +673,15 @@ async def create_article(
         "Content-Type": "application/json",
     }
     url = f"https://{shop_domain}/admin/api/{shopify_api_version}/blogs/{blog_id}/articles.json"
-    payload = {
-        "article": {
-            "title": title,
-            "body_html": body_html,
-            "published": True,
-        }
+    article_data: dict = {
+        "title": title,
+        "body_html": body_html,
+        "published": True,
     }
+    if image_url:
+        article_data["image"] = {"src": image_url}
+
+    payload = {"article": article_data}
 
     async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
         resp = await client.post(url, headers=headers, json=payload)
@@ -796,6 +799,7 @@ async def create_collection(
     title: str,
     description_html: str,
     product_ids: list[str] | None = None,
+    image_url: str | None = None,
 ) -> dict:
     """
     Create a Custom Collection via GraphQL and optionally add products.
@@ -806,6 +810,7 @@ async def create_collection(
         title: Collection title
         description_html: Collection description HTML
         product_ids: Optional list of product GIDs to add
+        image_url: Optional hero image URL to set as collection image
 
     Returns:
         Dict with the created collection data.
@@ -825,11 +830,15 @@ async def create_collection(
       }
     }
     """
+    collection_input: dict = {
+        "title": title,
+        "descriptionHtml": description_html,
+    }
+    if image_url:
+        collection_input["image"] = {"src": image_url}
+
     variables = {
-        "input": {
-            "title": title,
-            "descriptionHtml": description_html,
-        }
+        "input": collection_input,
     }
 
     async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:

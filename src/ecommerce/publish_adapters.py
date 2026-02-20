@@ -129,7 +129,8 @@ class ShopifyPublishAdapter:
         """Push blog-post draft_content → Shopify article."""
         from src.ecommerce.services.shopify_service import create_article, get_default_blog_id
 
-        blog_id = state.raw_input.get("blog_id", "")
+        raw = state.raw_input or {}
+        blog_id = raw.get("blog_id", "")
         if not blog_id:
             blog_id = await get_default_blog_id(
                 shop_domain=state.shop_id,
@@ -140,7 +141,7 @@ class ShopifyPublishAdapter:
                 "No blog found on this Shopify store – cannot create article"
             )
 
-        title = state.draft_title or "Untitled Post"
+        title = raw.get("blog_title") or state.draft_title or "Untitled Post"
         body_html = state.draft_content or ""
         try:
             parsed = json.loads(body_html)
@@ -150,12 +151,15 @@ class ShopifyPublishAdapter:
         except (json.JSONDecodeError, TypeError):
             pass
 
+        hero_url = raw.get("hero_url")
+
         await create_article(
             shop_domain=state.shop_id,
             access_token=creds["access_token"],
             blog_id=blog_id,
             title=title,
             body_html=body_html,
+            image_url=hero_url,
         )
 
     async def publish_collection(self, state: Any, creds: dict) -> None:
@@ -163,8 +167,10 @@ class ShopifyPublishAdapter:
         from src.ecommerce.services.shopify_service import create_collection
 
         raw = state.raw_input or {}
+        ctx = raw.get("context", {}) if isinstance(raw.get("context"), dict) else {}
         collection_name = (
             raw.get("collection_name")
+            or ctx.get("collection_name")
             or raw.get("product_name")
             or "Untitled Collection"
         )
@@ -181,6 +187,7 @@ class ShopifyPublishAdapter:
             pass
 
         product_ids = raw.get("product_ids") or []
+        hero_url = raw.get("hero_url")
 
         await create_collection(
             shop_domain=state.shop_id,
@@ -188,6 +195,7 @@ class ShopifyPublishAdapter:
             title=collection_name,
             description_html=desc_html,
             product_ids=product_ids,
+            image_url=hero_url,
         )
 
     # ------------------------------------------------------------------
