@@ -250,14 +250,14 @@ async def test_pro_tier_runs_all_agents(mock_services, product_data):
 
 @pytest.mark.asyncio
 async def test_pro_tier_workflow_contains_all_agents(mock_services):
-    """Test that PRO tier workflow configuration includes all agents."""
+    """Test that PRO tier workflow configuration includes all agents (incl. VisualAgent)."""
     mission = MissionControl(
         plan_tier="Pro",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
     )
     
-    assert len(mission.workflow) == 4
+    assert len(mission.workflow) == 6
 
 
 # =============================================================================
@@ -265,17 +265,17 @@ async def test_pro_tier_workflow_contains_all_agents(mock_services):
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_all_tiers_have_same_agent_count(mock_services):
-    """Test that all tiers have the same number of agents (4)."""
-    tiers = ["Free", "Basic", "Standard", "Pro"]
+async def test_all_tiers_have_expected_agent_count(mock_services):
+    """Test that all tiers have the expected number of agents."""
+    expected = {"Free": 4, "Basic": 4, "Standard": 4, "Pro": 6}
     
-    for tier in tiers:
+    for tier, count in expected.items():
         mission = MissionControl(
             plan_tier=tier,
             shop_id="test-shop.myshopify.com",
             services=mock_services,
         )
-        assert len(mission.workflow) == 4, f"{tier} tier should have 4 agents"
+        assert len(mission.workflow) == count, f"{tier} tier should have {count} agents"
 
 
 @pytest.mark.asyncio

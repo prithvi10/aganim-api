@@ -46,6 +46,13 @@ class ShopifyMissionState(GenericMissionState):
     social_hooks: Optional[List[Dict[str, Any]]] = None
     seasonal_campaign: Optional[Dict[str, Any]] = None
 
+    # Visual agent artifacts (Pro tier)
+    visual_assets: Optional[Dict[str, Any]] = None
+    visual_progress: Optional[Dict[str, Any]] = None
+
+    # Content hero agent artifacts (blog/collection hero banners)
+    content_hero_assets: Optional[Dict[str, Any]] = None
+
     # Localisation
     target_locale: Optional[str] = None
     source_locale: Optional[str] = None
@@ -81,6 +88,11 @@ class ShopifyMissionState(GenericMissionState):
         d["serp_insights"] = self.serp_insights
         d["social_hooks"] = self.social_hooks
         d["seasonal_campaign"] = self.seasonal_campaign
+        # Visual agent artifacts (Pro tier)
+        d["visual_assets"] = self.visual_assets
+        d["visual_progress"] = self.visual_progress
+        # Content hero
+        d["content_hero_assets"] = self.content_hero_assets
         # Locale & usage
         d["target_locale"] = self.target_locale
         d["source_locale"] = self.source_locale
@@ -116,6 +128,7 @@ class ShopifyMissionState(GenericMissionState):
             workflow_agents=data.get("workflow_agents", []),
             workflow_config=data.get("workflow_config", []),
             autonomous=data.get("autonomous", False),
+            mission_id=data.get("mission_id"),
             # Shopify-specific fields
             draft_content=data.get("draft_content"),
             draft_title=data.get("draft_title"),
@@ -131,6 +144,9 @@ class ShopifyMissionState(GenericMissionState):
             serp_insights=data.get("serp_insights"),
             social_hooks=data.get("social_hooks"),
             seasonal_campaign=data.get("seasonal_campaign"),
+            visual_assets=data.get("visual_assets"),
+            visual_progress=data.get("visual_progress"),
+            content_hero_assets=data.get("content_hero_assets"),
             target_locale=data.get("target_locale"),
             source_locale=data.get("source_locale"),
             accumulated_usage=data.get("accumulated_usage"),

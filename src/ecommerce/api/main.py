@@ -25,7 +25,7 @@ def _ensure_shop_columns_exist():
     """
     dialect = engine.dialect.name
     if dialect == "sqlite":
-        with engine.connect() as conn:
+        with engine.begin() as conn:
             cols = conn.execute(text("PRAGMA table_info(shops)")).fetchall()
             existing = {c[1] for c in cols}
 
@@ -58,10 +58,9 @@ def _ensure_shop_columns_exist():
             add("brand_context_status TEXT", "brand_context_status")
             add("brand_context_last_error TEXT", "brand_context_last_error")
             add("brand_context_job_id TEXT", "brand_context_job_id")
-            conn.commit()
         return
 
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_rewrites_used INTEGER DEFAULT 0"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_rewrites_remaining INTEGER DEFAULT 10"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
@@ -86,14 +85,13 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_status VARCHAR"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_last_error TEXT"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_job_id VARCHAR"))
-        conn.commit()
 
 
 def _ensure_pgvector_extension_and_indexes():
     """Best-effort pgvector extension + indexes for context_chunks (Postgres only)."""
     if engine.dialect.name != "postgresql":
         return
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS context_chunks_tenant_id_idx ON context_chunks (tenant_id)"))
         conn.execute(
@@ -102,14 +100,13 @@ def _ensure_pgvector_extension_and_indexes():
                 "ON context_chunks USING ivfflat (embedding vector_cosine_ops)"
             )
         )
-        conn.commit()
 
 
 def _ensure_plan_columns_exist():
     """Best-effort schema evolution for plans table (no migrations in this repo)."""
     dialect = engine.dialect.name
     if dialect == "sqlite":
-        with engine.connect() as conn:
+        with engine.begin() as conn:
             cols = conn.execute(text("PRAGMA table_info(plans)")).fetchall()
             existing = {c[1] for c in cols}
 
@@ -122,15 +119,13 @@ def _ensure_plan_columns_exist():
             add("max_locales INTEGER", "max_locales")
             add("features_json TEXT", "features_json")
             add("billing_cycle_type TEXT", "billing_cycle_type")
-            conn.commit()
         return
 
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS product_limit INTEGER"))
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_locales INTEGER"))
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS features_json TEXT"))
         conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS billing_cycle_type TEXT"))
-        conn.commit()
 
 
 def _rename_column_if_exists(conn, table: str, old: str, new: str):
@@ -170,7 +165,7 @@ def _ensure_agentic_tables_exist():
         return
 
     # PostgreSQL ----------------------------------------------------------
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         # Missions table
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS missions (
@@ -222,7 +217,6 @@ def _ensure_agentic_tables_exist():
             CREATE INDEX IF NOT EXISTS agent_corrections_embedding_idx 
             ON agent_corrections USING ivfflat (embedding vector_cosine_ops)
         """))
-        conn.commit()
 
 
 @asynccontextmanager

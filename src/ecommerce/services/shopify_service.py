@@ -657,6 +657,7 @@ async def create_article(
     blog_id: int | str,
     title: str,
     body_html: str,
+    image_url: str | None = None,
 ) -> dict:
     """
     Create a blog article via REST API.
@@ -672,13 +673,15 @@ async def create_article(
         "Content-Type": "application/json",
     }
     url = f"https://{shop_domain}/admin/api/{shopify_api_version}/blogs/{blog_id}/articles.json"
-    payload = {
-        "article": {
-            "title": title,
-            "body_html": body_html,
-            "published": True,
-        }
+    article_data: dict = {
+        "title": title,
+        "body_html": body_html,
+        "published": True,
     }
+    if image_url:
+        article_data["image"] = {"src": image_url}
+
+    payload = {"article": article_data}
 
     async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
         resp = await client.post(url, headers=headers, json=payload)
@@ -796,6 +799,7 @@ async def create_collection(
     title: str,
     description_html: str,
     product_ids: list[str] | None = None,
+    image_url: str | None = None,
 ) -> dict:
     """
     Create a Custom Collection via GraphQL and optionally add products.
@@ -806,6 +810,7 @@ async def create_collection(
         title: Collection title
         description_html: Collection description HTML
         product_ids: Optional list of product GIDs to add
+        image_url: Optional hero image URL to set as collection image
 
     Returns:
         Dict with the created collection data.
@@ -825,11 +830,15 @@ async def create_collection(
       }
     }
     """
+    collection_input: dict = {
+        "title": title,
+        "descriptionHtml": description_html,
+    }
+    if image_url:
+        collection_input["image"] = {"src": image_url}
+
     variables = {
-        "input": {
-            "title": title,
-            "descriptionHtml": description_html,
-        }
+        "input": collection_input,
     }
 
     async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
@@ -904,6 +913,374 @@ async def create_collection(
                 )
 
         return collection
+
+
+# ---------------------------------------------------------------------------
+# Media upload helpers (Pro-Visual pipeline)
+# ---------------------------------------------------------------------------
+
+async def staged_upload_create(
+    shop_domain: str,
+    access_token: str,
+    filename: str,
+    mime_type: str,
+    file_size: int,
+    resource: str = "IMAGE",
+) -> dict:
+    """
+    Create a staged upload target via GraphQL ``stagedUploadsCreate``.
+
+    Returns a dict with ``url``, ``parameters``, and ``resourceUrl`` that can
+    be used to upload the file and then reference it in ``fileCreate``.
+
+    Args:
+        shop_domain: Shop domain.
+        access_token: Shopify access token.
+        filename: The filename for the uploaded asset.
+        mime_type: MIME type (e.g. "image/png").
+        file_size: Size of the file in bytes.
+        resource: Shopify staged upload resource type (default "IMAGE").
+
+    Returns:
+        Dict with keys: url, parameters (list of {name, value}), resourceUrl.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    graphql_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json"
+
+    mutation = """
+    mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+      stagedUploadsCreate(input: $input) {
+        stagedTargets {
+          url
+          resourceUrl
+          parameters {
+            name
+            value
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    variables = {
+        "input": [
+            {
+                "filename": filename,
+                "mimeType": mime_type,
+                "resource": resource,
+                "fileSize": str(file_size),
+                "httpMethod": "POST",
+            }
+        ]
+    }
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            graphql_url,
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"stagedUploadsCreate failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+        user_errors = (
+            data.get("data", {}).get("stagedUploadsCreate", {}).get("userErrors", [])
+        )
+        if user_errors:
+            raise Exception(f"stagedUploadsCreate error: {user_errors[0].get('message')}")
+
+        targets = (
+            data.get("data", {}).get("stagedUploadsCreate", {}).get("stagedTargets", [])
+        )
+        if not targets:
+            raise Exception("stagedUploadsCreate returned no staged targets")
+
+        target = targets[0]
+        logger.info(
+            "✅ Staged upload created for %s (%s) resourceUrl=%s",
+            filename, shop_domain, target.get("resourceUrl"),
+        )
+        return {
+            "url": target["url"],
+            "parameters": target.get("parameters", []),
+            "resourceUrl": target.get("resourceUrl", ""),
+        }
+
+
+async def _upload_to_staged_target(
+    upload_url: str,
+    parameters: list[dict],
+    image_bytes: bytes,
+    filename: str,
+    mime_type: str,
+) -> None:
+    """
+    Upload file bytes to a Shopify staged upload target URL via multipart POST.
+
+    Args:
+        upload_url: The target URL from stagedUploadsCreate.
+        parameters: List of {name, value} dicts from stagedUploadsCreate.
+        image_bytes: The raw file bytes.
+        filename: The filename to use.
+        mime_type: The MIME type of the file.
+    """
+    import io
+
+    # Build multipart form data -- parameters first, then the file
+    files = {}
+    data = {}
+    for param in parameters:
+        data[param["name"]] = param["value"]
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            upload_url,
+            data=data,
+            files={"file": (filename, io.BytesIO(image_bytes), mime_type)},
+        )
+        # Shopify returns 201 Created or 204 No Content on success
+        if resp.status_code not in (200, 201, 204):
+            raise Exception(
+                f"Staged upload file POST failed: {resp.status_code} {resp.text}"
+            )
+    logger.info("✅ File uploaded to staged target: %s", filename)
+
+
+async def file_create(
+    shop_domain: str,
+    access_token: str,
+    staged_resource_url: str,
+    alt_text: str = "",
+    content_type: str = "IMAGE",
+) -> str:
+    """
+    Create a file in Shopify's Media Library via GraphQL ``fileCreate``.
+
+    Args:
+        shop_domain: Shop domain.
+        access_token: Shopify access token.
+        staged_resource_url: The resourceUrl from stagedUploadsCreate.
+        alt_text: Alt text for the image.
+        content_type: Shopify file content type (default "IMAGE").
+
+    Returns:
+        The Shopify file GID.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    graphql_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json"
+
+    mutation = """
+    mutation fileCreate($files: [FileCreateInput!]!) {
+      fileCreate(files: $files) {
+        files {
+          id
+          alt
+          ... on MediaImage {
+            image {
+              url
+            }
+          }
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    variables = {
+        "files": [
+            {
+                "alt": alt_text,
+                "contentType": content_type,
+                "originalSource": staged_resource_url,
+            }
+        ]
+    }
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            graphql_url,
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"fileCreate failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+        user_errors = (
+            data.get("data", {}).get("fileCreate", {}).get("userErrors", [])
+        )
+        if user_errors:
+            raise Exception(f"fileCreate error: {user_errors[0].get('message')}")
+
+        files = data.get("data", {}).get("fileCreate", {}).get("files", [])
+        if not files:
+            raise Exception("fileCreate returned no files")
+
+        file_gid = files[0].get("id", "")
+        logger.info(
+            "✅ File created in Shopify Media Library: %s (%s)",
+            file_gid, shop_domain,
+        )
+        return file_gid
+
+
+async def upload_media_to_shopify(
+    shop_domain: str,
+    access_token: str,
+    image_bytes: bytes,
+    filename: str,
+    alt_text: str = "",
+    mime_type: str = "image/png",
+) -> str:
+    """
+    Orchestrate the full two-step Shopify media upload:
+    1. stagedUploadsCreate → get upload URL
+    2. POST file to staged target
+    3. fileCreate → register in Shopify Media Library
+
+    Args:
+        shop_domain: Shop domain.
+        access_token: Shopify access token.
+        image_bytes: Raw image bytes.
+        filename: Filename for the asset.
+        alt_text: Alt text for the image.
+        mime_type: MIME type (default "image/png").
+
+    Returns:
+        The Shopify file GID.
+    """
+    # Step 1: Create staged upload target
+    staged = await staged_upload_create(
+        shop_domain=shop_domain,
+        access_token=access_token,
+        filename=filename,
+        mime_type=mime_type,
+        file_size=len(image_bytes),
+    )
+
+    # Step 2: Upload the file bytes
+    await _upload_to_staged_target(
+        upload_url=staged["url"],
+        parameters=staged["parameters"],
+        image_bytes=image_bytes,
+        filename=filename,
+        mime_type=mime_type,
+    )
+
+    # Step 3: Create the file in the Media Library
+    file_gid = await file_create(
+        shop_domain=shop_domain,
+        access_token=access_token,
+        staged_resource_url=staged["resourceUrl"],
+        alt_text=alt_text,
+    )
+
+    logger.info(
+        "✅ Full media upload complete: %s → %s (%s)",
+        filename, file_gid, shop_domain,
+    )
+    return file_gid
+
+
+async def add_product_image(
+    shop_domain: str,
+    access_token: str,
+    product_id: str,
+    image_url: str,
+    alt_text: str = "",
+) -> str:
+    """
+    Append an image to an existing Shopify product using ``productCreateMedia``.
+
+    This **adds** a new image without removing any existing product images.
+
+    Args:
+        shop_domain: Shop domain.
+        access_token: Shopify access token.
+        product_id: Shopify product GID (e.g. ``gid://shopify/Product/123``).
+        image_url: Public URL of the image to add.
+        alt_text: Alt text for the image.
+
+    Returns:
+        The created media GID.
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    graphql_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json"
+
+    # Ensure product_id is a GID
+    if not product_id.startswith("gid://"):
+        product_id = f"gid://shopify/Product/{product_id}"
+
+    mutation = """
+    mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+      productCreateMedia(productId: $productId, media: $media) {
+        media {
+          ... on MediaImage {
+            id
+            image {
+              url
+            }
+          }
+        }
+        mediaUserErrors {
+          field
+          message
+        }
+      }
+    }
+    """
+    variables = {
+        "productId": product_id,
+        "media": [
+            {
+                "alt": alt_text,
+                "mediaContentType": "IMAGE",
+                "originalSource": image_url,
+            }
+        ],
+    }
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            graphql_url,
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"productCreateMedia failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+        user_errors = (
+            data.get("data", {}).get("productCreateMedia", {}).get("mediaUserErrors", [])
+        )
+        if user_errors:
+            raise Exception(f"productCreateMedia error: {user_errors[0].get('message')}")
+
+        media_list = data.get("data", {}).get("productCreateMedia", {}).get("media", [])
+        media_gid = media_list[0].get("id", "") if media_list else ""
+        logger.info(
+            "✅ Image appended to product %s: %s (%s)",
+            product_id, media_gid, shop_domain,
+        )
+        return media_gid
 
 
 def get_shop_credentials(db, shop_domain: str) -> dict:

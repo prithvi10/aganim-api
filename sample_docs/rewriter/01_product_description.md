@@ -1,5 +1,5 @@
 # Product Description — Takumi Ceramics
-Generated: 2026-02-10 11:34 | Template: product/description
+Template: product/description
 
 ## Product: Celadon Jade Rice Bowl — 翡翠茶碗
 **Category:** Tableware
