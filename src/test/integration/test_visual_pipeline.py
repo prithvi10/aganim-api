@@ -105,9 +105,10 @@ class TestWorkflowConfiguration:
         assert ImageRefinementAgent not in MissionControl.WORKFLOWS["Basic"]
         assert VisualMarketingAgent not in MissionControl.WORKFLOWS["Basic"]
 
-    def test_free_workflow_excludes_visual_agents(self):
-        assert ImageRefinementAgent not in MissionControl.WORKFLOWS["Free"]
-        assert VisualMarketingAgent not in MissionControl.WORKFLOWS["Free"]
+    def test_free_workflow_includes_visual_agents(self):
+        """Free tier gets full Pro pipeline (taste of Pro) including image agents."""
+        assert ImageRefinementAgent in MissionControl.WORKFLOWS["Free"]
+        assert VisualMarketingAgent in MissionControl.WORKFLOWS["Free"]
 
     def test_visual_marketing_agent_is_last_in_pro_workflow(self):
         """VisualMarketingAgent should run after all other agents."""

@@ -66,6 +66,12 @@ class Shop(Base):
     meta_page_id = Column(String, nullable=True)
     price_guardrails = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
 
+    # --- Plan-gating usage counters (added for plan overhaul) ---
+    lifetime_missions_remaining = Column(Integer, nullable=False, default=3, server_default="3")
+    lifetime_image_credits_remaining = Column(Integer, nullable=False, default=5, server_default="5")
+    monthly_missions_used = Column(Integer, nullable=False, default=0, server_default="0")
+    monthly_image_generations_used = Column(Integer, nullable=False, default=0, server_default="0")
+
 
 class UsageRecord(Base):
     __tablename__ = "usage_records"
@@ -96,6 +102,46 @@ class Plan(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     users = relationship("User", back_populates="plan")
+
+
+class FeatureUsage(Base):
+    """Aggregate per-feature usage counters per billing cycle (fast quota checks)."""
+    __tablename__ = "feature_usage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_domain = Column(String, index=True, nullable=False)
+    feature = Column(String, nullable=False)
+    billing_cycle_start = Column(Date, nullable=False)
+    usage_count = Column(Integer, default=0)
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class UsageEventLog(Base):
+    """Append-only audit trail for every billable action (admin analytics)."""
+    __tablename__ = "usage_event_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_domain = Column(String, index=True, nullable=False)
+    plan_name = Column(String, nullable=False)
+    event_type = Column(String, index=True, nullable=False)
+    feature = Column(String, index=True, nullable=False)
+
+    product_count = Column(Integer, default=0)
+    image_count = Column(Integer, default=0)
+    prompt_tokens = Column(BigInteger, default=0)
+    completion_tokens = Column(BigInteger, default=0)
+    reasoning_tokens = Column(BigInteger, default=0)
+    total_tokens = Column(BigInteger, default=0)
+    estimated_cost_usd = Column(Numeric(10, 6), default=0)
+
+    product_id = Column(String, nullable=True)
+    mission_id = Column(String, nullable=True)
+    agent_name = Column(String, nullable=True)
+    model_used = Column(String, nullable=True)
+    action = Column(String, nullable=True)
+    metadata_json = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 class BrandEntity(Base):
