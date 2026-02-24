@@ -195,7 +195,19 @@ def record_cost_from_usage(
     db.commit()
     db.refresh(shop)
 
-    # Trigger: log once per cycle and allow future calls to be downgraded
+    try:
+        from src.ecommerce.db.transactions import log_usage_event
+        plan_name = getattr(shop, "current_plan_name", None) or "Free"
+        log_usage_event(
+            db, shop_domain=shop_domain, plan_name=plan_name,
+            event_type="token_cost", feature="rewriter",
+            prompt_tokens=pt, completion_tokens=ct,
+            reasoning_tokens=rt, total_tokens=tt,
+            estimated_cost_usd=float(delta), model_used=model_used,
+        )
+    except Exception:
+        pass
+
     if shop.monthly_cost_accumulated > float(FAIR_USE_COST_CAP):
         _log_yellow_alert_if_needed(db, shop_domain, shop, tt, model_used)
 

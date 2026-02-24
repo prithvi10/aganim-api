@@ -12,7 +12,9 @@ from pydantic import ValidationError
 from src.ecommerce.api.models import BrandContextIngestRequest, BrandContextFileExtractRequest
 from src.shared.db.database import get_db, SessionLocal
 from src.ecommerce.db.models import Shop, StoreContext
-from src.ecommerce.api.validation import validate_shop_and_quota
+from src.ecommerce.api.validation import validate_shop_and_quota, validate_feature_access
+from src.ecommerce.plans.entitlements import get_entitlements
+from src.ecommerce.db.transactions import get_feature_usage
 from src.shared.security.security import verify_shopify_session
 from src.ecommerce.services.brand_ingest_service import (
     ingest_brand_context,
@@ -96,43 +98,75 @@ async def get_usage(
         except Exception:
             pass
     
+    effective_plan = (auth_context.get("effective_plan_name") or plan.name)
+    ent = get_entitlements(effective_plan)
+
+    # Build per-feature usage summary for the frontend
+    fu = {}
+    try:
+        fu = get_feature_usage(db, shop.domain)
+    except Exception:
+        pass
+
+    def _usage_pair(feature: str, limit_key: str = "product_limit") -> dict:
+        used = fu.get(feature, 0)
+        limit = int(ent.get(limit_key, 0))
+        return {"used": used, "limit": limit}
+
+    feature_usage = {
+        "rewriter": _usage_pair("rewriter"),
+        "seo": _usage_pair("seo"),
+        "marketing": _usage_pair("marketing"),
+        "price_scout": _usage_pair("price_scout"),
+        "missions": {
+            "used": (
+                max(0, int(ent.get("mission_limit", 3)) - int(getattr(shop, "lifetime_missions_remaining", 0) or 0))
+                if ent.get("mission_limit_type") == "lifetime"
+                else int(getattr(shop, "monthly_missions_used", 0) or 0)
+            ),
+            "limit": int(ent.get("mission_limit", 0)),
+        },
+        "image_generation": {
+            "used": (
+                max(0, int(ent.get("image_generation_limit", 5)) - int(getattr(shop, "lifetime_image_credits_remaining", 0) or 0))
+                if ent.get("image_limit_type") == "lifetime"
+                else int(getattr(shop, "monthly_image_generations_used", 0) or 0)
+            ),
+            "limit": int(ent.get("image_generation_limit", 0)),
+        },
+    }
+
     return {
-        # DB is source-of-truth: use effective_plan_name for UI display/gating.
-        "plan_name": (auth_context.get("effective_plan_name") or plan.name),
-        # Product rewrite usage (new system)
+        "plan_name": effective_plan,
         "monthly_rewrites_used": rewrites_used,
         "rewrite_limit": rewrite_limit,
         "next_reset_date": next_reset.isoformat() if next_reset else None,
-        # Lifetime plan fields (Free)
         "billing_cycle_type": billing_cycle_type,
         "lifetime_rewrites_remaining": lifetime_remaining if billing_cycle_type == "lifetime" else None,
-        # Backward compatibility (old keys mapped to new system)
         "current_usage": rewrites_used,
         "monthly_token_quota": rewrite_limit,
-        # Feature gating fields
         "product_limit": plan.product_limit,
         "max_locales": plan.max_locales,
         "features_json": plan.features_json,
         "is_pro": plan.name in ("Standard", "Pro"),
         "welcome_back": welcome_back,
-        # Grace period / reinstall metadata
         "access_expires_at": (auth_context.get("access_expires_at").isoformat() if auth_context.get("access_expires_at") else None),
         "grace_active": bool(auth_context.get("grace_active")),
         "grace_mode": bool(auth_context.get("grace_mode")),
         "last_plan_name": auth_context.get("last_plan_name"),
         "last_uninstalled_at": (auth_context.get("last_uninstalled_at").isoformat() if auth_context.get("last_uninstalled_at") else None),
-        # UI feature flags
         "promo_pricing_enabled": bool(PROMO_PRICING_ENABLED),
-        # Onboarding wizard status
         "is_onboarding_finished": bool(getattr(shop, "is_onboarding_finished", False)),
         "onboarding_step": int(getattr(shop, "onboarding_step", 0) or 0),
-        # DB plan source-of-truth + downgrade metadata
         "effective_plan_name": auth_context.get("effective_plan_name") or (getattr(shop, "current_plan_name", None) or plan.name),
         "current_plan_name": getattr(shop, "current_plan_name", None),
         "pending_plan_name": getattr(shop, "pending_plan_name", None),
         "pending_plan_effective_at": (getattr(shop, "pending_plan_effective_at", None).isoformat() if getattr(shop, "pending_plan_effective_at", None) else None),
         "last_plan_change_type": getattr(shop, "last_plan_change_type", None),
         "last_plan_change_at": (getattr(shop, "last_plan_change_at", None).isoformat() if getattr(shop, "last_plan_change_at", None) else None),
+        # --- New plan-gating fields ---
+        "entitlements": ent,
+        "feature_usage": feature_usage,
     }
 
 
@@ -988,10 +1022,7 @@ async def publish_content(
     rid = _rid(request)
     body = await request.json()
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
-    plan_name = auth_context.get("effective_plan_name") or "Free"
-
-    if plan_name != "Pro":
-        raise HTTPException(403, "Autonomous publishing requires Pro tier")
+    validate_feature_access(auth_context, "autonomous")
 
     template_id = body.get("template_id")  # e.g. "marketing/email-launch"
     action = body.get("action")            # e.g. "price_scout"
@@ -1082,9 +1113,7 @@ async def save_meta_credentials(
     """
     body = await request.json()
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
-    plan_name = auth_context.get("effective_plan_name") or "Free"
-    if plan_name != "Pro":
-        raise HTTPException(403, "Meta integration requires Pro tier")
+    validate_feature_access(auth_context, "meta_integration")
 
     meta_access_token = body.get("meta_access_token")
     meta_page_id = body.get("meta_page_id")

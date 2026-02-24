@@ -1,7 +1,7 @@
 from __future__ import annotations
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
-from .models import User, Plan, Shop
+from .models import User, Plan, Shop, FeatureUsage, UsageEventLog
 
 # NOTE: get_user_quota_context was used for API Key validation.
 # Since we are removing API Keys, we might need a different way to validate external requests if we still support them.
@@ -56,6 +56,8 @@ def sync_usage_limits(db: Session, shop: Shop, *, billing_cycle_type: str | None
         shop.monthly_rewrites_used = 0
         shop.monthly_cost_accumulated = 0
         shop.fair_use_last_notified_at = None
+        shop.monthly_missions_used = 0
+        shop.monthly_image_generations_used = 0
         while isinstance(shop.next_reset_date, datetime) and now >= shop.next_reset_date:
             shop.next_reset_date = shop.next_reset_date + timedelta(days=30)
 
@@ -388,3 +390,106 @@ def get_shop_access_token(db: Session, shop_domain: str) -> str | None:
     from .models import Shop
     shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
     return shop.access_token if shop else None
+
+
+# ---------------------------------------------------------------------------
+# Feature-level usage tracking
+# ---------------------------------------------------------------------------
+
+def _cycle_start_for_shop(shop: Shop) -> datetime:
+    """Return the start of the current billing cycle for a shop."""
+    nr = getattr(shop, "next_reset_date", None)
+    if isinstance(nr, datetime):
+        if nr.tzinfo is None:
+            nr = nr.replace(tzinfo=timezone.utc)
+        return nr - timedelta(days=30)
+    return datetime.now(timezone.utc)
+
+
+def record_feature_usage(db: Session, shop_domain: str, feature: str, amount: int = 1) -> int:
+    """Increment the aggregate FeatureUsage counter for *feature* in the current billing cycle."""
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        return 0
+    cycle_start = _cycle_start_for_shop(shop).date()
+    rec = (
+        db.query(FeatureUsage)
+        .filter(
+            FeatureUsage.shop_domain == shop_domain,
+            FeatureUsage.feature == feature,
+            FeatureUsage.billing_cycle_start == cycle_start,
+        )
+        .first()
+    )
+    if not rec:
+        rec = FeatureUsage(shop_domain=shop_domain, feature=feature, billing_cycle_start=cycle_start, usage_count=0)
+        db.add(rec)
+    rec.usage_count = int(rec.usage_count or 0) + int(amount)
+    db.commit()
+    db.refresh(rec)
+    return int(rec.usage_count)
+
+
+def get_feature_usage(db: Session, shop_domain: str) -> dict[str, int]:
+    """Return ``{feature: count}`` for all features used in the current billing cycle."""
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        return {}
+    cycle_start = _cycle_start_for_shop(shop).date()
+    rows = (
+        db.query(FeatureUsage)
+        .filter(FeatureUsage.shop_domain == shop_domain, FeatureUsage.billing_cycle_start == cycle_start)
+        .all()
+    )
+    return {r.feature: int(r.usage_count or 0) for r in rows}
+
+
+def log_usage_event(
+    db: Session,
+    *,
+    shop_domain: str,
+    plan_name: str,
+    event_type: str,
+    feature: str,
+    product_count: int = 0,
+    image_count: int = 0,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    reasoning_tokens: int = 0,
+    total_tokens: int = 0,
+    estimated_cost_usd: float = 0.0,
+    product_id: str | None = None,
+    mission_id: str | None = None,
+    agent_name: str | None = None,
+    model_used: str | None = None,
+    action: str | None = None,
+    metadata_json: str | None = None,
+) -> None:
+    """Append a row to the usage_event_log audit trail (best-effort, never raises)."""
+    try:
+        row = UsageEventLog(
+            shop_domain=shop_domain,
+            plan_name=plan_name,
+            event_type=event_type,
+            feature=feature,
+            product_count=product_count,
+            image_count=image_count,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            reasoning_tokens=reasoning_tokens,
+            total_tokens=total_tokens,
+            estimated_cost_usd=estimated_cost_usd,
+            product_id=product_id,
+            mission_id=mission_id,
+            agent_name=agent_name,
+            model_used=model_used,
+            action=action,
+            metadata_json=metadata_json,
+        )
+        db.add(row)
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass

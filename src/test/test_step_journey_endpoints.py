@@ -756,18 +756,20 @@ def test_skip_step_rejects_completed(client, sample_mission):
 def test_create_mission_returns_step_info(client):
     """Test POST /api/missions returns step-by-step journey info."""
     from src.shared.db.database import get_db
-    from src.ecommerce.api.validation import validate_shop_and_quota
     
     mock_session = MagicMock()
     
-    # Mock validation
     mock_plan = MagicMock()
     mock_plan.name = "Standard"
+    mock_shop = MagicMock()
+    mock_shop.monthly_missions_used = 0
+    mock_shop.lifetime_missions_remaining = 0
+    mock_context = {"plan": mock_plan, "shop": mock_shop}
     
     app.dependency_overrides[get_db] = lambda: mock_session
-    app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
     
-    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value=mock_context), \
+         patch("src.ecommerce.api.shopify.missions.validate_mission_access"):
         response = client.post(
             "/api/missions",
             json={
@@ -780,7 +782,6 @@ def test_create_mission_returns_step_info(client):
     assert response.status_code == 200
     data = response.json()
     
-    # Step journey info should be present
     assert "workflow_agents" in data
     assert "total_agents" in data
     assert "current_agent_index" in data
@@ -1301,22 +1302,24 @@ def test_approve_step_not_found(client):
 def test_create_mission_with_workflow_config(client):
     """Test POST /api/missions accepts workflow_config."""
     from src.shared.db.database import get_db
-    from src.ecommerce.api.validation import validate_shop_and_quota
     
     mock_session = MagicMock()
     
     mock_plan = MagicMock()
     mock_plan.name = "Standard"
+    mock_shop = MagicMock()
+    mock_shop.monthly_missions_used = 0
+    mock_context = {"plan": mock_plan, "shop": mock_shop}
     
     app.dependency_overrides[get_db] = lambda: mock_session
-    app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
     
     workflow_config = [
         {"agent_name": "PriceScoutAgent", "has_gate": True},
         {"agent_name": "RewriterAgent", "has_gate": False},
     ]
     
-    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value=mock_context), \
+         patch("src.ecommerce.api.shopify.missions.validate_mission_access"):
         response = client.post(
             "/api/missions",
             json={
@@ -1334,7 +1337,6 @@ def test_create_mission_with_workflow_config(client):
     assert "total_agents" in data
     assert data["total_agents"] == 2
     assert data["current_agent_index"] == 0
-    # workflow_config should override default agent workflow
     assert "PriceScoutAgent" in data["workflow_agents"]
     assert "RewriterAgent" in data["workflow_agents"]
     
@@ -1344,15 +1346,16 @@ def test_create_mission_with_workflow_config(client):
 def test_create_mission_workflow_config_stored_in_state(client):
     """Test that workflow_config is stored in mission current_state."""
     from src.shared.db.database import get_db
-    from src.ecommerce.api.validation import validate_shop_and_quota
     
     mock_session = MagicMock()
     
     mock_plan = MagicMock()
     mock_plan.name = "Pro"
+    mock_shop = MagicMock()
+    mock_shop.monthly_missions_used = 0
+    mock_context = {"plan": mock_plan, "shop": mock_shop}
     
     app.dependency_overrides[get_db] = lambda: mock_session
-    app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
     
     workflow_config = [
         {"agent_name": "SEOAgent", "has_gate": True},
@@ -1360,7 +1363,8 @@ def test_create_mission_workflow_config_stored_in_state(client):
         {"agent_name": "PriceScoutAgent", "has_gate": True},
     ]
     
-    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value=mock_context), \
+         patch("src.ecommerce.api.shopify.missions.validate_mission_access"):
         response = client.post(
             "/api/missions",
             json={
@@ -1374,10 +1378,8 @@ def test_create_mission_workflow_config_stored_in_state(client):
     assert response.status_code == 200
     data = response.json()
     
-    # Verify workflow_config is returned in response
     if "workflow_config" in data:
         assert len(data["workflow_config"]) == 3
-        # Verify gate settings are preserved
         agent_names = [c["agent_name"] for c in data["workflow_config"]]
         assert "SEOAgent" in agent_names
         assert "MarketingAgent" in agent_names
@@ -1389,17 +1391,19 @@ def test_create_mission_workflow_config_stored_in_state(client):
 def test_create_mission_workflow_config_overrides_requested_agents(client):
     """Test that workflow_config takes priority over requested_agents."""
     from src.shared.db.database import get_db
-    from src.ecommerce.api.validation import validate_shop_and_quota
     
     mock_session = MagicMock()
     
     mock_plan = MagicMock()
     mock_plan.name = "Standard"
+    mock_shop = MagicMock()
+    mock_shop.monthly_missions_used = 0
+    mock_context = {"plan": mock_plan, "shop": mock_shop}
     
     app.dependency_overrides[get_db] = lambda: mock_session
-    app.dependency_overrides[validate_shop_and_quota] = lambda db, shop, enforce_limit: {"plan": mock_plan}
     
-    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value={"plan": mock_plan}):
+    with patch("src.ecommerce.api.shopify.missions.validate_shop_and_quota", return_value=mock_context), \
+         patch("src.ecommerce.api.shopify.missions.validate_mission_access"):
         response = client.post(
             "/api/missions",
             json={
@@ -1416,7 +1420,6 @@ def test_create_mission_workflow_config_overrides_requested_agents(client):
     assert response.status_code == 200
     data = response.json()
     
-    # workflow_config should override requested_agents
     assert data["total_agents"] == 1
     assert "PriceScoutAgent" in data["workflow_agents"]
     

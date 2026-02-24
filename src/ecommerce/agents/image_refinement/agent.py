@@ -173,6 +173,36 @@ class ImageRefinementAgent(BaseAgent):
             visual_assets["refined_url"] = refined_r2_url
             state.visual_assets = visual_assets
 
+            # Track image credit usage
+            try:
+                from src.ecommerce.db.transactions import record_feature_usage, log_usage_event
+                from src.ecommerce.plans.entitlements import get_entitlements
+                _db = getattr(state, "db", None)
+                _shop = state.shop_id
+                if _db and _shop:
+                    _ent = get_entitlements(getattr(state, "plan_tier", "Free"))
+                    if _ent.get("image_limit_type") == "lifetime":
+                        from src.ecommerce.db.models import Shop as _ShopModel
+                        _s = _db.query(_ShopModel).filter(_ShopModel.domain == _shop).first()
+                        if _s:
+                            _s.lifetime_image_credits_remaining = max(0, int(getattr(_s, "lifetime_image_credits_remaining", 0) or 0) - 1)
+                            _db.add(_s); _db.commit(); _db.refresh(_s)
+                    else:
+                        from src.ecommerce.db.models import Shop as _ShopModel
+                        _s = _db.query(_ShopModel).filter(_ShopModel.domain == _shop).first()
+                        if _s:
+                            _s.monthly_image_generations_used = int(getattr(_s, "monthly_image_generations_used", 0) or 0) + 1
+                            _db.add(_s); _db.commit(); _db.refresh(_s)
+                    record_feature_usage(_db, _shop, "image_generation", 1)
+                    log_usage_event(
+                        _db, shop_domain=_shop, plan_name=getattr(state, "plan_tier", "Free"),
+                        event_type="image_refinement", feature="image_generation",
+                        image_count=1, product_id=getattr(state, "product_id", None),
+                        mission_id=getattr(state, "mission_id", None), agent_name="ImageRefinementAgent",
+                    )
+            except Exception:
+                pass
+
             _progress("complete", 100, "Image refinement complete")
 
             actions.append(AgentAction(

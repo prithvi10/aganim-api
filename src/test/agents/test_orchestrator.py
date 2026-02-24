@@ -70,15 +70,14 @@ def mission_state():
 # =============================================================================
 
 def test_build_workflow_free_tier(mock_services):
-    """Test that Free tier gets full agent workflow (4 agents, no Compliance)."""
+    """Test that Free tier gets full Pro pipeline (6 agents incl. image agents)."""
     mission = MissionControl(
         plan_tier="Free",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
     )
     
-    # Free tier should have 4 agents (Copywriter, SEO, Marketing, PriceScout)
-    assert len(mission.workflow) == 4
+    assert len(mission.workflow) == 6
     assert CopywriterAgent in mission.workflow
     assert SEOAgent in mission.workflow
     assert MarketingAgent in mission.workflow
@@ -86,29 +85,33 @@ def test_build_workflow_free_tier(mock_services):
 
 
 def test_build_workflow_basic_tier(mock_services):
-    """Test that Basic tier gets full agent workflow."""
+    """Test that Basic tier gets text-only workflow (Rewriter + Marketing)."""
     mission = MissionControl(
         plan_tier="Basic",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
     )
     
-    # Basic tier should have 4 agents
-    assert len(mission.workflow) == 4
+    assert len(mission.workflow) == 2
     assert CopywriterAgent in mission.workflow
-    assert SEOAgent in mission.workflow
+    assert MarketingAgent in mission.workflow
+    assert SEOAgent not in mission.workflow
+    assert PriceScoutAgent not in mission.workflow
 
 
 def test_build_workflow_standard_tier(mock_services):
-    """Test that Standard tier gets full agent workflow."""
+    """Test that Standard tier gets 4 text modules (no image agents)."""
     mission = MissionControl(
         plan_tier="Standard",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
     )
     
-    # Standard tier should have 4 agents
     assert len(mission.workflow) == 4
+    assert CopywriterAgent in mission.workflow
+    assert SEOAgent in mission.workflow
+    assert MarketingAgent in mission.workflow
+    assert PriceScoutAgent in mission.workflow
 
 
 def test_build_workflow_pro_tier(mock_services):
@@ -485,7 +488,7 @@ async def test_execute_streams_status_updates(mock_services, mission_state):
          patch.object(PriceScoutAgent, 'run', mock_pass_through):
         
         mission = MissionControl(
-            plan_tier="Basic",
+            plan_tier="Standard",
             shop_id="test-shop.myshopify.com",
             services=mock_services,
         )
