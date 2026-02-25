@@ -148,3 +148,4 @@ node_modules/
 shopify-translator-api.code-workspace
 test.db
 tmp/
+scripts/rakuten_data/
