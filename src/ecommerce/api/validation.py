@@ -1,9 +1,20 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from src.ecommerce.db.transactions import get_shop_quota_context
+from src.ecommerce.plans.entitlements import PLAN_ENTITLEMENTS, get_entitlements, get_required_tier
 from src.shared.logging.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Maps agent action names to the feature entitlement key they require
+_ACTION_TO_FEATURE: dict[str, str] = {
+    "seo_optimize": "seo",
+    "price_scout": "price_scout",
+    "social_hook_architect": "marketing",
+    "seasonal_campaign_agent": "marketing",
+    "seasonal_campaign_caption": "marketing",
+    "value_discovery": "rewriter",
+}
 
 def validate_api_key_and_quota(db: Session, key_hash: str):
     """
@@ -74,6 +85,101 @@ def validate_shop_and_quota(db: Session, shop_domain: str, *, enforce_limit: boo
                 )
 
     return context
+
+def validate_feature_access(context: dict, feature: str) -> None:
+    """
+    Check that the shop's plan includes *feature*.
+    Raises HTTPException 403 with the required tier name if not entitled.
+    """
+    plan = context.get("plan")
+    plan_name = str(getattr(plan, "name", "") or context.get("effective_plan_name") or "Free")
+    ent = get_entitlements(plan_name)
+
+    if not ent.get(feature, False):
+        required = get_required_tier(feature) or "a higher"
+        raise HTTPException(
+            status_code=403,
+            detail=f"This feature requires the {required} plan. You are on {plan_name}.",
+        )
+
+
+def validate_agent_action_access(context: dict, action: str) -> None:
+    """
+    Gate an ad-hoc agent action based on the plan entitlements.
+    """
+    feature = _ACTION_TO_FEATURE.get(action)
+    if feature:
+        validate_feature_access(context, feature)
+
+
+def validate_image_credits(context: dict) -> None:
+    """
+    Check that the shop has remaining image credits (ad-hoc usage).
+    Raises 403 if no credits left.
+    """
+    plan = context.get("plan")
+    shop = context.get("shop")
+    plan_name = str(getattr(plan, "name", "") or "Free")
+    ent = get_entitlements(plan_name)
+
+    if not ent.get("image_refinement_adhoc", False):
+        required = get_required_tier("image_refinement_adhoc") or "Pro"
+        raise HTTPException(
+            status_code=403,
+            detail=f"Image generation requires the {required} plan.",
+        )
+
+    limit_type = ent.get("image_limit_type", "monthly")
+    limit = int(ent.get("image_generation_limit", 0))
+    if limit == -1:
+        return
+    if limit == 0:
+        raise HTTPException(status_code=403, detail="Your plan has no image credits.")
+
+    if limit_type == "lifetime":
+        remaining = int(getattr(shop, "lifetime_image_credits_remaining", 0) or 0)
+    else:
+        remaining = max(0, limit - int(getattr(shop, "monthly_image_generations_used", 0) or 0))
+
+    if remaining <= 0:
+        raise HTTPException(
+            status_code=403,
+            detail="You've used all your image credits for this period.",
+        )
+
+
+def validate_mission_access(context: dict) -> None:
+    """
+    Check that the shop can create a new mission.
+    Raises 403 if missions are not in the plan or the limit is reached.
+    """
+    plan = context.get("plan")
+    shop = context.get("shop")
+    plan_name = str(getattr(plan, "name", "") or "Free")
+    ent = get_entitlements(plan_name)
+
+    if not ent.get("missions", False):
+        raise HTTPException(status_code=403, detail="Missions are not available on your plan.")
+
+    limit = int(ent.get("mission_limit", 0))
+    if limit == -1:
+        return
+    if limit == 0:
+        raise HTTPException(status_code=403, detail="Missions are not available on your plan.")
+
+    limit_type = ent.get("mission_limit_type", "monthly")
+    if limit_type == "lifetime":
+        remaining = int(getattr(shop, "lifetime_missions_remaining", 0) or 0)
+    else:
+        remaining = max(0, limit - int(getattr(shop, "monthly_missions_used", 0) or 0))
+
+    if remaining <= 0:
+        kind = "lifetime" if limit_type == "lifetime" else "monthly"
+        raise HTTPException(
+            status_code=403,
+            detail=f"You've reached your {kind} mission limit ({limit}). Upgrade for more.",
+        )
+
 
 def validate_rewrite_request(request_body: dict):
     """

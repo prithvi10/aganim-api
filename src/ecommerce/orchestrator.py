@@ -57,8 +57,8 @@ class MissionControl(_GenericMissionControl):
     # Shopify-specific agent map and workflows
     AGENT_MAP = AGENT_MAP
     WORKFLOWS = {
-        "Free": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
-        "Basic": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
+        "Free": [RewriterAgent, ImageRefinementAgent, SEOAgent, PriceScoutAgent, MarketingAgent, VisualMarketingAgent],
+        "Basic": [RewriterAgent, MarketingAgent],
         "Standard": [RewriterAgent, SEOAgent, MarketingAgent, PriceScoutAgent],
         "Pro": [RewriterAgent, ImageRefinementAgent, SEOAgent, PriceScoutAgent, MarketingAgent, VisualMarketingAgent],
     }
