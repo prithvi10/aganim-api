@@ -79,6 +79,11 @@ def _ensure_shop_columns_exist():
             # Strategic intelligence columns (Writing Studio)
             add("strategic_intelligence TEXT", "strategic_intelligence")
             add("strategic_intelligence_updated_at TEXT", "strategic_intelligence_updated_at")
+            # Plan-gating usage counters
+            add("lifetime_missions_remaining INTEGER NOT NULL DEFAULT 3", "lifetime_missions_remaining")
+            add("lifetime_image_credits_remaining INTEGER NOT NULL DEFAULT 5", "lifetime_image_credits_remaining")
+            add("monthly_missions_used INTEGER NOT NULL DEFAULT 0", "monthly_missions_used")
+            add("monthly_image_generations_used INTEGER NOT NULL DEFAULT 0", "monthly_image_generations_used")
             conn.commit()
         return
 
@@ -100,6 +105,11 @@ def _ensure_shop_columns_exist():
         # Strategic intelligence columns (Writing Studio)
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS strategic_intelligence JSONB"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS strategic_intelligence_updated_at TIMESTAMPTZ"))
+        # Plan-gating usage counters
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_missions_remaining INTEGER NOT NULL DEFAULT 3"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_image_credits_remaining INTEGER NOT NULL DEFAULT 5"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_missions_used INTEGER NOT NULL DEFAULT 0"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_image_generations_used INTEGER NOT NULL DEFAULT 0"))
         conn.commit()
 
 def seed_data():
@@ -126,31 +136,31 @@ def seed_data():
             },
             {
                 "name": "Basic",
-                "price": 49.0,
+                "price": 39.0,
                 "product_limit": 50,
                 "max_locales": 1,
                 "billing_cycle_type": "recurring",
-                "features": ["1 Locale", "SEO optimization", "GPT-4o-mini"],
+                "features": ["AI Product Rewriter", "Marketing Copy", "1 Mission/mo (text-only)"],
                 "rate": 60,
                 "stream": False,
             },
             {
                 "name": "Standard",
-                "price": 99.0,
-                "product_limit": 100,
+                "price": 89.0,
+                "product_limit": -1,
                 "max_locales": -1,
                 "billing_cycle_type": "recurring",
-                "features": ["Multi-locale", "Social Hook Architect", "AI Marketing"],
+                "features": ["Unlimited Products", "SEO + Price Scout", "3 Missions/mo"],
                 "rate": 120,
                 "stream": False,
             },
             {
                 "name": "Pro",
                 "price": 199.0,
-                "product_limit": -1,  # unlimited
+                "product_limit": -1,
                 "max_locales": -1,
                 "billing_cycle_type": "recurring",
-                "features": ["Unlimited Bulk Sync", "Priority GPT-5", "Supreme Features"],
+                "features": ["Full Autonomous Pilot", "150 Image Credits/mo", "Unlimited Missions"],
                 "rate": 300,
                 "stream": True,
             },

@@ -21,7 +21,8 @@ from src.ecommerce.api.models import (
     MissionStatusResponse,
 )
 from src.shared.db.database import get_db
-from src.ecommerce.api.validation import validate_shop_and_quota
+from src.ecommerce.api.validation import validate_shop_and_quota, validate_mission_access
+from src.ecommerce.plans.entitlements import get_entitlements
 from src.shared.logging.logger import get_logger
 
 from .shared import resolve_shop_domain, _rid
@@ -116,12 +117,22 @@ async def create_mission(
         logger.info("[Mission] invalid_payload rid=%s errors=%s", rid, e.errors())
         raise HTTPException(status_code=422, detail=e.errors())
     
-    # Validate shop and get plan tier
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
+    validate_mission_access(auth_context)
     plan = auth_context["plan"]
     plan_tier = getattr(plan, "name", "Basic")
-    
-    # Create mission record in database
+    shop_obj = auth_context["shop"]
+
+    # Decrement / increment mission counters
+    ent = get_entitlements(plan_tier)
+    if ent.get("mission_limit_type") == "lifetime":
+        shop_obj.lifetime_missions_remaining = max(0, int(getattr(shop_obj, "lifetime_missions_remaining", 0) or 0) - 1)
+    else:
+        shop_obj.monthly_missions_used = int(getattr(shop_obj, "monthly_missions_used", 0) or 0) + 1
+    db.add(shop_obj)
+    db.commit()
+    db.refresh(shop_obj)
+
     import uuid
     from datetime import datetime, timezone
     from src.ecommerce.db.models import Mission

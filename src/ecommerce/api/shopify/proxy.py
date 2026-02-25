@@ -10,8 +10,13 @@ from pydantic import ValidationError
 
 from src.ecommerce.api.models import RewriteRequest, BulkRewriteRequest, AgentRequest
 from src.shared.db.database import get_db
-from src.ecommerce.db.transactions import record_successful_rewrite
-from src.ecommerce.api.validation import validate_rewrite_request, validate_shop_and_quota
+from src.ecommerce.db.transactions import record_successful_rewrite, record_feature_usage, log_usage_event
+from src.ecommerce.api.validation import (
+    validate_rewrite_request,
+    validate_shop_and_quota,
+    validate_agent_action_access,
+    validate_feature_access,
+)
 from src.shared.security.security import verify_shopify_proxy_request
 from src.ecommerce.core.generation import process_generation_request, process_bulk_generation_request
 from src.ecommerce.core.shop import fetch_shop_locales
@@ -80,10 +85,17 @@ async def proxy_generate_copy(
         user=auth_context["user"],
         plan=auth_context["plan"],
     )
-    # Increment rewrite usage after successful generation
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
             record_successful_rewrite(db, shop_domain, amount=1)
+            record_feature_usage(db, shop_domain, "rewriter", 1)
+            plan_name = getattr(auth_context.get("plan"), "name", "Free")
+            log_usage_event(
+                db, shop_domain=shop_domain, plan_name=plan_name,
+                event_type="product_rewrite", feature="rewriter",
+                product_count=1, product_id=getattr(rewrite_request, "product_id", None),
+                action="generate-copy",
+            )
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
     try:
@@ -175,6 +187,14 @@ async def proxy_generate_bulk(
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
             record_successful_rewrite(db, shop_domain, amount=1)
+            record_feature_usage(db, shop_domain, "rewriter", 1)
+            plan_name = getattr(auth_context.get("plan"), "name", "Free")
+            log_usage_event(
+                db, shop_domain=shop_domain, plan_name=plan_name,
+                event_type="bulk_rewrite", feature="rewriter",
+                product_count=1, product_id=getattr(bulk_request, "product_id", None),
+                action="generate-bulk",
+            )
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop_domain}: {e}")
     return resp
@@ -231,6 +251,14 @@ async def admin_ext_generate_bulk(
     if isinstance(resp, dict) and resp.get("status") == "success":
         try:
             record_successful_rewrite(db, shop, amount=1)
+            record_feature_usage(db, shop, "rewriter", 1)
+            plan_name = getattr(auth_context.get("plan"), "name", "Free")
+            log_usage_event(
+                db, shop_domain=shop, plan_name=plan_name,
+                event_type="bulk_rewrite", feature="rewriter",
+                product_count=1, product_id=getattr(bulk_request, "product_id", None),
+                action="admin-bulk-generate",
+            )
         except Exception as e:
             logger.warning(f"Rewrite increment skipped for shop={shop}: {e}")
     try:
@@ -278,12 +306,11 @@ async def admin_ext_agent(
         logger.info("[Agent] invalid_payload rid=%s errors=%s", rid, e.errors())
         raise HTTPException(status_code=422, detail=e.errors())
 
-    # Agents are also gated by monthly rewrite limits.
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
+    validate_agent_action_access(auth_context, agent_req.action)
 
     logger.info("[Agent] start rid=%s shop=%s action=%s", rid, shop, agent_req.action)
 
-    # Propagate request id into action context for end-to-end traceability.
     try:
         if agent_req.context is None:
             agent_req.context = {}
@@ -299,6 +326,19 @@ async def admin_ext_agent(
         db=db,
         shop_domain=shop,
     )
+
+    try:
+        from src.ecommerce.api.validation import _ACTION_TO_FEATURE
+        _feat = _ACTION_TO_FEATURE.get(agent_req.action, "rewriter")
+        record_feature_usage(db, shop, _feat, 1)
+        plan_name = getattr(auth_context.get("plan"), "name", "Free")
+        log_usage_event(
+            db, shop_domain=shop, plan_name=plan_name,
+            event_type=agent_req.action, feature=_feat,
+            product_count=1, action=agent_req.action,
+        )
+    except Exception:
+        pass
 
     logger.info("[Agent] done rid=%s shop=%s action=%s", rid, shop, agent_req.action)
     return {"status": "success", "data": {"text": result.get("text", ""), "metadata": result.get("metadata", {})}}
@@ -338,12 +378,11 @@ async def api_agent(
         logger.info("[Agent] invalid_payload rid=%s errors=%s", rid, e.errors())
         raise HTTPException(status_code=422, detail=e.errors())
 
-    # Agents are also gated by monthly rewrite limits.
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
+    validate_agent_action_access(auth_context, agent_req.action)
 
     logger.info("[Agent] start rid=%s shop=%s action=%s", rid, shop, agent_req.action)
 
-    # Propagate request id into action context for end-to-end traceability.
     try:
         if agent_req.context is None:
             agent_req.context = {}
@@ -359,6 +398,19 @@ async def api_agent(
         db=db,
         shop_domain=shop,
     )
+
+    try:
+        from src.ecommerce.api.validation import _ACTION_TO_FEATURE
+        _feat = _ACTION_TO_FEATURE.get(agent_req.action, "rewriter")
+        record_feature_usage(db, shop, _feat, 1)
+        plan_name = getattr(auth_context.get("plan"), "name", "Free")
+        log_usage_event(
+            db, shop_domain=shop, plan_name=plan_name,
+            event_type=agent_req.action, feature=_feat,
+            product_count=1, action=agent_req.action,
+        )
+    except Exception:
+        pass
 
     logger.info("[Agent] done rid=%s shop=%s action=%s", rid, shop, agent_req.action)
     return {"status": "success", "data": {"text": result.get("text", ""), "metadata": result.get("metadata", {})}}

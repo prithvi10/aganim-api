@@ -2,8 +2,11 @@
 Integration tests for tier-based agent coverage.
 
 Confirms that all agents run for each subscription tier.
-Note: ComplianceAgent is currently disabled. Workflow has 4 agents:
-Copywriter, SEO, Marketing, PriceScout.
+Tier→Agent mapping (plan gating overhaul):
+  Free: 6 (full pipeline incl. image agents — taste of Pro)
+  Basic: 2 (Rewriter + Marketing only)
+  Standard: 4 (Rewriter, SEO, Marketing, PriceScout — no image agents)
+  Pro: 6 (all agents)
 """
 
 import pytest
@@ -104,7 +107,7 @@ def create_mission_state(product_data, plan_tier):
 
 @pytest.mark.asyncio
 async def test_free_tier_runs_all_agents(mock_services, product_data):
-    """Test that FREE tier runs all 4 agents."""
+    """Test that FREE tier runs all 6 agents (full Pro pipeline, taste of Pro)."""
     state = create_mission_state(product_data, "Free")
     
     mission = MissionControl(
@@ -113,14 +116,12 @@ async def test_free_tier_runs_all_agents(mock_services, product_data):
         services=mock_services,
     )
     
-    # Collect logs from all states
     all_logs = []
     async for s in mission.execute(state):
         all_logs.extend(s.logs)
     
     logs_text = "\n".join(all_logs)
     
-    # Verify all agents ran (ComplianceAgent is disabled)
     assert "Running Rewriter" in logs_text, "Rewriter should run for Free tier"
     assert "Running SEO" in logs_text, "SEO should run for Free tier"
     assert "Running Marketing" in logs_text, "Marketing should run for Free tier"
@@ -129,7 +130,7 @@ async def test_free_tier_runs_all_agents(mock_services, product_data):
 
 @pytest.mark.asyncio
 async def test_free_tier_workflow_contains_all_agents(mock_services):
-    """Test that FREE tier workflow configuration includes all agents."""
+    """Test that FREE tier workflow includes all 6 agents (incl. image agents)."""
     mission = MissionControl(
         plan_tier="Free",
         shop_id="test-shop.myshopify.com",
@@ -140,7 +141,7 @@ async def test_free_tier_workflow_contains_all_agents(mock_services):
     assert SEOAgent in mission.workflow
     assert MarketingAgent in mission.workflow
     assert PriceScoutAgent in mission.workflow
-    assert len(mission.workflow) == 4
+    assert len(mission.workflow) == 6
 
 
 # =============================================================================
@@ -149,7 +150,7 @@ async def test_free_tier_workflow_contains_all_agents(mock_services):
 
 @pytest.mark.asyncio
 async def test_basic_tier_runs_all_agents(mock_services, product_data):
-    """Test that BASIC tier runs all 4 agents."""
+    """Test that BASIC tier runs 2 agents (Rewriter + Marketing)."""
     state = create_mission_state(product_data, "Basic")
     
     mission = MissionControl(
@@ -165,21 +166,21 @@ async def test_basic_tier_runs_all_agents(mock_services, product_data):
     logs_text = "\n".join(all_logs)
     
     assert "Running Rewriter" in logs_text
-    assert "Running SEO" in logs_text
     assert "Running Marketing" in logs_text
-    assert "Running PriceScout" in logs_text
 
 
 @pytest.mark.asyncio
 async def test_basic_tier_workflow_contains_all_agents(mock_services):
-    """Test that BASIC tier workflow configuration includes all agents."""
+    """Test that BASIC tier workflow has Rewriter + Marketing (2 agents)."""
     mission = MissionControl(
         plan_tier="Basic",
         shop_id="test-shop.myshopify.com",
         services=mock_services,
     )
     
-    assert len(mission.workflow) == 4
+    assert len(mission.workflow) == 2
+    assert CopywriterAgent in mission.workflow
+    assert MarketingAgent in mission.workflow
 
 
 # =============================================================================
@@ -267,7 +268,7 @@ async def test_pro_tier_workflow_contains_all_agents(mock_services):
 @pytest.mark.asyncio
 async def test_all_tiers_have_expected_agent_count(mock_services):
     """Test that all tiers have the expected number of agents."""
-    expected = {"Free": 4, "Basic": 4, "Standard": 4, "Pro": 6}
+    expected = {"Free": 6, "Basic": 2, "Standard": 4, "Pro": 6}
     
     for tier, count in expected.items():
         mission = MissionControl(
