@@ -3,11 +3,19 @@ Prompt templates for the VisualAgent pipeline.
 
 These prompts are injected with Brand Soul context and product metadata
 to drive the fal.ai image generation models.
+
+Includes:
+- Legacy ad/inpaint/hero templates (used by existing pipelines)
+- Art-Directed style templates (Informative, Minimalist, Attractive, Seasonal)
+  driven by VisualBrief from the Art Director LLM service
 """
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.ecommerce.services.art_director import VisualBrief
 
 # ---------------------------------------------------------------------------
 # Ad Style Definitions (used by Marketing Studio)
@@ -78,8 +86,10 @@ HERO_BANNER_PROMPT_TEMPLATE = """\
 Expand product photo into wide 16:9 hero banner. Product centered and prominent.
 {brand_style}\
 Extend background seamlessly with consistent lighting and color palette.
+Photorealistic, shallow depth of field. Blurred background texture, NOT a detailed scene.
 No text, words, letters, logos, or writing of any kind. Purely visual.
 Professional e-commerce photography. Ultra high quality.\
+NOT illustrated, cartoon, or digitally painted.\
 {extra_context}
 """
 
@@ -383,31 +393,37 @@ def build_nano_banana_prompt(
 # ---------------------------------------------------------------------------
 
 COLLECTION_HERO_TEMPLATE = """\
-Wide hero banner for an e-commerce product collection called "{collection_name}".
+Professional e-commerce photography hero banner for a collection called "{collection_name}".
+Photorealistic, high-end, cinematic. Shallow depth of field.
+{products_line}Products artfully arranged on a premium surface that complements the collection theme.
 {description_line}\
-{products_line}\
 {brand_style}\
-Beautiful natural lighting. Professional product photography composition.
-High-end e-commerce visual, 8k resolution.
-No text, words, letters, logos, or watermarks. Purely visual.
+Background: subtly blurred photorealistic backdrop -- a texture or gentle environment, NOT a sharp detailed scene.
+Lighting: soft, diffused studio lighting creating gentle shadows.
+8k resolution. No text, words, letters, logos, or watermarks. Purely visual.
+NOT illustrated, cartoon, or digitally painted.
 """
 
 BLOG_HERO_TEMPLATE = """\
-Wide hero banner for a blog article about "{subject}" in the {category} category.
+Photorealistic editorial hero banner for a blog article about "{subject}" in the {category} category.
+High-end commercial photography. Shallow depth of field with soft bokeh.
 {context_line}\
 {brand_style}\
-Beautiful natural lighting. Editorial photography style.
-High-end visual, 8k resolution.
-No text, words, letters, logos, or watermarks. Purely visual.
+Background: subtly blurred photographic backdrop with muted tones -- NOT an illustrated scene.
+Lighting: soft diffused natural light with gentle shadows.
+8k resolution. No text, words, letters, logos, or watermarks. Purely visual.
+NOT illustrated, cartoon, or digitally painted.
 """
 
 HERO_SECTION_TEMPLATE = """\
-Wide hero banner with a "{subject}" theme.
+Photorealistic hero banner with a "{subject}" theme.
+High-end commercial photography. Shallow depth of field.
 {overlay_line}\
 {brand_style}\
-Beautiful natural lighting. Clean, modern composition suitable for a landing page hero section.
-8k resolution.
-No text, words, letters, logos, or watermarks. Purely visual.
+Background: soft, out-of-focus photographic backdrop that frames the subject -- NOT a busy landscape.
+Lighting: beautiful natural light, organic and high-quality.
+8k resolution. No text, words, letters, logos, or watermarks. Purely visual.
+NOT illustrated, cartoon, or digitally painted.
 """
 
 
@@ -480,3 +496,125 @@ def build_hero_section_prompt(
         overlay_line=overlay_line,
         brand_style=brand_style,
     ).strip()
+
+
+# ---------------------------------------------------------------------------
+# Art-Directed Style Templates (driven by VisualBrief from Art Director LLM)
+# ---------------------------------------------------------------------------
+
+INFORMATIVE_STYLE_TEMPLATE = """\
+Professional e-commerce hero banner. Photorealistic, cinematic, shallow depth of field.
+Product: {product_name} placed on {surface_material}.
+Background: Subtly blurred {environment}. NOT a sharp detailed scene.
+Lighting: {lighting_scheme}.
+Color palette: {color_palette}.
+Render the text "{product_name}" in small, elegant typography that matches the color palette.
+{logo_line}\
+Spell every word exactly as provided. Do NOT add extra text, hashtags, or captions.
+8k resolution. Photorealistic only -- NOT illustrated, cartoon, or digitally painted.
+"""
+
+MINIMALIST_STYLE_TEMPLATE = """\
+Clean product photography on a minimal {surface_material} surface.
+Single product isolated with ample negative space.
+Lighting: {lighting_scheme}. Soft, even illumination.
+Background: Solid or subtly gradient, matching {color_palette}.
+No props, no clutter, no text, no logos. Pure product focus.
+8k resolution. Photorealistic studio photography.
+NOT illustrated, cartoon, or digitally painted.
+"""
+
+ATTRACTIVE_STYLE_TEMPLATE = """\
+Professional e-commerce photography. Photorealistic, high-end, cinematic. Shallow depth of field.
+Product placed on {surface_material}, accompanied by {suggested_props}.
+Background: Subtly blurred {environment}. A texture or gentle atmosphere, NOT a busy landscape.
+Lighting: {lighting_scheme}.
+Color palette: {color_palette}.
+No text, words, letters, logos, or watermarks. Purely visual.
+8k resolution. NOT illustrated, cartoon, or digitally painted.
+"""
+
+SEASONAL_STYLE_TEMPLATE = """\
+Professional e-commerce photography for {season} season. Photorealistic, cinematic, warm.
+Product placed on {surface_material}, surrounded by seasonal elements ({season_props}).
+Background: Subtly blurred {environment} with {season} atmosphere.
+Lighting: {lighting_scheme}.
+Color palette: {color_palette}.
+No text, words, letters, logos, or watermarks. Purely visual.
+8k resolution. NOT illustrated, cartoon, or digitally painted.
+"""
+
+_STYLE_TEMPLATES = {
+    "informative": INFORMATIVE_STYLE_TEMPLATE,
+    "minimalist": MINIMALIST_STYLE_TEMPLATE,
+    "attractive": ATTRACTIVE_STYLE_TEMPLATE,
+    "seasonal": SEASONAL_STYLE_TEMPLATE,
+}
+
+
+def build_styled_prompt(
+    style: str,
+    brief: "VisualBrief",
+    product_name: str = "",
+    brand_name: str = "",
+    season: str = "",
+    season_props: str = "",
+) -> str:
+    """Build an image-generation prompt from a VisualBrief and style.
+
+    Parameters
+    ----------
+    style : str
+        One of "informative", "minimalist", "attractive", "seasonal".
+    brief : VisualBrief
+        Structured art-direction output from the Art Director LLM.
+    product_name : str
+        Display name of the product (used in Informative template text).
+    brand_name : str
+        Shop/brand name (used for logo rendering in Informative style).
+    season : str
+        Current season name (for Seasonal style).
+    season_props : str
+        Seasonal prop descriptions (for Seasonal style).
+    """
+    template = _STYLE_TEMPLATES.get(style, ATTRACTIVE_STYLE_TEMPLATE)
+    palette_str = ", ".join(brief.color_palette[:3])
+
+    logo_line = ""
+    if style == "informative" and brand_name:
+        logo_line = (
+            f'Include the brand logo "{brand_name}" subtly in the corner, '
+            f"matching the scene colors.\n"
+        )
+
+    try:
+        return template.format(
+            product_name=product_name,
+            surface_material=brief.surface_material,
+            environment=brief.environment,
+            lighting_scheme=brief.lighting_scheme,
+            color_palette=palette_str,
+            suggested_props=brief.suggested_props,
+            logo_line=logo_line,
+            season=season or "spring",
+            season_props=season_props or brief.suggested_props,
+        ).strip()
+    except KeyError:
+        return template.format_map(_SafeFormatDict(
+            product_name=product_name,
+            surface_material=brief.surface_material,
+            environment=brief.environment,
+            lighting_scheme=brief.lighting_scheme,
+            color_palette=palette_str,
+            suggested_props=brief.suggested_props,
+            logo_line=logo_line,
+            season=season or "spring",
+            season_props=season_props or brief.suggested_props,
+        )).strip()
+
+
+class _SafeFormatDict(dict):
+    """Dict subclass that returns the key name for missing format keys."""
+
+    def __missing__(self, key: str) -> str:
+        return f"{{{key}}}"

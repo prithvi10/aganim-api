@@ -1,12 +1,23 @@
 """
-ContentHeroAgent -- Hero image generation for blog and collection content.
+ContentHeroAgent -- Art-directed hero image generation.
 
-Lightweight agent that runs after a RewriterAgent step (blog/collection/hero)
-in the mission pipeline. Reads the preceding agent output to extract theme
-context, then generates a 16:9 hero banner via HeroImageGenerator
-(Nano Banana text-to-image).
+Two-step pipeline:
+  1. LLM Art Director (gpt-4o-mini) analyzes product metadata and brand soul
+     to produce a structured VisualBrief (surface, lighting, environment, palette).
+  2. Style-specific Nano Banana prompt consumes the VisualBrief to generate a
+     photorealistic hero banner.
 
-LLM Calls: 0 (all generation via fal.ai image models)
+Supports 4 image styles:
+  - Informative: product name + logo baked into the scene
+  - Minimalist: isolated product on clean surface
+  - Attractive: product with contextual props and themed background
+  - Seasonal: product with seasonal elements matching current season
+
+Supports two generation modes:
+  - Text-to-image (T2I): no product image needed
+  - Image-to-image (img2img): blends a product reference image into the scene
+
+LLM Calls: 1 (Art Director visual brief via gpt-4o-mini)
 """
 
 from __future__ import annotations
@@ -32,16 +43,20 @@ HERO_ELIGIBLE_TEMPLATES = {
 
 class ContentHeroAgent(BaseAgent):
     """
-    Agent for generating hero banners after blog/collection content generation.
+    Agent for generating art-directed hero banners.
 
     Consumes:
         - Previous agent output from ``state.agent_outputs`` (blog/collection)
         - Brand Soul from strategic intelligence
+        - Optional ``image_style`` from raw_input (default: "attractive")
+        - Optional ``image_url`` from raw_input (product reference)
+        - Optional ``logo_url`` from raw_input or shop record
 
     Produces:
-        - ``state.content_hero_assets``: dict with hero_url, content_type, theme_context
+        - ``state.content_hero_assets``: dict with hero_url, content_type,
+          theme_context, image_style
 
-    LLM Calls: 0
+    LLM Calls: 1 (Art Director)
     """
 
     role_name = "ContentHero"
@@ -62,6 +77,13 @@ class ContentHeroAgent(BaseAgent):
             brand_soul = str(raw["brand_context"])[:300]
         context.external_data["brand_soul"] = brand_soul
 
+        context.external_data["image_style"] = raw.get("image_style", "attractive")
+        context.external_data["image_url"] = raw.get("image_url", "")
+        context.external_data["logo_url"] = raw.get("logo_url", "")
+        context.external_data["brand_name"] = raw.get("brand_name", "")
+        context.external_data["product_name"] = raw.get("product_name", "")
+        context.external_data["product_category"] = raw.get("category", "General")
+
         template_id = ""
         context_data: Dict[str, Any] = {}
         for _key, out in reversed(list((state.agent_outputs or {}).items())):
@@ -75,6 +97,8 @@ class ContentHeroAgent(BaseAgent):
                     "category": raw.get("category", "General"),
                     "context": raw.get("context", ""),
                 }
+                if not context.external_data["product_name"]:
+                    context.external_data["product_name"] = context_data["subject"]
                 break
             elif tmpl == "product/collection":
                 template_id = tmpl
@@ -86,6 +110,8 @@ class ContentHeroAgent(BaseAgent):
                     "description": raw.get("description", ""),
                     "product_names": product_names,
                 }
+                if not context.external_data["product_name"]:
+                    context.external_data["product_name"] = context_data["collection_name"]
                 break
             elif tmpl == "product/landing-hero":
                 template_id = tmpl
@@ -93,6 +119,8 @@ class ContentHeroAgent(BaseAgent):
                     "subject": out.get("draft_title") or raw.get("subject_text", raw.get("title", "")),
                     "overlay_text": raw.get("overlay_text", ""),
                 }
+                if not context.external_data["product_name"]:
+                    context.external_data["product_name"] = context_data["subject"]
                 break
 
         context.external_data["template_id"] = template_id
@@ -108,7 +136,14 @@ class ContentHeroAgent(BaseAgent):
     ) -> Tuple[List[AgentAction], MissionState]:
         from src.ecommerce.services.hero_image_generator import HeroImageGenerator
         from src.ecommerce.services.r2_storage_service import R2StorageService
+        from src.ecommerce.services.art_director import (
+            generate_visual_brief,
+            ImageStyle,
+            get_current_season,
+            get_season_props,
+        )
         from src.ecommerce.agents.visual.prompts import (
+            build_styled_prompt,
             build_collection_hero_prompt,
             build_blog_hero_prompt,
             build_hero_section_prompt,
@@ -118,6 +153,11 @@ class ContentHeroAgent(BaseAgent):
         template_id = context.external_data.get("template_id", "")
         context_data = context.external_data.get("context_data", {})
         brand_soul = context.external_data.get("brand_soul", "")
+        image_style = context.external_data.get("image_style", "attractive")
+        image_url = context.external_data.get("image_url", "")
+        brand_name = context.external_data.get("brand_name", "")
+        product_name = context.external_data.get("product_name", "")
+        product_category = context.external_data.get("product_category", "General")
 
         if not template_id:
             state.add_log("ContentHero: Skipped -- no preceding blog/collection step found")
@@ -138,39 +178,73 @@ class ContentHeroAgent(BaseAgent):
             state.visual_progress = {"phase": phase, "pct": pct, "label": label}
             state.add_log(f"ContentHero: [{pct}%] {label}")
 
+        # Determine content type for metadata
         if template_id == "product/blog-post":
-            hero_prompt = build_blog_hero_prompt(
-                subject=context_data.get("subject", ""),
-                category=context_data.get("category", "General"),
-                context=context_data.get("context", ""),
-                brand_soul=brand_soul,
-            )
             content_type = "blog"
             theme_context = context_data.get("subject", "")
         elif template_id == "product/collection":
-            hero_prompt = build_collection_hero_prompt(
-                collection_name=context_data.get("collection_name", ""),
-                description=context_data.get("description", ""),
-                product_names=context_data.get("product_names", []),
-                brand_soul=brand_soul,
-            )
             content_type = "collection"
             theme_context = context_data.get("collection_name", "")
         else:
-            hero_prompt = build_hero_section_prompt(
-                subject=context_data.get("subject", ""),
-                overlay_text=context_data.get("overlay_text", ""),
-                brand_soul=brand_soul,
-            )
             content_type = "hero"
             theme_context = context_data.get("subject", "")
 
         try:
-            hero_bytes = await hero_gen.generate(
-                prompt=hero_prompt,
-                progress=_progress,
+            # ── Step 1: Art Director (LLM visual brief) ──────────────
+            _progress("art_direction", 5, "Art Director analyzing product...")
+
+            try:
+                style_enum = ImageStyle(image_style)
+            except ValueError:
+                style_enum = ImageStyle.ATTRACTIVE
+
+            llm_service = getattr(self.services, "llm", None)
+            brief = await generate_visual_brief(
+                product_name=product_name or theme_context,
+                category=product_category,
+                brand_soul=brand_soul,
+                style=style_enum,
+                llm_service=llm_service,
             )
 
+            _progress("art_direction", 15, "Visual brief ready")
+            state.add_log(
+                f"ContentHero: VisualBrief surface={brief.surface_material} "
+                f"lighting={brief.lighting_scheme[:50]}"
+            )
+
+            # ── Step 2: Build style-specific prompt ──────────────────
+            season = ""
+            season_props = ""
+            if style_enum == ImageStyle.SEASONAL:
+                season = get_current_season()
+                season_props = get_season_props(season)
+
+            hero_prompt = build_styled_prompt(
+                style=image_style,
+                brief=brief,
+                product_name=product_name or theme_context,
+                brand_name=brand_name,
+                season=season,
+                season_props=season_props,
+            )
+
+            # ── Step 3: Generate hero image ──────────────────────────
+            if image_url:
+                _progress("generating", 20, "Blending product into hero banner...")
+                hero_bytes = await hero_gen.generate_from_image(
+                    image_url=image_url,
+                    prompt=hero_prompt,
+                    progress=_progress,
+                )
+            else:
+                _progress("generating", 20, "Generating hero banner...")
+                hero_bytes = await hero_gen.generate(
+                    prompt=hero_prompt,
+                    progress=_progress,
+                )
+
+            # ── Step 4: Upload to R2 ─────────────────────────────────
             hero_key = R2StorageService.build_key(
                 state.shop_id, mission_id, "content-hero",
             )
@@ -180,20 +254,25 @@ class ContentHeroAgent(BaseAgent):
                 "content_type": content_type,
                 "hero_url": r2_url,
                 "theme_context": theme_context,
+                "image_style": image_style,
             }
 
             _progress("complete", 100, "Content hero banner complete")
 
             actions.append(AgentAction(
                 tool_name="content_hero.generate",
-                input_params={"template_id": template_id},
+                input_params={
+                    "template_id": template_id,
+                    "image_style": image_style,
+                    "has_product_image": bool(image_url),
+                },
                 output=state.content_hero_assets,
                 success=True,
             ))
 
             logger.info(
-                "[ContentHeroAgent] complete shop=%s type=%s hero=%s",
-                state.shop_id, content_type, bool(r2_url),
+                "[ContentHeroAgent] complete shop=%s type=%s style=%s img2img=%s hero=%s",
+                state.shop_id, content_type, image_style, bool(image_url), bool(r2_url),
             )
 
         except Exception as e:
