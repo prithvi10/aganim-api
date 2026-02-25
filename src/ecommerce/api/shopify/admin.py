@@ -908,6 +908,7 @@ async def generate_content_endpoint(
                     brand_name=brand_name,
                     season=season,
                     season_props=season_props,
+                    is_img2img=bool(image_url),
                 )
 
                 # Step 3: Generate hero image
