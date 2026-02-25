@@ -551,6 +551,13 @@ _STYLE_TEMPLATES = {
     "seasonal": SEASONAL_STYLE_TEMPLATE,
 }
 
+_IMG2IMG_FIDELITY_PREAMBLE = """\
+CRITICAL: Use the EXACT product from the reference image. \
+Preserve it faithfully -- same shape, colors, labels, packaging, and branding. \
+Do NOT invent, reimagine, or alter the product in any way. \
+Place the real product from the reference into the scene described below.
+"""
+
 
 def build_styled_prompt(
     style: str,
@@ -559,6 +566,7 @@ def build_styled_prompt(
     brand_name: str = "",
     season: str = "",
     season_props: str = "",
+    is_img2img: bool = False,
 ) -> str:
     """Build an image-generation prompt from a VisualBrief and style.
 
@@ -576,6 +584,9 @@ def build_styled_prompt(
         Current season name (for Seasonal style).
     season_props : str
         Seasonal prop descriptions (for Seasonal style).
+    is_img2img : bool
+        When True, prepends strong product-fidelity instructions so the
+        model preserves the exact product from the reference image.
     """
     template = _STYLE_TEMPLATES.get(style, ATTRACTIVE_STYLE_TEMPLATE)
     palette_str = ", ".join(brief.color_palette[:3])
@@ -588,7 +599,7 @@ def build_styled_prompt(
         )
 
     try:
-        return template.format(
+        prompt = template.format(
             product_name=product_name,
             surface_material=brief.surface_material,
             environment=brief.environment,
@@ -600,7 +611,7 @@ def build_styled_prompt(
             season_props=season_props or brief.suggested_props,
         ).strip()
     except KeyError:
-        return template.format_map(_SafeFormatDict(
+        prompt = template.format_map(_SafeFormatDict(
             product_name=product_name,
             surface_material=brief.surface_material,
             environment=brief.environment,
@@ -611,6 +622,11 @@ def build_styled_prompt(
             season=season or "spring",
             season_props=season_props or brief.suggested_props,
         )).strip()
+
+    if is_img2img:
+        prompt = _IMG2IMG_FIDELITY_PREAMBLE + prompt
+
+    return prompt
 
 
 class _SafeFormatDict(dict):

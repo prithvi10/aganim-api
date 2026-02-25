@@ -563,6 +563,39 @@ class TestBuildStyledPrompt:
         )
         assert "ivory, grey, gold" in prompt
 
+    def test_img2img_adds_fidelity_preamble(self):
+        prompt = build_styled_prompt(
+            style="attractive",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+            is_img2img=True,
+        )
+        assert "EXACT product from the reference image" in prompt
+        assert "Preserve it faithfully" in prompt
+        assert "same shape, colors, labels" in prompt
+
+    def test_t2i_no_fidelity_preamble(self):
+        prompt = build_styled_prompt(
+            style="attractive",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+            is_img2img=False,
+        )
+        assert "reference image" not in prompt
+
+    def test_img2img_fidelity_with_all_styles(self):
+        for style in ("informative", "minimalist", "attractive", "seasonal"):
+            prompt = build_styled_prompt(
+                style=style,
+                brief=_MOCK_BRIEF,
+                product_name="Coffee",
+                brand_name="TestBrand",
+                season="winter",
+                season_props="frosted pine",
+                is_img2img=True,
+            )
+            assert "EXACT product from the reference image" in prompt, f"Fidelity preamble missing for style={style}"
+
 
 class TestUpdatedHeroTemplates:
     """Verify updated hero templates contain photorealism directives."""
