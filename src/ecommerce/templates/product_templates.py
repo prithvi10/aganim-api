@@ -110,12 +110,34 @@ Subjects can include but are not limited to:
   the history of a craft, behind-the-scenes workshop tours,
   seasonal collections, collaborations, or cultural traditions.
 
+[Content Priority]
+Focus primarily on the Category and Additional Context provided by the user.
+These are the core of the article. Brand heritage context (if provided) should
+subtly inform tone and philosophy -- it must NOT dominate the narrative or
+overshadow the user's requested subject.
+
+[Visual Art Direction Requirements]
+After writing the blog, analyze the content and generate a 'Visual Brief' for
+a high-end editorial Hero Image that accompanies the article.
+- Focus purely on the physical subject, textures, and environment described in the article.
+- STRICT RULE: No actors, no faces, no human beings. Focus on "still life" or "process" shots.
+- hero_subject must describe a concrete photographic scene, e.g. "Close-up of steam rising from a freshly poured cup of dark coffee".
+- surface must be a physical surface, e.g. "A rustic, weathered oak tabletop".
+- environment must be a blurred background atmosphere, e.g. "A softly blurred, sunlit minimalist kitchen corner".
+- lighting must define the light source and shadow quality, e.g. "Soft side-lighting with gentle, long shadows".
+
 Return ONLY valid JSON:
 {
   "title": "Blog post title",
   "meta_description": "SEO meta description (under 160 characters)",
   "body_html": "<h2>...</h2><p>...</p>...",
-  "tags": ["tag1", "tag2", "tag3"]
+  "tags": ["tag1", "tag2", "tag3"],
+  "visual_brief": {
+    "hero_subject": "Concrete photographic subject from the article",
+    "surface": "Physical surface description",
+    "environment": "Blurred background atmosphere",
+    "lighting": "Light source and shadow quality"
+  }
 }
 """
 

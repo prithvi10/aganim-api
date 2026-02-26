@@ -21,6 +21,7 @@ from src.ecommerce.agents.visual.prompts import (
     build_blog_hero_prompt,
     build_hero_section_prompt,
     build_styled_prompt,
+    build_blog_hero_from_brief,
     _distill_brand_aesthetic,
     _HERO_PROMPT_HARD_CAP,
     INPAINT_BACKGROUND_PROMPT_TEMPLATE,
@@ -33,6 +34,7 @@ from src.ecommerce.agents.visual.prompts import (
     MINIMALIST_STYLE_TEMPLATE,
     ATTRACTIVE_STYLE_TEMPLATE,
     SEASONAL_STYLE_TEMPLATE,
+    MONOCHROME_STYLE_TEMPLATE,
 )
 from src.ecommerce.services.art_director import VisualBrief
 
@@ -584,7 +586,7 @@ class TestBuildStyledPrompt:
         assert "reference image" not in prompt
 
     def test_img2img_fidelity_with_all_styles(self):
-        for style in ("informative", "minimalist", "attractive", "seasonal"):
+        for style in ("informative", "minimalist", "attractive", "seasonal", "monochrome"):
             prompt = build_styled_prompt(
                 style=style,
                 brief=_MOCK_BRIEF,
@@ -619,3 +621,135 @@ class TestUpdatedHeroTemplates:
         assert "Photorealistic" in HERO_BANNER_PROMPT_TEMPLATE
         assert "shallow depth of field" in HERO_BANNER_PROMPT_TEMPLATE.lower()
         assert "NOT illustrated, cartoon" in HERO_BANNER_PROMPT_TEMPLATE
+
+
+# =============================================================================
+# Tests: Monochrome style template
+# =============================================================================
+
+class TestMonochromeStyleTemplate:
+    """Tests for the MONOCHROME_STYLE_TEMPLATE and its integration."""
+
+    def test_monochrome_template_has_placeholders(self):
+        assert "{hero_subject}" in MONOCHROME_STYLE_TEMPLATE
+        assert "{surface_material}" in MONOCHROME_STYLE_TEMPLATE
+        assert "{environment}" in MONOCHROME_STYLE_TEMPLATE
+        assert "{lighting_scheme}" in MONOCHROME_STYLE_TEMPLATE
+
+    def test_monochrome_template_has_bw_directives(self):
+        assert "Black and white" in MONOCHROME_STYLE_TEMPLATE
+        assert "Monochrome" in MONOCHROME_STYLE_TEMPLATE
+        assert "No color" in MONOCHROME_STYLE_TEMPLATE
+
+    def test_monochrome_template_has_photorealism(self):
+        assert "NOT illustrated, cartoon" in MONOCHROME_STYLE_TEMPLATE
+
+    def test_build_styled_prompt_monochrome(self):
+        prompt = build_styled_prompt(
+            style="monochrome",
+            brief=_MOCK_BRIEF,
+            product_name="Artisan Coffee",
+        )
+        assert "Black and white" in prompt
+        assert "polished marble" in prompt
+        assert "Monochrome" in prompt
+        assert "NOT illustrated" in prompt
+
+    def test_monochrome_img2img_adds_fidelity(self):
+        prompt = build_styled_prompt(
+            style="monochrome",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+            is_img2img=True,
+        )
+        assert "EXACT product from the reference image" in prompt
+        assert "Black and white" in prompt
+
+
+# =============================================================================
+# Tests: build_blog_hero_from_brief
+# =============================================================================
+
+_MOCK_BLOG_VISUAL_BRIEF = {
+    "hero_subject": "Close-up of steam rising from a freshly poured cup of dark coffee",
+    "surface": "A rustic, weathered oak tabletop",
+    "environment": "A softly blurred, sunlit minimalist kitchen corner",
+    "lighting": "Soft side-lighting with gentle, long shadows",
+}
+
+
+class TestBuildBlogHeroFromBrief:
+    """Tests for build_blog_hero_from_brief."""
+
+    def test_default_style_produces_editorial_prompt(self):
+        prompt = build_blog_hero_from_brief(_MOCK_BLOG_VISUAL_BRIEF)
+        assert "steam rising" in prompt
+        assert "weathered oak" in prompt
+        assert "sunlit minimalist kitchen" in prompt
+        assert "Soft side-lighting" in prompt
+
+    def test_no_humans_directive(self):
+        prompt = build_blog_hero_from_brief(_MOCK_BLOG_VISUAL_BRIEF)
+        assert "No actors" in prompt or "no faces" in prompt.lower() or "no human" in prompt.lower()
+
+    def test_photorealism_directive(self):
+        prompt = build_blog_hero_from_brief(_MOCK_BLOG_VISUAL_BRIEF)
+        assert "NOT illustrated" in prompt
+
+    def test_monochrome_style_uses_bw_template(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            image_style="monochrome",
+        )
+        assert "Black and white" in prompt
+        assert "Monochrome" in prompt
+        assert "No color" in prompt
+        assert "steam rising" in prompt
+
+    def test_attractive_style_uses_base_template(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            image_style="attractive",
+        )
+        assert "Black and white" not in prompt
+        assert "steam rising" in prompt
+
+    def test_img2img_adds_fidelity_preamble(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            is_img2img=True,
+        )
+        assert "EXACT product from the reference image" in prompt
+
+    def test_t2i_no_fidelity_preamble(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            is_img2img=False,
+        )
+        assert "reference image" not in prompt
+
+    def test_missing_keys_use_defaults(self):
+        prompt = build_blog_hero_from_brief({})
+        assert "product arrangement" in prompt
+        assert "clean surface" in prompt
+        assert "soft neutral backdrop" in prompt
+
+    def test_partial_brief(self):
+        partial = {"hero_subject": "A single ceramic cup"}
+        prompt = build_blog_hero_from_brief(partial)
+        assert "ceramic cup" in prompt
+        assert "clean surface" in prompt
+
+    def test_result_is_stripped(self):
+        prompt = build_blog_hero_from_brief(_MOCK_BLOG_VISUAL_BRIEF)
+        assert not prompt.startswith("\n")
+        assert not prompt.endswith("\n")
+
+    def test_monochrome_img2img_combined(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            image_style="monochrome",
+            is_img2img=True,
+        )
+        assert "Black and white" in prompt
+        assert "EXACT product from the reference image" in prompt
