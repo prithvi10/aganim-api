@@ -845,6 +845,8 @@ async def generate_content_endpoint(
 
         if template_id in hero_eligible:
             try:
+                import json as _json
+                import uuid as _uuid
                 from src.ecommerce.services.hero_image_generator import HeroImageGenerator
                 from src.ecommerce.services.r2_storage_service import R2StorageService
                 from src.ecommerce.services.art_director import (
@@ -853,65 +855,87 @@ async def generate_content_endpoint(
                     get_current_season,
                     get_season_props,
                 )
-                from src.ecommerce.agents.visual.prompts import build_styled_prompt
-
-                shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-                strategic_intel = getattr(shop_record, "strategic_intelligence", None) if shop_record else None
-                brand_soul = str(strategic_intel)[:300] if strategic_intel else ""
+                from src.ecommerce.agents.visual.prompts import (
+                    build_styled_prompt,
+                    build_blog_hero_from_brief,
+                )
 
                 image_style = body.get("image_style", "attractive")
                 image_url = body.get("image_url", "")
-                brand_name = body.get("brand_name", "")
 
-                product_name = body.get("product_name", "")
-                if not product_name:
-                    product_name = (
-                        body.get("collection_name")
-                        or body.get("topic")
-                        or body.get("subject_text")
-                        or new_state.draft_title
-                        or ""
-                    )
-
-                product_category = body.get("category", "General")
-
-                # Step 1: Art Director visual brief
                 try:
                     style_enum = ImageStyle(image_style)
                 except ValueError:
                     style_enum = ImageStyle.ATTRACTIVE
 
-                llm_svc = LLMService(db=db, shop_domain=shop)
-                brief = await generate_visual_brief(
-                    product_name=product_name,
-                    category=product_category,
-                    brand_soul=brand_soul,
-                    style=style_enum,
-                    llm_service=llm_svc,
-                )
+                # --- Blog-post path: use visual_brief from LLM output ---
+                blog_visual_brief = None
+                if template_id == "product/blog-post" and new_state.draft_content:
+                    try:
+                        blog_data = _json.loads(new_state.draft_content)
+                        if isinstance(blog_data, dict) and "visual_brief" in blog_data:
+                            blog_visual_brief = blog_data["visual_brief"]
+                    except (ValueError, TypeError):
+                        pass
 
-                # Step 2: Build styled prompt
-                season = ""
-                season_props = ""
-                if style_enum == ImageStyle.SEASONAL:
-                    season = get_current_season()
-                    season_props = get_season_props(season)
+                if blog_visual_brief:
+                    hero_prompt = build_blog_hero_from_brief(
+                        visual_brief=blog_visual_brief,
+                        image_style=image_style,
+                        is_img2img=bool(image_url),
+                    )
+                    logger.info(
+                        "[Generate] Blog hero using inline visual_brief subject=%s",
+                        blog_visual_brief.get("hero_subject", "")[:60],
+                    )
+                else:
+                    # --- Standard path: Art Director LLM call ---
+                    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+                    strategic_intel = getattr(shop_record, "strategic_intelligence", None) if shop_record else None
+                    brand_soul = str(strategic_intel)[:300] if strategic_intel else ""
+                    brand_name = body.get("brand_name", "")
 
-                # For informative style, fetch logo info
-                if style_enum == ImageStyle.INFORMATIVE and not brand_name and shop_record:
-                    brand_name = getattr(shop_record, "domain", "").split(".")[0].replace("-", " ").title()
+                    product_name = body.get("product_name", "")
+                    if not product_name:
+                        product_name = (
+                            body.get("collection_name")
+                            or body.get("topic")
+                            or body.get("subject_text")
+                            or new_state.draft_title
+                            or ""
+                        )
 
-                hero_prompt = build_styled_prompt(
-                    style=image_style,
-                    brief=brief,
-                    product_name=product_name,
-                    brand_name=brand_name,
-                    season=season,
-                    season_props=season_props,
-                    is_img2img=bool(image_url),
-                )
+                    product_category = body.get("category", "General")
 
-                # Step 3: Generate hero image
+                    llm_svc = LLMService(db=db, shop_domain=shop)
+                    brief = await generate_visual_brief(
+                        product_name=product_name,
+                        category=product_category,
+                        brand_soul=brand_soul,
+                        style=style_enum,
+                        llm_service=llm_svc,
+                    )
+
+                    season = ""
+                    season_props = ""
+                    if style_enum == ImageStyle.SEASONAL:
+                        season = get_current_season()
+                        season_props = get_season_props(season)
+
+                    if style_enum == ImageStyle.INFORMATIVE and not brand_name and shop_record:
+                        brand_name = getattr(shop_record, "domain", "").split(".")[0].replace("-", " ").title()
+
+                    hero_prompt = build_styled_prompt(
+                        style=image_style,
+                        brief=brief,
+                        product_name=product_name,
+                        brand_name=brand_name,
+                        season=season,
+                        season_props=season_props,
+                        is_img2img=bool(image_url),
+                    )
+
+                # --- Generate hero image ---
                 hero_gen = HeroImageGenerator()
                 r2_svc = R2StorageService()
 
@@ -923,7 +947,8 @@ async def generate_content_endpoint(
                 else:
                     hero_bytes = await hero_gen.generate(prompt=hero_prompt)
 
-                hero_key = R2StorageService.build_key(shop, "content-hero", template_id.replace("/", "-"))
+                asset_tag = f"{template_id.replace('/', '-')}-{image_style}-{_uuid.uuid4().hex[:8]}"
+                hero_key = R2StorageService.build_key(shop, "content-hero", asset_tag)
                 hero_url = await r2_svc.upload_asset(hero_bytes, hero_key)
 
                 logger.info(

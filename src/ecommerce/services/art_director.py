@@ -36,6 +36,7 @@ class ImageStyle(str, Enum):
     MINIMALIST = "minimalist"
     ATTRACTIVE = "attractive"
     SEASONAL = "seasonal"
+    MONOCHROME = "monochrome"
 
 
 # ---------------------------------------------------------------------------

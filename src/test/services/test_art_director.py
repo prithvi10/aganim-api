@@ -70,13 +70,16 @@ class TestImageStyleEnum:
     def test_seasonal(self):
         assert ImageStyle("seasonal") == ImageStyle.SEASONAL
 
+    def test_monochrome(self):
+        assert ImageStyle("monochrome") == ImageStyle.MONOCHROME
+
     def test_invalid_raises(self):
         with pytest.raises(ValueError):
             ImageStyle("nonexistent")
 
     def test_all_values(self):
         values = {e.value for e in ImageStyle}
-        assert values == {"informative", "minimalist", "attractive", "seasonal"}
+        assert values == {"informative", "minimalist", "attractive", "seasonal", "monochrome"}
 
 
 class TestGetCurrentSeason:

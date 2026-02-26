@@ -544,11 +544,21 @@ No text, words, letters, logos, or watermarks. Purely visual.
 8k resolution. NOT illustrated, cartoon, or digitally painted.
 """
 
+MONOCHROME_STYLE_TEMPLATE = """\
+Black and white fine-art photography. High contrast, dramatic, editorial.
+Subject: {hero_subject} on {surface_material}.
+Background: {environment}, rendered in grayscale with rich tonal range.
+Lighting: {lighting_scheme}. Deep blacks, bright highlights, no mid-tone muddiness.
+No color. Monochrome only. No text, logos, or watermarks.
+8k resolution. Photorealistic. NOT illustrated, cartoon, or digitally painted.
+"""
+
 _STYLE_TEMPLATES = {
     "informative": INFORMATIVE_STYLE_TEMPLATE,
     "minimalist": MINIMALIST_STYLE_TEMPLATE,
     "attractive": ATTRACTIVE_STYLE_TEMPLATE,
     "seasonal": SEASONAL_STYLE_TEMPLATE,
+    "monochrome": MONOCHROME_STYLE_TEMPLATE,
 }
 
 _IMG2IMG_FIDELITY_PREAMBLE = """\
@@ -598,30 +608,82 @@ def build_styled_prompt(
             f"matching the scene colors.\n"
         )
 
+    fmt = dict(
+        product_name=product_name,
+        hero_subject=product_name,
+        surface_material=brief.surface_material,
+        environment=brief.environment,
+        lighting_scheme=brief.lighting_scheme,
+        color_palette=palette_str,
+        suggested_props=brief.suggested_props,
+        logo_line=logo_line,
+        season=season or "spring",
+        season_props=season_props or brief.suggested_props,
+    )
+
     try:
-        prompt = template.format(
-            product_name=product_name,
-            surface_material=brief.surface_material,
-            environment=brief.environment,
-            lighting_scheme=brief.lighting_scheme,
-            color_palette=palette_str,
-            suggested_props=brief.suggested_props,
-            logo_line=logo_line,
-            season=season or "spring",
-            season_props=season_props or brief.suggested_props,
-        ).strip()
+        prompt = template.format(**fmt).strip()
     except KeyError:
-        prompt = template.format_map(_SafeFormatDict(
-            product_name=product_name,
-            surface_material=brief.surface_material,
-            environment=brief.environment,
-            lighting_scheme=brief.lighting_scheme,
-            color_palette=palette_str,
-            suggested_props=brief.suggested_props,
-            logo_line=logo_line,
-            season=season or "spring",
-            season_props=season_props or brief.suggested_props,
-        )).strip()
+        prompt = template.format_map(_SafeFormatDict(**fmt)).strip()
+
+    if is_img2img:
+        prompt = _IMG2IMG_FIDELITY_PREAMBLE + prompt
+
+    return prompt
+
+
+# ---------------------------------------------------------------------------
+# Blog-specific hero prompt builder (uses visual_brief from blog LLM)
+# ---------------------------------------------------------------------------
+
+_BLOG_HERO_BASE = """\
+Photorealistic editorial hero image for a blog article.
+Subject: {hero_subject}.
+Surface: {surface}.
+Background: Subtly blurred {environment}. NOT a sharp detailed scene.
+Lighting: {lighting}.
+STRICT: No actors, no faces, no human beings. Still life or process shot only.
+8k resolution. NOT illustrated, cartoon, or digitally painted.
+"""
+
+_BLOG_HERO_MONOCHROME = """\
+Black and white fine-art editorial photograph for a blog article.
+Subject: {hero_subject}.
+Surface: {surface}.
+Background: {environment}, rendered in grayscale with rich tonal range.
+Lighting: {lighting}. Deep blacks, bright highlights, no mid-tone muddiness.
+STRICT: No actors, no faces, no human beings. Still life or process shot only.
+No color. Monochrome only. No text, logos, or watermarks.
+8k resolution. Photorealistic. NOT illustrated, cartoon, or digitally painted.
+"""
+
+
+def build_blog_hero_from_brief(
+    visual_brief: dict,
+    image_style: str = "attractive",
+    is_img2img: bool = False,
+) -> str:
+    """Build a hero image prompt from the blog LLM's visual_brief output.
+
+    Parameters
+    ----------
+    visual_brief : dict
+        Must contain keys: hero_subject, surface, environment, lighting.
+    image_style : str
+        The user-selected style.  ``"monochrome"`` triggers B&W treatment;
+        all other values use the standard editorial template.
+    is_img2img : bool
+        When True, prepends product-fidelity instructions.
+    """
+    brief_vars = {
+        "hero_subject": visual_brief.get("hero_subject", "product arrangement"),
+        "surface": visual_brief.get("surface", "clean surface"),
+        "environment": visual_brief.get("environment", "soft neutral backdrop"),
+        "lighting": visual_brief.get("lighting", "diffused natural light"),
+    }
+
+    template = _BLOG_HERO_MONOCHROME if image_style == "monochrome" else _BLOG_HERO_BASE
+    prompt = template.format(**brief_vars).strip()
 
     if is_img2img:
         prompt = _IMG2IMG_FIDELITY_PREAMBLE + prompt
