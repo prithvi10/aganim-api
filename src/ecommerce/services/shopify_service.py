@@ -658,6 +658,8 @@ async def create_article(
     title: str,
     body_html: str,
     image_url: str | None = None,
+    meta_description: str = "",
+    tags: list[str] | None = None,
 ) -> dict:
     """
     Create a blog article via REST API.
@@ -680,6 +682,18 @@ async def create_article(
     }
     if image_url:
         article_data["image"] = {"src": image_url}
+    if meta_description:
+        article_data["summary_html"] = f"<p>{meta_description}</p>"
+        article_data["metafields"] = [
+            {
+                "namespace": "global",
+                "key": "description_tag",
+                "value": meta_description,
+                "type": "single_line_text_field",
+            }
+        ]
+    if tags:
+        article_data["tags"] = ", ".join(tags) if isinstance(tags, list) else tags
 
     payload = {"article": article_data}
 
@@ -800,6 +814,7 @@ async def create_collection(
     description_html: str,
     product_ids: list[str] | None = None,
     image_url: str | None = None,
+    seo_description: str = "",
 ) -> dict:
     """
     Create a Custom Collection via GraphQL and optionally add products.
@@ -811,6 +826,7 @@ async def create_collection(
         description_html: Collection description HTML
         product_ids: Optional list of product GIDs to add
         image_url: Optional hero image URL to set as collection image
+        seo_description: Optional SEO meta description
 
     Returns:
         Dict with the created collection data.
@@ -836,6 +852,8 @@ async def create_collection(
     }
     if image_url:
         collection_input["image"] = {"src": image_url}
+    if seo_description:
+        collection_input["seo"] = {"description": seo_description}
 
     variables = {
         "input": collection_input,
