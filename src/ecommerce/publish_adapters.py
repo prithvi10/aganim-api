@@ -143,15 +143,17 @@ class ShopifyPublishAdapter:
 
         title = raw.get("blog_title") or state.draft_title or "Untitled Post"
         body_html = state.draft_content or ""
+        meta_description = ""
+        tags: list[str] = []
         try:
             parsed = json.loads(body_html)
             if isinstance(parsed, dict):
                 body_html = parsed.get("body_html", parsed.get("content", body_html))
                 title = parsed.get("title", title)
+                meta_description = parsed.get("meta_description", "")
+                tags = parsed.get("tags", [])
         except (json.JSONDecodeError, TypeError):
             pass
-
-        hero_url = raw.get("hero_url")
 
         await create_article(
             shop_domain=state.shop_id,
@@ -159,7 +161,8 @@ class ShopifyPublishAdapter:
             blog_id=blog_id,
             title=title,
             body_html=body_html,
-            image_url=hero_url,
+            meta_description=meta_description,
+            tags=tags,
         )
 
     async def publish_collection(self, state: Any, creds: dict) -> None:
@@ -176,6 +179,7 @@ class ShopifyPublishAdapter:
         )
 
         desc_html = state.draft_content or ""
+        meta_description = ""
         try:
             parsed = json.loads(desc_html)
             if isinstance(parsed, dict):
@@ -183,6 +187,7 @@ class ShopifyPublishAdapter:
                     "description_html",
                     parsed.get("description", parsed.get("content", desc_html)),
                 )
+                meta_description = parsed.get("meta_description", "")
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -196,6 +201,7 @@ class ShopifyPublishAdapter:
             description_html=desc_html,
             product_ids=product_ids,
             image_url=hero_url,
+            seo_description=meta_description,
         )
 
     # ------------------------------------------------------------------
