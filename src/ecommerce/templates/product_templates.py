@@ -22,6 +22,8 @@ Generate collection/category page descriptions that:
 - Encourage browsing
 - Match the brand voice
 
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
+
 Return ONLY valid JSON:
 {
   "description": "Collection description HTML",
@@ -46,6 +48,8 @@ Generate FAQs based on product details that:
 - Cover shipping and care instructions
 - Reduce support tickets
 - Use clear, helpful language
+
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
 
 Return ONLY valid JSON:
 {
@@ -76,6 +80,8 @@ Generate landing page hero section copy that:
 - Creates urgency or interest
 - Matches the brand voice
 
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
+
 Return ONLY valid JSON:
 {
   "headline": "Main headline",
@@ -95,6 +101,8 @@ Generate landing page hero section copy.
 
 # Artisan / Behind-the-Scenes Blog Post
 PRODUCT_BLOG_POST_SYSTEM_PROMPT = """You are a brand storytelling expert who writes compelling blog posts for artisan and craft brands.
+
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
 
 Write a long-form blog post (800-1200 words) about the given subject. The post should:
 - Educate readers about the craft, technique, or process
