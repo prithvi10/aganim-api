@@ -845,53 +845,115 @@ async def generate_content_endpoint(
 
         if template_id in hero_eligible:
             try:
+                import json as _json
+                import uuid as _uuid
                 from src.ecommerce.services.hero_image_generator import HeroImageGenerator
                 from src.ecommerce.services.r2_storage_service import R2StorageService
+                from src.ecommerce.services.art_director import (
+                    generate_visual_brief,
+                    ImageStyle,
+                    get_current_season,
+                    get_season_props,
+                )
                 from src.ecommerce.agents.visual.prompts import (
-                    build_collection_hero_prompt,
-                    build_blog_hero_prompt,
-                    build_hero_section_prompt,
+                    build_styled_prompt,
+                    build_blog_hero_from_brief,
                 )
 
-                shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-                strategic_intel = getattr(shop_record, "strategic_intelligence", None) if shop_record else None
-                brand_soul = str(strategic_intel)[:300] if strategic_intel else ""
+                image_style = body.get("image_style", "attractive")
+                image_url = body.get("image_url", "")
 
-                if template_id == "product/blog-post":
-                    hero_prompt = build_blog_hero_prompt(
-                        subject=body.get("topic", new_state.draft_title or ""),
-                        category=body.get("category", "General"),
-                        context=body.get("context", ""),
-                        brand_soul=brand_soul,
+                try:
+                    style_enum = ImageStyle(image_style)
+                except ValueError:
+                    style_enum = ImageStyle.ATTRACTIVE
+
+                # --- Blog-post path: use visual_brief from LLM output ---
+                blog_visual_brief = None
+                if template_id == "product/blog-post" and new_state.draft_content:
+                    try:
+                        blog_data = _json.loads(new_state.draft_content)
+                        if isinstance(blog_data, dict) and "visual_brief" in blog_data:
+                            blog_visual_brief = blog_data["visual_brief"]
+                    except (ValueError, TypeError):
+                        pass
+
+                if blog_visual_brief:
+                    hero_prompt = build_blog_hero_from_brief(
+                        visual_brief=blog_visual_brief,
+                        image_style=image_style,
+                        is_img2img=bool(image_url),
                     )
-                elif template_id == "product/collection":
-                    product_names = body.get("product_names", [])
-                    if isinstance(product_names, str):
-                        product_names = [n.strip() for n in product_names.split(",") if n.strip()]
-                    hero_prompt = build_collection_hero_prompt(
-                        collection_name=body.get("collection_name", ""),
-                        description=body.get("description", ""),
-                        product_names=product_names,
-                        brand_soul=brand_soul,
+                    logger.info(
+                        "[Generate] Blog hero using inline visual_brief subject=%s",
+                        blog_visual_brief.get("hero_subject", "")[:60],
                     )
                 else:
-                    hero_prompt = build_hero_section_prompt(
-                        subject=body.get("subject_text", new_state.draft_title or body.get("title", "")),
-                        overlay_text=body.get("overlay_text", ""),
+                    # --- Standard path: Art Director LLM call ---
+                    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+                    strategic_intel = getattr(shop_record, "strategic_intelligence", None) if shop_record else None
+                    brand_soul = str(strategic_intel)[:300] if strategic_intel else ""
+                    brand_name = body.get("brand_name", "")
+
+                    product_name = body.get("product_name", "")
+                    if not product_name:
+                        product_name = (
+                            body.get("collection_name")
+                            or body.get("topic")
+                            or body.get("subject_text")
+                            or new_state.draft_title
+                            or ""
+                        )
+
+                    product_category = body.get("category", "General")
+
+                    llm_svc = LLMService(db=db, shop_domain=shop)
+                    brief = await generate_visual_brief(
+                        product_name=product_name,
+                        category=product_category,
                         brand_soul=brand_soul,
+                        style=style_enum,
+                        llm_service=llm_svc,
                     )
 
+                    season = ""
+                    season_props = ""
+                    if style_enum == ImageStyle.SEASONAL:
+                        season = get_current_season()
+                        season_props = get_season_props(season)
+
+                    if style_enum == ImageStyle.INFORMATIVE and not brand_name and shop_record:
+                        brand_name = getattr(shop_record, "domain", "").split(".")[0].replace("-", " ").title()
+
+                    hero_prompt = build_styled_prompt(
+                        style=image_style,
+                        brief=brief,
+                        product_name=product_name,
+                        brand_name=brand_name,
+                        season=season,
+                        season_props=season_props,
+                        is_img2img=bool(image_url),
+                    )
+
+                # --- Generate hero image ---
                 hero_gen = HeroImageGenerator()
                 r2_svc = R2StorageService()
 
-                hero_bytes = await hero_gen.generate(prompt=hero_prompt)
+                if image_url:
+                    hero_bytes = await hero_gen.generate_from_image(
+                        image_url=image_url,
+                        prompt=hero_prompt,
+                    )
+                else:
+                    hero_bytes = await hero_gen.generate(prompt=hero_prompt)
 
-                hero_key = R2StorageService.build_key(shop, "content-hero", template_id.replace("/", "-"))
+                asset_tag = f"{template_id.replace('/', '-')}-{image_style}-{_uuid.uuid4().hex[:8]}"
+                hero_key = R2StorageService.build_key(shop, "content-hero", asset_tag)
                 hero_url = await r2_svc.upload_asset(hero_bytes, hero_key)
 
                 logger.info(
-                    "[Generate] Hero banner created template=%s shop=%s",
-                    template_id, shop,
+                    "[Generate] Hero banner created template=%s shop=%s style=%s img2img=%s",
+                    template_id, shop, image_style, bool(image_url),
                 )
             except Exception as hero_err:
                 logger.warning(
@@ -915,6 +977,79 @@ async def generate_content_endpoint(
             e,
         )
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+
+# =============================================================================
+# Shop Logo Endpoints
+# =============================================================================
+
+@router.post("/api/shop/logo")
+async def upload_shop_logo(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Upload or update the shop logo.
+
+    Accepts ``{ "logo_url": "https://..." }`` in the request body.
+    Downloads the image and re-uploads it to R2 with a permanent key,
+    then stores the R2 URL in ``shop.logo_url``.
+    """
+    import httpx
+    from src.ecommerce.services.r2_storage_service import R2StorageService
+
+    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+    if not shop_record:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    source_url = body.get("logo_url", "").strip()
+    if not source_url:
+        raise HTTPException(status_code=400, detail="logo_url is required")
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(source_url)
+            resp.raise_for_status()
+            logo_bytes = resp.content
+
+        r2_svc = R2StorageService()
+        logo_key = R2StorageService.build_key(shop, "brand-logo", "logo")
+        r2_url = await r2_svc.upload_asset(logo_bytes, logo_key)
+
+        shop_record.logo_url = r2_url
+        db.commit()
+
+        logger.info("[Logo] uploaded shop=%s url=%s", shop, r2_url[:80])
+
+        return {"status": "success", "logo_url": r2_url}
+
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to download logo from provided URL: {e}",
+        )
+    except Exception as e:
+        logger.error("[Logo] upload failed shop=%s err=%s", shop, e)
+        raise HTTPException(status_code=500, detail=f"Logo upload failed: {e}")
+
+
+@router.get("/api/shop/logo")
+async def get_shop_logo(
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """Return the current shop logo URL."""
+    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+    if not shop_record:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    return {"logo_url": getattr(shop_record, "logo_url", None)}
 
 
 # =============================================================================

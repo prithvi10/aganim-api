@@ -6,6 +6,9 @@ Covers:
   - build_ad_prompt: with/without brand name, hook text, brand soul
   - build_hero_prompt: with/without brand soul and extra context
   - Edge cases: empty strings, very long inputs (truncation)
+  - Art-Directed style templates (Informative, Minimalist, Attractive, Seasonal)
+  - build_styled_prompt: all 4 styles, logo logic, season injection, fallback
+  - Updated hero templates: photorealism directives
 """
 
 import pytest
@@ -17,6 +20,8 @@ from src.ecommerce.agents.visual.prompts import (
     build_collection_hero_prompt,
     build_blog_hero_prompt,
     build_hero_section_prompt,
+    build_styled_prompt,
+    build_blog_hero_from_brief,
     _distill_brand_aesthetic,
     _HERO_PROMPT_HARD_CAP,
     INPAINT_BACKGROUND_PROMPT_TEMPLATE,
@@ -25,7 +30,13 @@ from src.ecommerce.agents.visual.prompts import (
     COLLECTION_HERO_TEMPLATE,
     BLOG_HERO_TEMPLATE,
     HERO_SECTION_TEMPLATE,
+    INFORMATIVE_STYLE_TEMPLATE,
+    MINIMALIST_STYLE_TEMPLATE,
+    ATTRACTIVE_STYLE_TEMPLATE,
+    SEASONAL_STYLE_TEMPLATE,
+    MONOCHROME_STYLE_TEMPLATE,
 )
+from src.ecommerce.services.art_director import VisualBrief
 
 
 # =============================================================================
@@ -417,3 +428,328 @@ class TestBuildHeroSectionPrompt:
         prompt = build_hero_section_prompt(subject="Test")
         assert not prompt.startswith("\n")
         assert not prompt.endswith("\n")
+
+
+# =============================================================================
+# Tests: Art-Directed Style Template Constants
+# =============================================================================
+
+_MOCK_BRIEF = VisualBrief(
+    surface_material="polished marble",
+    environment="soft studio backdrop",
+    lighting_scheme="diffused natural light from the left",
+    color_palette=["ivory", "grey", "gold"],
+    suggested_props="coffee beans, cinnamon sticks",
+)
+
+
+class TestStyledPromptTemplateConstants:
+    """Verify all 4 style templates contain expected placeholders."""
+
+    def test_informative_placeholders(self):
+        assert "{surface_material}" in INFORMATIVE_STYLE_TEMPLATE
+        assert "{lighting_scheme}" in INFORMATIVE_STYLE_TEMPLATE
+        assert "{environment}" in INFORMATIVE_STYLE_TEMPLATE
+        assert "{color_palette}" in INFORMATIVE_STYLE_TEMPLATE
+        assert "{product_name}" in INFORMATIVE_STYLE_TEMPLATE
+        assert "{logo_line}" in INFORMATIVE_STYLE_TEMPLATE
+
+    def test_minimalist_placeholders(self):
+        assert "{surface_material}" in MINIMALIST_STYLE_TEMPLATE
+        assert "{lighting_scheme}" in MINIMALIST_STYLE_TEMPLATE
+        assert "{color_palette}" in MINIMALIST_STYLE_TEMPLATE
+
+    def test_attractive_placeholders(self):
+        assert "{surface_material}" in ATTRACTIVE_STYLE_TEMPLATE
+        assert "{lighting_scheme}" in ATTRACTIVE_STYLE_TEMPLATE
+        assert "{environment}" in ATTRACTIVE_STYLE_TEMPLATE
+        assert "{color_palette}" in ATTRACTIVE_STYLE_TEMPLATE
+        assert "{suggested_props}" in ATTRACTIVE_STYLE_TEMPLATE
+
+    def test_seasonal_placeholders(self):
+        assert "{surface_material}" in SEASONAL_STYLE_TEMPLATE
+        assert "{lighting_scheme}" in SEASONAL_STYLE_TEMPLATE
+        assert "{environment}" in SEASONAL_STYLE_TEMPLATE
+        assert "{color_palette}" in SEASONAL_STYLE_TEMPLATE
+        assert "{season}" in SEASONAL_STYLE_TEMPLATE
+        assert "{season_props}" in SEASONAL_STYLE_TEMPLATE
+
+
+class TestBuildStyledPrompt:
+    """Test build_styled_prompt for all 4 styles."""
+
+    def test_attractive_style(self):
+        prompt = build_styled_prompt(
+            style="attractive",
+            brief=_MOCK_BRIEF,
+            product_name="Artisan Coffee",
+        )
+        assert "polished marble" in prompt
+        assert "coffee beans" in prompt
+        assert "diffused natural light" in prompt
+        assert "NOT illustrated" in prompt
+
+    def test_minimalist_style(self):
+        prompt = build_styled_prompt(
+            style="minimalist",
+            brief=_MOCK_BRIEF,
+            product_name="Artisan Coffee",
+        )
+        assert "polished marble" in prompt
+        assert "No props" in prompt
+        assert "no text" in prompt.lower() or "No props" in prompt
+
+    def test_informative_with_brand_name(self):
+        prompt = build_styled_prompt(
+            style="informative",
+            brief=_MOCK_BRIEF,
+            product_name="Artisan Coffee",
+            brand_name="Kyoto Brews",
+        )
+        assert "Artisan Coffee" in prompt
+        assert "Kyoto Brews" in prompt
+        assert "logo" in prompt.lower()
+
+    def test_informative_without_brand_name_omits_logo(self):
+        prompt = build_styled_prompt(
+            style="informative",
+            brief=_MOCK_BRIEF,
+            product_name="Artisan Coffee",
+            brand_name="",
+        )
+        assert "Artisan Coffee" in prompt
+        assert "logo" not in prompt.lower()
+
+    def test_seasonal_includes_season(self):
+        prompt = build_styled_prompt(
+            style="seasonal",
+            brief=_MOCK_BRIEF,
+            product_name="Artisan Coffee",
+            season="winter",
+            season_props="frosted pine branches, cinnamon sticks",
+        )
+        assert "winter" in prompt
+        assert "frosted pine" in prompt
+
+    def test_seasonal_without_season_defaults(self):
+        prompt = build_styled_prompt(
+            style="seasonal",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+        )
+        assert "spring" in prompt
+
+    def test_unknown_style_falls_back_to_attractive(self):
+        prompt = build_styled_prompt(
+            style="nonexistent",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+        )
+        assert "coffee beans" in prompt
+        assert "polished marble" in prompt
+
+    def test_result_is_stripped(self):
+        prompt = build_styled_prompt(
+            style="attractive",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+        )
+        assert not prompt.startswith("\n")
+        assert not prompt.endswith("\n")
+
+    def test_color_palette_joined(self):
+        prompt = build_styled_prompt(
+            style="attractive",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+        )
+        assert "ivory, grey, gold" in prompt
+
+    def test_img2img_adds_fidelity_preamble(self):
+        prompt = build_styled_prompt(
+            style="attractive",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+            is_img2img=True,
+        )
+        assert "EXACT product from the reference image" in prompt
+        assert "Preserve it faithfully" in prompt
+        assert "same shape, colors, labels" in prompt
+
+    def test_t2i_no_fidelity_preamble(self):
+        prompt = build_styled_prompt(
+            style="attractive",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+            is_img2img=False,
+        )
+        assert "reference image" not in prompt
+
+    def test_img2img_fidelity_with_all_styles(self):
+        for style in ("informative", "minimalist", "attractive", "seasonal", "monochrome"):
+            prompt = build_styled_prompt(
+                style=style,
+                brief=_MOCK_BRIEF,
+                product_name="Coffee",
+                brand_name="TestBrand",
+                season="winter",
+                season_props="frosted pine",
+                is_img2img=True,
+            )
+            assert "EXACT product from the reference image" in prompt, f"Fidelity preamble missing for style={style}"
+
+
+class TestUpdatedHeroTemplates:
+    """Verify updated hero templates contain photorealism directives."""
+
+    def test_collection_hero_photorealism(self):
+        assert "Photorealistic" in COLLECTION_HERO_TEMPLATE
+        assert "shallow depth of field" in COLLECTION_HERO_TEMPLATE.lower()
+        assert "NOT illustrated, cartoon" in COLLECTION_HERO_TEMPLATE
+
+    def test_blog_hero_photorealism(self):
+        assert "Photorealistic" in BLOG_HERO_TEMPLATE
+        assert "shallow depth of field" in BLOG_HERO_TEMPLATE.lower()
+        assert "NOT illustrated, cartoon" in BLOG_HERO_TEMPLATE
+
+    def test_hero_section_photorealism(self):
+        assert "Photorealistic" in HERO_SECTION_TEMPLATE
+        assert "shallow depth of field" in HERO_SECTION_TEMPLATE.lower()
+        assert "NOT illustrated, cartoon" in HERO_SECTION_TEMPLATE
+
+    def test_hero_banner_photorealism(self):
+        assert "Photorealistic" in HERO_BANNER_PROMPT_TEMPLATE
+        assert "shallow depth of field" in HERO_BANNER_PROMPT_TEMPLATE.lower()
+        assert "NOT illustrated, cartoon" in HERO_BANNER_PROMPT_TEMPLATE
+
+
+# =============================================================================
+# Tests: Monochrome style template
+# =============================================================================
+
+class TestMonochromeStyleTemplate:
+    """Tests for the MONOCHROME_STYLE_TEMPLATE and its integration."""
+
+    def test_monochrome_template_has_placeholders(self):
+        assert "{hero_subject}" in MONOCHROME_STYLE_TEMPLATE
+        assert "{surface_material}" in MONOCHROME_STYLE_TEMPLATE
+        assert "{environment}" in MONOCHROME_STYLE_TEMPLATE
+        assert "{lighting_scheme}" in MONOCHROME_STYLE_TEMPLATE
+
+    def test_monochrome_template_has_bw_directives(self):
+        assert "Black and white" in MONOCHROME_STYLE_TEMPLATE
+        assert "Monochrome" in MONOCHROME_STYLE_TEMPLATE
+        assert "No color" in MONOCHROME_STYLE_TEMPLATE
+
+    def test_monochrome_template_has_photorealism(self):
+        assert "NOT illustrated, cartoon" in MONOCHROME_STYLE_TEMPLATE
+
+    def test_build_styled_prompt_monochrome(self):
+        prompt = build_styled_prompt(
+            style="monochrome",
+            brief=_MOCK_BRIEF,
+            product_name="Artisan Coffee",
+        )
+        assert "Black and white" in prompt
+        assert "polished marble" in prompt
+        assert "Monochrome" in prompt
+        assert "NOT illustrated" in prompt
+
+    def test_monochrome_img2img_adds_fidelity(self):
+        prompt = build_styled_prompt(
+            style="monochrome",
+            brief=_MOCK_BRIEF,
+            product_name="Coffee",
+            is_img2img=True,
+        )
+        assert "EXACT product from the reference image" in prompt
+        assert "Black and white" in prompt
+
+
+# =============================================================================
+# Tests: build_blog_hero_from_brief
+# =============================================================================
+
+_MOCK_BLOG_VISUAL_BRIEF = {
+    "hero_subject": "Close-up of steam rising from a freshly poured cup of dark coffee",
+    "surface": "A rustic, weathered oak tabletop",
+    "environment": "A softly blurred, sunlit minimalist kitchen corner",
+    "lighting": "Soft side-lighting with gentle, long shadows",
+}
+
+
+class TestBuildBlogHeroFromBrief:
+    """Tests for build_blog_hero_from_brief."""
+
+    def test_default_style_produces_editorial_prompt(self):
+        prompt = build_blog_hero_from_brief(_MOCK_BLOG_VISUAL_BRIEF)
+        assert "steam rising" in prompt
+        assert "weathered oak" in prompt
+        assert "sunlit minimalist kitchen" in prompt
+        assert "Soft side-lighting" in prompt
+
+    def test_no_humans_directive(self):
+        prompt = build_blog_hero_from_brief(_MOCK_BLOG_VISUAL_BRIEF)
+        assert "No actors" in prompt or "no faces" in prompt.lower() or "no human" in prompt.lower()
+
+    def test_photorealism_directive(self):
+        prompt = build_blog_hero_from_brief(_MOCK_BLOG_VISUAL_BRIEF)
+        assert "NOT illustrated" in prompt
+
+    def test_monochrome_style_uses_bw_template(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            image_style="monochrome",
+        )
+        assert "Black and white" in prompt
+        assert "Monochrome" in prompt
+        assert "No color" in prompt
+        assert "steam rising" in prompt
+
+    def test_attractive_style_uses_base_template(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            image_style="attractive",
+        )
+        assert "Black and white" not in prompt
+        assert "steam rising" in prompt
+
+    def test_img2img_adds_fidelity_preamble(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            is_img2img=True,
+        )
+        assert "EXACT product from the reference image" in prompt
+
+    def test_t2i_no_fidelity_preamble(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            is_img2img=False,
+        )
+        assert "reference image" not in prompt
+
+    def test_missing_keys_use_defaults(self):
+        prompt = build_blog_hero_from_brief({})
+        assert "product arrangement" in prompt
+        assert "clean surface" in prompt
+        assert "soft neutral backdrop" in prompt
+
+    def test_partial_brief(self):
+        partial = {"hero_subject": "A single ceramic cup"}
+        prompt = build_blog_hero_from_brief(partial)
+        assert "ceramic cup" in prompt
+        assert "clean surface" in prompt
+
+    def test_result_is_stripped(self):
+        prompt = build_blog_hero_from_brief(_MOCK_BLOG_VISUAL_BRIEF)
+        assert not prompt.startswith("\n")
+        assert not prompt.endswith("\n")
+
+    def test_monochrome_img2img_combined(self):
+        prompt = build_blog_hero_from_brief(
+            _MOCK_BLOG_VISUAL_BRIEF,
+            image_style="monochrome",
+            is_img2img=True,
+        )
+        assert "Black and white" in prompt
+        assert "EXACT product from the reference image" in prompt
