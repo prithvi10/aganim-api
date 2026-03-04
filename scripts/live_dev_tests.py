@@ -882,7 +882,8 @@ def test_bulk_basic_multilocale_forbidden(cfg: RunConfig) -> dict[str, Any]:
     return {"status_code": resp.status_code}
 
 
-def test_bulk_standard_two_locales(cfg: RunConfig) -> dict[str, Any]:
+def test_bulk_standard_multilocale_forbidden(cfg: RunConfig) -> dict[str, Any]:
+    """Standard plan: multi-locale bulk (>1 locale) is now Pro-only and must return 403."""
     if cfg.skip_openai:
         raise TestFailure("skip_openai=true; cannot run bulk test")
     with SessionLocal() as db:
@@ -898,13 +899,8 @@ def test_bulk_standard_two_locales(cfg: RunConfig) -> dict[str, Any]:
         "tone_profile": "minimalist",
     }
     resp = _post_json(cfg, "/api/proxy/generate-bulk", params=params, body=body)
-    _assert_eq(resp.status_code, 200, "Standard bulk should succeed")
-    payload = resp.json()
-    _assert(payload.get("status") == "success", "Bulk response must be success")
-    results = payload.get("results")
-    _assert(isinstance(results, dict), "Bulk results must be dict")
-    _assert("en" in results and "fr" in results, "Bulk results must contain both locales")
-    return {"status_code": resp.status_code, "results_locales": sorted(list(results.keys()))}
+    _assert_eq(resp.status_code, 403, "Standard bulk multi-locale must be forbidden (403)")
+    return {"status_code": resp.status_code}
 
 
 def test_bulk_pro_three_locales(cfg: RunConfig) -> dict[str, Any]:
@@ -1192,9 +1188,9 @@ def _build_tests() -> list[TestCase]:
             expected="Basic plan: bulk with 2 locales returns HTTP 403",
         ),
         TestCase(
-            "bulk_standard_two_locales",
-            test_bulk_standard_two_locales,
-            expected="Standard plan: bulk with 2 locales returns HTTP 200 and results contain both locales",
+            "bulk_standard_multilocale_forbidden",
+            test_bulk_standard_multilocale_forbidden,
+            expected="Standard plan: bulk with 2 locales returns HTTP 403 (multi-locale bulk is Pro-only)",
         ),
         TestCase(
             "bulk_pro_three_locales",
