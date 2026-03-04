@@ -28,6 +28,7 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "publish": False,
         "apply_price": False,
         "meta_integration": False,
+        "multi_locale_bulk": False,
     },
     "Basic": {
         "product_limit": 50,
@@ -48,6 +49,7 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "publish": False,
         "apply_price": False,
         "meta_integration": False,
+        "multi_locale_bulk": False,
     },
     "Standard": {
         "product_limit": -1,
@@ -68,6 +70,7 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "publish": False,
         "apply_price": False,
         "meta_integration": False,
+        "multi_locale_bulk": False,
     },
     "Pro": {
         "product_limit": -1,
@@ -88,6 +91,7 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "publish": True,
         "apply_price": True,
         "meta_integration": True,
+        "multi_locale_bulk": True,
     },
 }
 
@@ -102,6 +106,7 @@ _FEATURE_MIN_TIER: dict[str, str] = {
     "publish": "Pro",
     "apply_price": "Pro",
     "meta_integration": "Pro",
+    "multi_locale_bulk": "Pro",
 }
 
 

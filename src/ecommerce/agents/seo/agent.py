@@ -63,10 +63,16 @@ class SEOAgent(BaseAgent):
         
         if search_query:
             try:
-                # Fetch top 3 competitors from Google
+                from src.ecommerce.config.shopify_config import LOCALE_TO_SERP_PARAMS
+                target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+                serp_params = LOCALE_TO_SERP_PARAMS.get(target_locale, {})
+
                 serp_results = await self.services.serp.search(
                     query=search_query,
                     num_results=3,
+                    location=serp_params.get("location"),
+                    gl=serp_params.get("gl"),
+                    hl=serp_params.get("hl"),
                 )
                 
                 # Store in context for SEO generation

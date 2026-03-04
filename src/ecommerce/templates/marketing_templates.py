@@ -22,6 +22,8 @@ Generate product launch emails that:
 - Match the brand voice
 - Work for both subject line and body
 
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
+
 Return ONLY valid JSON:
 {
   "subject": "Email subject line (50 chars max)",
@@ -50,6 +52,8 @@ Generate abandoned cart recovery emails that:
 - Offer help or incentives
 - Have a clear CTA
 
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
+
 Return ONLY valid JSON:
 {
   "subject": "Email subject line (50 chars max)",
@@ -77,6 +81,8 @@ Generate welcome emails for new subscribers that:
 - Include a CTA to explore products
 - Match the brand voice
 
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
+
 Return ONLY valid JSON:
 {
   "subject": "Email subject line (50 chars max)",
@@ -101,6 +107,8 @@ Generate social media ad copy that:
 - Includes a compelling headline (40 chars)
 - Has a clear CTA
 - Creates urgency or interest
+
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
 
 Return ONLY valid JSON:
 {
@@ -129,6 +137,8 @@ Generate search ad copy that:
 - Includes relevant keywords
 - Has a strong CTA
 - Matches search intent
+
+IMPORTANT: All generated content MUST be written in the language of the Target Locale provided by the user.
 
 Return ONLY valid JSON:
 {

@@ -239,6 +239,15 @@ class TestPlanEntitlements:
     def test_get_required_tier_unknown_returns_none(self):
         assert get_required_tier("rewriter") is None
 
+    def test_multi_locale_bulk_pro_only(self):
+        assert PLAN_ENTITLEMENTS["Free"]["multi_locale_bulk"] is False
+        assert PLAN_ENTITLEMENTS["Basic"]["multi_locale_bulk"] is False
+        assert PLAN_ENTITLEMENTS["Standard"]["multi_locale_bulk"] is False
+        assert PLAN_ENTITLEMENTS["Pro"]["multi_locale_bulk"] is True
+
+    def test_get_required_tier_multi_locale_bulk(self):
+        assert get_required_tier("multi_locale_bulk") == "Pro"
+
 
 # =========================================================================
 # Part 2: validate_feature_access
@@ -278,6 +287,31 @@ class TestValidateFeatureAccess:
         with pytest.raises(HTTPException) as exc:
             validate_feature_access(ctx, "autonomous")
         assert exc.value.status_code == 403
+
+    def test_free_cannot_access_multi_locale_bulk(self):
+        ctx = _make_context("Free")
+        with pytest.raises(HTTPException) as exc:
+            validate_feature_access(ctx, "multi_locale_bulk")
+        assert exc.value.status_code == 403
+        assert "Pro" in exc.value.detail
+
+    def test_basic_cannot_access_multi_locale_bulk(self):
+        ctx = _make_context("Basic")
+        with pytest.raises(HTTPException) as exc:
+            validate_feature_access(ctx, "multi_locale_bulk")
+        assert exc.value.status_code == 403
+        assert "Pro" in exc.value.detail
+
+    def test_standard_cannot_access_multi_locale_bulk(self):
+        ctx = _make_context("Standard")
+        with pytest.raises(HTTPException) as exc:
+            validate_feature_access(ctx, "multi_locale_bulk")
+        assert exc.value.status_code == 403
+        assert "Pro" in exc.value.detail
+
+    def test_pro_can_access_multi_locale_bulk(self):
+        ctx = _make_context("Pro")
+        validate_feature_access(ctx, "multi_locale_bulk")
 
     def test_free_can_access_core_modules(self):
         ctx = _make_context("Free")
@@ -576,6 +610,10 @@ class TestShopGatingColumns:
         shop = db_session.query(Shop).filter_by(domain="pro-shop").first()
         assert shop.monthly_missions_used == 0
         assert shop.monthly_image_generations_used == 0
+
+    def test_ui_language_defaults_to_en(self, db_session):
+        shop = db_session.query(Shop).filter_by(domain="free-shop").first()
+        assert shop.ui_language == "en"
 
 
 # =========================================================================
