@@ -62,6 +62,7 @@ You have a draft that is approximately 90% correct. Your job is to modify it bas
 3. Make only the changes requested in the feedback.
 4. Maintain the same JSON output format with keys: title, description, discovered_values.
 5. Keep all HTML formatting and section structure intact unless specifically asked to change it.
+6. All output MUST remain in the language of the Target Locale: {target_locale}
 
 ### CURRENT DRAFT (Title):
 {current_title}

@@ -360,6 +360,149 @@ class TestMarketingAgentMultiLocale:
 
         assert locale in user_prompt or user_prompt != ""
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("locale", ALL_LOCALES)
+    async def test_social_hooks_prompt_contains_target_locale(self, mock_services, locale):
+        """generate_social_hooks() injects target_locale into the LLM prompt."""
+        mock_services.llm.generate_text = AsyncMock(
+            return_value='{"hooks": [{"type": "Aesthetic", "caption": "C", "hashtags": ["#t"], "overlay": "O"}]}'
+        )
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+
+        await agent.generate_social_hooks(
+            product_title="Bowl",
+            category="Kitchenware",
+            tags=["craft"],
+            target_locale=locale,
+        )
+
+        prompt_sent = mock_services.llm.generate_text.call_args.kwargs.get("prompt", "")
+        assert locale in prompt_sent, (
+            f"target_locale '{locale}' not found in social hooks prompt"
+        )
+
+    @pytest.mark.asyncio
+    async def test_social_hooks_default_locale_is_en(self, mock_services):
+        """When target_locale is omitted, it defaults to 'en'."""
+        mock_services.llm.generate_text = AsyncMock(
+            return_value='{"hooks": []}'
+        )
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+
+        await agent.generate_social_hooks(
+            product_title="Bowl",
+            category="Kitchenware",
+        )
+
+        prompt_sent = mock_services.llm.generate_text.call_args.kwargs.get("prompt", "")
+        assert "en" in prompt_sent
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("locale", ALL_LOCALES)
+    async def test_generate_social_threads_locale_from_state(self, mock_services, locale):
+        """_generate_social reads target_locale from state and passes it to generate_social_hooks."""
+        mock_services.llm.generate_text = AsyncMock(
+            return_value='{"hooks": [{"type": "Aesthetic", "caption": "C", "hashtags": ["#t"], "overlay": "O"}]}'
+        )
+        state = _make_state(locale)
+
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        result = await agent.run(state)
+
+        prompt_sent = mock_services.llm.generate_text.call_args.kwargs.get("prompt", "")
+        assert locale in prompt_sent, (
+            f"_generate_social did not pass locale '{locale}' to generate_social_hooks"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("locale", ["fr", "de", "ko", "es"])
+    async def test_seasonal_campaign_prompt_contains_locale(self, mock_services, locale):
+        """generate_seasonal_campaign() injects target_locale into prompt."""
+        mock_services.llm.generate_text = AsyncMock(
+            return_value='{"caption": "Seasonal!", "cta": "Shop now"}'
+        )
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+
+        with patch("src.ecommerce.agents.marketing.agent.get_next_upcoming_holiday") as mock_holiday, \
+             patch("src.ecommerce.agents.marketing.agent.should_show_seasonal_campaign", return_value=True):
+            from datetime import date
+            holiday = MagicMock()
+            holiday.name = "Test Day"
+            holiday.date = date(2026, 12, 25)
+            mock_holiday.return_value = holiday
+
+            result = await agent.generate_seasonal_campaign(
+                product_title="Bowl",
+                category="Kitchenware",
+                target_locale=locale,
+            )
+
+        if result is not None:
+            prompt_sent = mock_services.llm.generate_text.call_args.kwargs.get("prompt", "")
+            assert locale in prompt_sent, (
+                f"target_locale '{locale}' not in seasonal campaign prompt"
+            )
+
+    @pytest.mark.asyncio
+    async def test_build_user_prompt_fallback_includes_locale(self, mock_services):
+        """_build_user_prompt fallback path for social templates includes target_locale."""
+        state = _make_state("fr")
+        state.raw_input["template_id"] = "marketing/social-tiktok"
+
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+
+        with patch("src.ecommerce.templates.get_template", return_value=None):
+            user_prompt = agent._build_user_prompt(state, context, "marketing/social-tiktok")
+
+        assert "fr" in user_prompt
+
+
+# =============================================================================
+# RewriterAgent: refinement mode preserves locale
+# =============================================================================
+
+class TestRewriterRefinementLocale:
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("locale", ALL_LOCALES)
+    async def test_refinement_prompt_contains_target_locale(self, mock_services, locale):
+        """REWRITER_REFINE_PROMPT includes target_locale so output stays in locale."""
+        mock_services.llm.generate_text = AsyncMock(
+            return_value='{"title": "Refined", "description": "<p>Refined</p>", "discovered_values": []}'
+        )
+        state = _make_state(locale)
+        state.draft_content = "<p>Existing draft</p>"
+        state.draft_title = "Existing Title"
+        state.raw_input["_regeneration_feedback"] = "Make it shorter"
+
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        result = await agent.run(state)
+
+        system_prompt_sent = mock_services.llm.generate_text.call_args.kwargs.get("system_prompt", "")
+        assert locale in system_prompt_sent, (
+            f"target_locale '{locale}' not found in refinement system prompt"
+        )
+
+    @pytest.mark.asyncio
+    async def test_refinement_fallback_locale_from_raw_input(self, mock_services):
+        """When target_locale is None, refinement reads from raw_input."""
+        mock_services.llm.generate_text = AsyncMock(
+            return_value='{"title": "R", "description": "<p>R</p>", "discovered_values": []}'
+        )
+        state = _make_state("en")
+        state.target_locale = None
+        state.raw_input["target_locale"] = "ko"
+        state.draft_content = "<p>Draft</p>"
+        state.draft_title = "Title"
+        state.raw_input["_regeneration_feedback"] = "Fix tone"
+
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        result = await agent.run(state)
+
+        system_prompt_sent = mock_services.llm.generate_text.call_args.kwargs.get("system_prompt", "")
+        assert "ko" in system_prompt_sent
+
 
 # =============================================================================
 # MissionState: locale serialization round-trip
