@@ -67,6 +67,8 @@ class SerpService:
         num_results: int = 3,
         engine: str = "google",
         location: Optional[str] = None,
+        gl: Optional[str] = None,
+        hl: Optional[str] = None,
     ) -> List[SerpResult]:
         """
         Fetch top organic SERP results for a query.
@@ -76,6 +78,8 @@ class SerpService:
             num_results: Number of results to return (default: 3)
             engine: Search engine to use (default: google)
             location: Optional location for localized results
+            gl: Google country code (e.g. "us", "de", "fr")
+            hl: Google language code (e.g. "en", "de", "fr")
 
         Returns:
             List of SerpResult objects, empty list on failure
@@ -96,6 +100,10 @@ class SerpService:
         }
         if location:
             params["location"] = location
+        if gl:
+            params["gl"] = gl
+        if hl:
+            params["hl"] = hl
 
         for attempt in range(2):
             try:
@@ -162,6 +170,8 @@ class SerpService:
         query: str,
         num_results: int = 20,
         location: Optional[str] = "United States",
+        gl: Optional[str] = None,
+        hl: Optional[str] = None,
     ) -> List[ShoppingResult]:
         """
         Fetch Google Shopping results for a product query.
@@ -182,6 +192,10 @@ class SerpService:
         }
         if location:
             params["location"] = location
+        if gl:
+            params["gl"] = gl
+        if hl:
+            params["hl"] = hl
 
         shopping_timeout = httpx.Timeout(8.0)
 
@@ -269,10 +283,19 @@ class SerpService:
         product_name: str,
         category: str,
         num_results: int = 20,
+        location: Optional[str] = None,
+        gl: Optional[str] = None,
+        hl: Optional[str] = None,
     ) -> List[Dict]:
         """Fetch competitor prices using Google Shopping Light API."""
         query = f"{product_name} {category}"
-        results = await self.search_shopping(query, num_results=num_results)
+        results = await self.search_shopping(
+            query,
+            num_results=num_results,
+            location=location or "United States",
+            gl=gl,
+            hl=hl,
+        )
         return [
             {
                 "title": r.title,
@@ -290,11 +313,14 @@ class SerpService:
         self,
         product_name: str,
         market: str = "US",
+        gl: Optional[str] = None,
+        hl: Optional[str] = None,
+        location: Optional[str] = None,
     ) -> List[SerpResult]:
         """Search for competitor products in a specific market."""
         query = f"{product_name} buy online"
-        location = "United States" if market == "US" else None
-        return await self.search(query, num_results=5, location=location)
+        loc = location or ("United States" if market == "US" else None)
+        return await self.search(query, num_results=5, location=loc, gl=gl, hl=hl)
 
 
 # ==============================================================================

@@ -59,6 +59,7 @@ def _ensure_shop_columns_exist():
             add("brand_context_last_error TEXT", "brand_context_last_error")
             add("brand_context_job_id TEXT", "brand_context_job_id")
             add("ui_language TEXT DEFAULT 'en'", "ui_language")
+            add("default_target_locale TEXT DEFAULT 'en'", "default_target_locale")
         return
 
     with engine.begin() as conn:
@@ -87,6 +88,7 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_last_error TEXT"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_job_id VARCHAR"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS ui_language VARCHAR(5) DEFAULT 'en'"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS default_target_locale VARCHAR(10) NOT NULL DEFAULT 'en'"))
 
 
 def _ensure_pgvector_extension_and_indexes():
