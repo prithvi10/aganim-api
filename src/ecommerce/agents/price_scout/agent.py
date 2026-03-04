@@ -145,11 +145,17 @@ class PriceScoutAgent(BaseAgent):
         category = context.get_category()
         
         try:
-            # Google Shopping API call (not LLM) - requests 20 results
+            from src.ecommerce.config.shopify_config import LOCALE_TO_SERP_PARAMS
+            target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+            serp_params = LOCALE_TO_SERP_PARAMS.get(target_locale, {})
+
             competitors = await self.services.serp.get_competitor_prices(
                 product_name=product_name,
                 category=category,
                 num_results=20,
+                location=serp_params.get("location"),
+                gl=serp_params.get("gl"),
+                hl=serp_params.get("hl"),
             )
             
             context.external_data["raw_competitors"] = competitors

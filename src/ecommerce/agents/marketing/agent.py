@@ -206,6 +206,7 @@ class MarketingAgent(BaseAgent):
         category: str,
         tags: Optional[List[str]] = None,
         focus: str = "Instagram Reels",
+        target_locale: str = "en",
     ) -> Dict[str, Any]:
         """
         Generate social media hooks/captions for a product.
@@ -218,6 +219,7 @@ class MarketingAgent(BaseAgent):
             category: Product category
             tags: Product tags (optional)
             focus: Content format focus (default: Instagram Reels)
+            target_locale: Target locale for output language
         
         Returns:
             Dict with hooks and overlay_suggestions
@@ -229,6 +231,7 @@ class MarketingAgent(BaseAgent):
             product_title=product_title,
             category=category,
             tags=tags_str,
+            target_locale=target_locale,
         )
         
         result = await self.services.llm.generate_text(
@@ -282,6 +285,7 @@ class MarketingAgent(BaseAgent):
         self,
         product_title: str,
         category: str,
+        target_locale: str = "en",
     ) -> Optional[Dict[str, Any]]:
         """
         Generate seasonal campaign data and caption.
@@ -291,6 +295,7 @@ class MarketingAgent(BaseAgent):
         Args:
             product_title: Product title
             category: Product category
+            target_locale: Target locale for output language
         
         Returns:
             Dict with campaign data and caption, or None if no upcoming holiday
@@ -314,6 +319,7 @@ class MarketingAgent(BaseAgent):
             days_until=days_until,
             product_title=product_title,
             category=category,
+            target_locale=target_locale,
         )
         
         result = await self.services.llm.generate_text(
@@ -448,12 +454,14 @@ class MarketingAgent(BaseAgent):
             if isinstance(product_tags, str):
                 product_tags = [t.strip() for t in product_tags.split(",") if t.strip()]
             tags_str = ", ".join(product_tags[:10]) if product_tags else ""
+            target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
             
             return SOCIAL_HOOKS_USER_PROMPT_TEMPLATE.format(
                 focus="Instagram Reels",
                 product_title=context.get_product_title(),
                 category=context.get_category(),
                 tags=tags_str,
+                target_locale=target_locale,
             )
         
         return ""
@@ -471,11 +479,14 @@ class MarketingAgent(BaseAgent):
             if isinstance(product_tags, str):
                 product_tags = [t.strip() for t in product_tags.split(",") if t.strip()]
             
+            target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+            
             hooks_result = await self.generate_social_hooks(
                 product_title=context.get_product_title(),
                 category=context.get_category(),
                 tags=product_tags,
                 focus="Instagram Reels" if "instagram" in template_id else "TikTok",
+                target_locale=target_locale,
             )
             
             actions.append(

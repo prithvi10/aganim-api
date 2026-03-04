@@ -163,6 +163,7 @@ def test_free_auto_activated_expires_after_10_credits(integration_client):
     assert data["plan_name"] == "Free"
     assert data["billing_cycle_type"] == "lifetime"
     assert data["lifetime_rewrites_remaining"] == 10
+    assert data["ui_language"] == "en"
 
     # 10 rewrites succeed
     for _ in range(10):
@@ -279,3 +280,38 @@ def test_paid_uninstall_reinstall_activates_previous_plan_with_grace_mode(integr
     # Rewrites should work during grace
     r_ok = _rewrite_success(client, shop)
     assert r_ok.status_code == 200
+
+
+def test_ui_language_get_and_put(integration_client):
+    client, SessionLocal = integration_client
+    shop = "ui-lang-test.myshopify.com"
+
+    _install(client, shop)
+
+    # Default ui_language should be "en"
+    u = client.get(f"/api/admin/usage?shop={shop}")
+    assert u.status_code == 200
+    assert u.json()["ui_language"] == "en"
+
+    # Switch to Japanese
+    r = client.put("/api/admin/ui-language", json={"shop": shop, "ui_language": "ja"})
+    assert r.status_code == 200
+    assert r.json()["ui_language"] == "ja"
+
+    # Verify persisted via usage endpoint
+    u2 = client.get(f"/api/admin/usage?shop={shop}")
+    assert u2.status_code == 200
+    assert u2.json()["ui_language"] == "ja"
+
+    # Switch back to English
+    r2 = client.put("/api/admin/ui-language", json={"shop": shop, "ui_language": "en"})
+    assert r2.status_code == 200
+    assert r2.json()["ui_language"] == "en"
+
+    # Invalid language rejected
+    r3 = client.put("/api/admin/ui-language", json={"shop": shop, "ui_language": "fr"})
+    assert r3.status_code == 400
+
+    # Missing shop rejected
+    r4 = client.put("/api/admin/ui-language", json={"ui_language": "en"})
+    assert r4.status_code == 400

@@ -293,6 +293,7 @@ class RewriterAgent(BaseAgent):
         Uses REWRITER_REFINE_PROMPT to make targeted edits only.
         """
         # Build the refinement prompt with current draft and feedback
+        target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
         system_prompt = REWRITER_REFINE_PROMPT.format(
             current_title=previous_draft.get("title", ""),
             current_description=previous_draft.get("description", ""),
@@ -300,6 +301,7 @@ class RewriterAgent(BaseAgent):
             source_title=context.get_product_title(),
             category=context.get_category(),
             source_description=context.get_product_description()[:3000],  # Limit length
+            target_locale=target_locale,
         )
         
         user_prompt = REFINE_USER_PROMPT.format(user_feedback=feedback)

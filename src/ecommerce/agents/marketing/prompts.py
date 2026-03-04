@@ -26,6 +26,7 @@ CONSTRAINTS:
 - Each hook must include 8-12 relevant hashtags
 - Overlay suggestions must be <= 28 characters
 - Do NOT make false claims about the product
+- IMPORTANT: All captions, hashtags, and overlay suggestions MUST be written in the language of the Target Locale provided by the user.
 """
 
 SOCIAL_HOOKS_USER_PROMPT_TEMPLATE = """Generate 3 viral hooks for this product:
@@ -35,6 +36,7 @@ FORMAT: {focus}
 PRODUCT: {product_title}
 CATEGORY: {category}
 TAGS: {tags}
+TARGET LANGUAGE: {target_locale}
 
 Generate 3 hooks (Aesthetic, Educational, Viral) with captions, hashtags, and overlay suggestions.
 
@@ -59,6 +61,7 @@ CONSTRAINTS:
 - Caption must be <= 220 characters
 - Tone: warm, seasonal, authentic
 - Do NOT invent product claims
+- IMPORTANT: All captions and CTAs MUST be written in the language of the Target Locale provided by the user.
 """
 
 SEASONAL_CAPTION_USER_PROMPT_TEMPLATE = """Generate a seasonal caption:
@@ -67,6 +70,7 @@ PLATFORM: Instagram
 HOLIDAY: {holiday_name} ({holiday_date}, {days_until} days away)
 PRODUCT: {product_title}
 CATEGORY: {category}
+TARGET LANGUAGE: {target_locale}
 
 Return JSON:
 {{

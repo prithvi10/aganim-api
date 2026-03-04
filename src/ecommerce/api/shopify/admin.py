@@ -167,7 +167,90 @@ async def get_usage(
         # --- New plan-gating fields ---
         "entitlements": ent,
         "feature_usage": feature_usage,
+        "ui_language": getattr(shop, "ui_language", "en") or "en",
+        "default_target_locale": getattr(shop, "default_target_locale", "en") or "en",
     }
+
+
+# =============================================================================
+# UI Language Preference
+# =============================================================================
+
+_ALLOWED_UI_LANGUAGES = {"en", "ja"}
+
+
+@router.put("/api/admin/ui-language")
+async def update_ui_language(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Persist the merchant's UI language preference (en or ja)."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    shop_domain = str(body.get("shop") or "").strip()
+    ui_language = str(body.get("ui_language") or "").strip().lower()
+
+    if not shop_domain:
+        raise HTTPException(status_code=400, detail="Missing shop")
+    if ui_language not in _ALLOWED_UI_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"ui_language must be one of {_ALLOWED_UI_LANGUAGES}")
+
+    shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop_rec:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    shop_rec.ui_language = ui_language
+    db.add(shop_rec)
+    db.commit()
+
+    logger.info("[UiLang] shop=%s lang=%s", shop_domain, ui_language)
+    return {"ui_language": ui_language}
+
+
+# =============================================================================
+# Default Target Locale Preference
+# =============================================================================
+
+from src.ecommerce.config.configs import LOCALE_PERSONA_MAP
+
+_ALLOWED_TARGET_LOCALES = set(LOCALE_PERSONA_MAP.keys())
+
+
+@router.put("/api/admin/default-target-locale")
+async def update_default_target_locale(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Persist the merchant's default content target locale."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    shop_domain = str(body.get("shop") or "").strip()
+    locale = str(body.get("locale") or "").strip()
+
+    if not shop_domain:
+        raise HTTPException(status_code=400, detail="Missing shop")
+    if locale not in _ALLOWED_TARGET_LOCALES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"locale must be one of {sorted(_ALLOWED_TARGET_LOCALES)}",
+        )
+
+    shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop_rec:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    shop_rec.default_target_locale = locale
+    db.add(shop_rec)
+    db.commit()
+
+    logger.info("[DefaultLocale] shop=%s locale=%s", shop_domain, locale)
+    return {"default_target_locale": locale}
 
 
 # =============================================================================
