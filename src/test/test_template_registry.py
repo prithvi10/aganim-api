@@ -196,6 +196,28 @@ class TestPromptContent:
         assert "body_html" in t.system_prompt.lower()
         assert "tags" in t.system_prompt.lower()
 
+    def test_product_blog_post_prompt_includes_visual_brief(self):
+        t = get_template("product/blog-post")
+        assert t is not None
+        assert "visual_brief" in t.system_prompt
+        assert "hero_subject" in t.system_prompt
+        assert "surface" in t.system_prompt
+        assert "environment" in t.system_prompt
+        assert "lighting" in t.system_prompt
+
+    def test_product_blog_post_prompt_has_art_direction_rules(self):
+        t = get_template("product/blog-post")
+        assert t is not None
+        assert "No actors" in t.system_prompt or "no faces" in t.system_prompt
+        assert "still life" in t.system_prompt.lower()
+
+    def test_product_blog_post_prompt_has_content_priority(self):
+        t = get_template("product/blog-post")
+        assert t is not None
+        assert "Content Priority" in t.system_prompt
+        assert "Category" in t.system_prompt
+        assert "Additional Context" in t.system_prompt
+
     def test_all_marketing_templates_return_json(self):
         """Marketing templates should request JSON output."""
         import src.ecommerce.templates  # noqa: F401

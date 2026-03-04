@@ -65,6 +65,7 @@ class Shop(Base):
     meta_access_token = Column(String, nullable=True)
     meta_page_id = Column(String, nullable=True)
     price_guardrails = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    logo_url = Column(String, nullable=True)
 
     # --- Plan-gating usage counters (added for plan overhaul) ---
     lifetime_missions_remaining = Column(Integer, nullable=False, default=3, server_default="3")
