@@ -1416,10 +1416,10 @@ async def process_bulk_generation_request(
     )
 
     # 1. Plan Check for Bulk (Multi-locale)
-    if len(request.target_locales) > 1 and plan.name not in ("Standard", "Pro"):
+    if len(request.target_locales) > 1 and plan.name != "Pro":
         raise HTTPException(
             status_code=403,
-            detail="Bulk multi-market generation requires Standard or Pro plan.",
+            detail="Bulk multi-market generation requires the Pro plan.",
         )
 
     try:

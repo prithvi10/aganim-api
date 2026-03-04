@@ -65,9 +65,20 @@ SHOPIFY_UI_URL = os.getenv("SHOPIFY_UI_URL", "https://shopify-translator-ui.onre
 # Localization persona + premium branding glossary
 # ==============================================================================
 LOCALE_PERSONA_MAP = {
+    # Core markets
     "en": "US Amazon Market",
     "zh-TW": "Taiwan Shopee Market (use Taiwanese Mandarin and emphasize CP値/CP ratio)",
     "ko": "Korean Coupang Market (use natural Korean marketing tone)",
+    # European markets
+    "de": "German Market (precise, specification-driven, emphasize Handarbeit/craftsmanship and quality certifications)",
+    "fr": "French Market (artisanal, savoir-faire, cultural refinement, emphasize heritage and aesthetics)",
+    "es": "Spanish Market (warm, family-oriented, emphasize artesanal quality and tradition)",
+    "it": "Italian Market (design-conscious, artigianale, emphasize materials and craftsmanship lineage)",
+    "pt": "Portuguese/Brazilian Market (approachable, emphasize handmade quality and exclusivity)",
+    # Additional Asian markets
+    "th": "Thai Market (polite, value-conscious, emphasize authenticity and import exclusivity)",
+    "vi": "Vietnamese Market (practical, value-focused, emphasize Japanese origin and premium quality)",
+    "zh-CN": "Mainland China Market (use Simplified Chinese, emphasize 匠人精神/craftsmanship and premium import positioning)",
 }
 
 # key -> { "match": regex alternation, "hint": short factual guidance }
