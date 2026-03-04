@@ -106,6 +106,7 @@ def social_hook_architect_action(product_data: dict[str, Any], context: dict[str
         tags = [t.strip() for t in tags.split(",") if t.strip()]
 
     focus = str(context.get("focus") or "Instagram Reels").strip()
+    target_locale = str(context.get("target_locale") or "en").strip()
 
     hashtags = _suggest_hashtags(product_title, category, tags if isinstance(tags, list) else None)
 
@@ -119,23 +120,26 @@ def social_hook_architect_action(product_data: dict[str, Any], context: dict[str
     ]
 
     if use_ai and product_title:
-        logger.info("[AgentAction] rid=%s action=social_hook_architect mode=ai", rid)
+        logger.info("[AgentAction] rid=%s action=social_hook_architect mode=ai locale=%s", rid, target_locale)
         system = (
             "You are a senior social media strategist. "
-            "Return ONLY valid JSON. No markdown fences."
+            "Return ONLY valid JSON. No markdown fences. "
+            "IMPORTANT: All captions, hashtags, and overlay suggestions MUST be written in the language of the Target Locale provided."
         )
         user = {
             "platform": "instagram",
             "format": focus,
+            "target_locale": target_locale,
             "product": {
                 "title": product_title,
                 "category": category,
                 "tags": tags,
             },
             "task": (
-                "Generate 3 viral hooks: Aesthetic, Educational, Viral. "
-                "Each must include a short caption (<=220 chars) and 8-12 hashtags. "
-                "Also provide 3 short text-overlay suggestions for Reels (<=28 chars each)."
+                f"Generate 3 viral hooks: Aesthetic, Educational, Viral. "
+                f"Each must include a short caption (<=220 chars) and 8-12 hashtags. "
+                f"Also provide 3 short text-overlay suggestions for Reels (<=28 chars each). "
+                f"All content MUST be in the language for locale: {target_locale}."
             ),
             "output_schema": {
                 "hooks": [
@@ -290,20 +294,25 @@ def seasonal_campaign_caption_action(product_data: dict[str, Any], context: dict
     use_ai = bool(os.getenv("OPENAI_API_KEY"))
     caption = ""
 
+    target_locale = str(context.get("target_locale") or "en").strip()
+
     if use_ai and product_title:
-        logger.info("[AgentAction] rid=%s action=seasonal_campaign_caption mode=ai holiday=%s", rid, holiday.name)
+        logger.info("[AgentAction] rid=%s action=seasonal_campaign_caption mode=ai holiday=%s locale=%s", rid, holiday.name, target_locale)
         system = (
             "You are a senior social media strategist. "
-            "Return ONLY valid JSON. No markdown fences."
+            "Return ONLY valid JSON. No markdown fences. "
+            "IMPORTANT: All captions and CTAs MUST be written in the language of the Target Locale provided."
         )
         user = {
             "platform": "instagram",
+            "target_locale": target_locale,
             "holiday": {"name": holiday.name, "date": holiday.date.isoformat(), "days_until": days_until},
             "product": {"title": product_title, "category": category, "tags": tags},
             "constraints": {
                 "caption_max_chars": 220,
                 "tone": "warm, seasonal, authentic",
                 "no_invented_claims": True,
+                "language": f"All output MUST be in the language for locale: {target_locale}",
             },
             "output_schema": {"caption": "string", "cta": "string"},
         }
