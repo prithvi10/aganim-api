@@ -276,12 +276,12 @@ def test_parse_llm_result_valid_json():
 
 
 def test_parse_llm_result_invalid_json():
-    """Test parsing invalid JSON returns raw content as description."""
+    """Test parsing invalid JSON returns raw content as raw_text."""
     agent = CopywriterAgent("test-shop.myshopify.com", MagicMock())
     
     result = agent._parse_llm_result("Just plain text content")
     
-    assert result["description"] == "Just plain text content"
+    assert result["raw_text"] == "Just plain text content"
 
 
 def test_parse_llm_result_with_markdown_code_block():

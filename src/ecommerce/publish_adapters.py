@@ -235,10 +235,14 @@ class ShopifyPublishAdapter:
         1. Append the **refined product image** to the Shopify product's
            media gallery (does NOT replace existing images).
         2. Upload ad + hero to the Media Library (for download / manual use).
+        3. Inject refined image + ad into the product description HTML.
         """
         from src.ecommerce.services.shopify_service import (
             upload_media_to_shopify,
             add_product_image,
+            get_product_body,
+            update_product_body,
+            inject_section,
         )
         import httpx
 
@@ -274,6 +278,7 @@ class ShopifyPublishAdapter:
                 )
 
         # ── 2. Upload ad + hero to Shopify Media Library ──
+        ad_url = assets.get("ad_url")
         for asset_type in ("ad", "hero"):
             url = assets.get(f"{asset_type}_url")
             if not url:
@@ -302,6 +307,46 @@ class ShopifyPublishAdapter:
                 logger.error(
                     "Failed to publish visual asset '%s' to Shopify (%s): %s",
                     asset_type, state.shop_id, str(e),
+                )
+
+        # ── 3. Inject images into product description HTML ──
+        if product_id and (refined_url or ad_url):
+            try:
+                current_body = await get_product_body(state.shop_id, access_token, product_id) or ""
+
+                img_parts = []
+                if refined_url:
+                    img_parts.append(
+                        f'<img src="{refined_url}" alt="{product_name} - AI-refined product image" '
+                        f'style="max-width:100%;height:auto;border-radius:8px;" />'
+                    )
+                if ad_url:
+                    img_parts.append(
+                        f'<img src="{ad_url}" alt="{product_name} - marketing ad" '
+                        f'style="max-width:100%;height:auto;border-radius:8px;" />'
+                    )
+
+                visual_html = (
+                    "<!-- cba-visual-start -->\n"
+                    '<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0;">\n'
+                    + "\n".join(img_parts)
+                    + "\n</div>\n<!-- cba-visual-end -->"
+                )
+
+                current_body = inject_section(
+                    current_body, visual_html,
+                    "<!-- cba-visual-start -->", "<!-- cba-visual-end -->",
+                    position="append",
+                )
+                await update_product_body(state.shop_id, access_token, product_id, current_body)
+                logger.info(
+                    "✅ Visual assets injected into product description %s (%s)",
+                    product_id, state.shop_id,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to inject visual assets into description %s (%s): %s",
+                    product_id, state.shop_id, str(e),
                 )
 
     # ------------------------------------------------------------------

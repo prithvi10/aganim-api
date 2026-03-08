@@ -415,16 +415,36 @@ def faq_json_to_html(faq_json: str) -> str:
 
         {"faqs": [{"question": "…", "answer": "…"}, …]}
 
-    Returns empty string if the input can't be parsed or has no FAQs.
-    Each FAQ is rendered as a bordered card with a bold numbered question
-    heading and answer paragraph, matching the Writing Studio preview style.
+    If the input is already HTML (e.g. from the RichTextEditor), it is
+    wrapped with markers and returned as-is so ``inject_section`` can
+    insert it into the product description.
+
+    Returns empty string only if the input is completely empty.
     """
+    if not faq_json or not faq_json.strip():
+        return ""
     try:
         data = _json.loads(faq_json) if isinstance(faq_json, str) else faq_json
         faqs = data.get("faqs", []) if isinstance(data, dict) else data
     except (_json.JSONDecodeError, TypeError):
+        # Content is already HTML from the rich-text editor — wrap with markers
+        stripped = faq_json.strip()
+        if stripped:
+            return (
+                "<!-- cba-faq-start -->\n"
+                f'<div class="cba-faq">\n{stripped}\n</div>\n'
+                "<!-- cba-faq-end -->"
+            )
         return ""
     if not faqs:
+        # Parsed as JSON but no faqs key — treat the raw content as HTML fallback
+        stripped = faq_json.strip() if isinstance(faq_json, str) else ""
+        if stripped:
+            return (
+                "<!-- cba-faq-start -->\n"
+                f'<div class="cba-faq">\n{stripped}\n</div>\n'
+                "<!-- cba-faq-end -->"
+            )
         return ""
     parts = [
         "<!-- cba-faq-start -->",
