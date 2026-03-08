@@ -306,11 +306,15 @@ class VisualAgent(BaseAgent):
         """
         Push generated visual assets to Shopify:
         1. Append refined image to the product gallery (non-destructive).
-        2. Upload ad + hero to the Media Library.
+        2. Upload ad to the Media Library.
+        3. Inject refined image + ad into the product description HTML.
         """
         from src.ecommerce.services.shopify_service import (
             upload_media_to_shopify,
             add_product_image,
+            get_product_body,
+            update_product_body,
+            inject_section,
         )
 
         assets = getattr(state, "visual_assets", None) or {}
@@ -349,35 +353,74 @@ class VisualAgent(BaseAgent):
                 )
 
         # ── 2. Upload ad to Shopify Media Library ──
-        for asset_type in ("ad",):
-            url = assets.get(f"{asset_type}_url")
-            if not url:
-                continue
-
+        ad_url = assets.get("ad_url")
+        if ad_url:
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.get(url)
+                    resp = await client.get(ad_url)
                     resp.raise_for_status()
                     image_bytes = resp.content
 
-                filename = f"{product_name}-{asset_type}.png"
+                filename = f"{product_name}-ad.png"
 
                 await upload_media_to_shopify(
                     shop_domain=state.shop_id,
                     access_token=access_token,
                     image_bytes=image_bytes,
                     filename=filename,
-                    alt_text=f"{product_name} - {asset_type} visual",
+                    alt_text=f"{product_name} - ad visual",
                 )
 
-                state.add_log(f"Visual: Published {asset_type} to Shopify Media Library")
+                state.add_log("Visual: Published ad to Shopify Media Library")
                 logger.info(
-                    "[VisualAgent] published %s to Shopify shop=%s",
-                    asset_type, state.shop_id,
+                    "[VisualAgent] published ad to Shopify shop=%s",
+                    state.shop_id,
                 )
             except Exception as e:
-                state.add_log(f"Visual: Failed to publish {asset_type}: {str(e)[:100]}")
+                state.add_log(f"Visual: Failed to publish ad: {str(e)[:100]}")
                 logger.error(
-                    "[VisualAgent] publish %s failed shop=%s err=%s",
-                    asset_type, state.shop_id, str(e),
+                    "[VisualAgent] publish ad failed shop=%s err=%s",
+                    state.shop_id, str(e),
+                )
+
+        # ── 3. Inject images into product description HTML ──
+        if product_id and (refined_url or ad_url):
+            try:
+                current_body = await get_product_body(state.shop_id, access_token, product_id) or ""
+
+                img_parts = []
+                if refined_url:
+                    img_parts.append(
+                        f'<img src="{refined_url}" alt="{product_name} - AI-refined product image" '
+                        f'style="max-width:100%;height:auto;border-radius:8px;" />'
+                    )
+                if ad_url:
+                    img_parts.append(
+                        f'<img src="{ad_url}" alt="{product_name} - marketing ad" '
+                        f'style="max-width:100%;height:auto;border-radius:8px;" />'
+                    )
+
+                visual_html = (
+                    "<!-- cba-visual-start -->\n"
+                    '<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0;">\n'
+                    + "\n".join(img_parts)
+                    + "\n</div>\n<!-- cba-visual-end -->"
+                )
+
+                current_body = inject_section(
+                    current_body, visual_html,
+                    "<!-- cba-visual-start -->", "<!-- cba-visual-end -->",
+                    position="append",
+                )
+                await update_product_body(state.shop_id, access_token, product_id, current_body)
+                state.add_log("Visual: Injected images into product description")
+                logger.info(
+                    "[VisualAgent] visual_assets_injected product=%s shop=%s",
+                    product_id, state.shop_id,
+                )
+            except Exception as e:
+                state.add_log(f"Visual: Failed to inject images into description: {str(e)[:100]}")
+                logger.error(
+                    "[VisualAgent] visual_inject_failed shop=%s err=%s",
+                    state.shop_id, str(e),
                 )

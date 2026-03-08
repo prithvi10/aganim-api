@@ -23,6 +23,8 @@ _R2_SVC = "src.ecommerce.services.r2_storage_service.R2StorageService"
 _UPLOAD_MEDIA = "src.ecommerce.services.shopify_service.upload_media_to_shopify"
 _ADD_PRODUCT_IMAGE = "src.ecommerce.services.shopify_service.add_product_image"
 _HTTPX_ASYNC_CLIENT = "httpx.AsyncClient"
+_GET_BODY = "src.ecommerce.services.shopify_service.get_product_body"
+_UPDATE_BODY = "src.ecommerce.services.shopify_service.update_product_body"
 
 
 # =============================================================================
@@ -660,7 +662,9 @@ class TestPublishVisualAssets:
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
              patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload, \
-             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img:
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await agent._publish_visual_assets(state, creds)
 
@@ -692,7 +696,9 @@ class TestPublishVisualAssets:
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
              patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload, \
-             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img:
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await agent._publish_visual_assets(state, creds)
 
@@ -753,7 +759,9 @@ class TestPublishVisualAssets:
 
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
              patch(_UPLOAD_MEDIA, side_effect=flaky_upload), \
-             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img:
+             patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock) as mock_add_img, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await agent._publish_visual_assets(state, creds)
 
@@ -779,8 +787,13 @@ class TestPublishVisualAssets:
         }
         creds = {"access_token": "shpat_test"}
 
+        _GET_BODY = "src.ecommerce.services.shopify_service.get_product_body"
+        _UPDATE_BODY = "src.ecommerce.services.shopify_service.update_product_body"
+
         with patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
-                    side_effect=Exception("productCreateMedia failed")):
+                    side_effect=Exception("productCreateMedia failed")), \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
             await agent._publish_visual_assets(state, creds)
 
         failure_logs = [l for l in state.logs if "Failed" in l]

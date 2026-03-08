@@ -545,7 +545,10 @@ class RewriterAgent(BaseAgent):
         """
         Parse the LLM JSON result.
         
-        Falls back to raw result if parsing fails.
+        Falls back to raw result if parsing fails.  Uses ``raw_text`` key so
+        the frontend fallback renderer is triggered instead of accidentally
+        matching template-specific branches (e.g. ``description`` →
+        "Collection Description").
         """
         try:
             from src.shared.utils.llm_parser import parse_llm_json
@@ -556,8 +559,7 @@ class RewriterAgent(BaseAgent):
         except Exception as e:
             logger.warning("[Rewriter] Failed to parse LLM result: %s", e)
         
-        # Fallback: return raw content as description
-        return {"description": result}
+        return {"raw_text": result}
     
     # -------------------------------------------------------------------------
     # Template-specific generators

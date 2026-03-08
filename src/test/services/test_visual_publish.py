@@ -20,6 +20,8 @@ from src.ecommerce.state import MissionState
 _HTTPX_ASYNC_CLIENT = "httpx.AsyncClient"
 _UPLOAD_MEDIA = "src.ecommerce.services.shopify_service.upload_media_to_shopify"
 _ADD_PRODUCT_IMAGE = "src.ecommerce.services.shopify_service.add_product_image"
+_GET_BODY = "src.ecommerce.services.shopify_service.get_product_body"
+_UPDATE_BODY = "src.ecommerce.services.shopify_service.update_product_body"
 
 
 # =============================================================================
@@ -88,7 +90,9 @@ class TestPublishVisualAssetsHappy:
              patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
                    return_value="gid://shopify/File/1") as mock_upload, \
              patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
-                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await adapter.publish_visual_assets(state_with_assets, creds)
 
@@ -112,7 +116,9 @@ class TestPublishVisualAssetsHappy:
              patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
                    return_value="gid://shopify/File/1") as mock_upload, \
              patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
-                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await adapter.publish_visual_assets(state_with_assets, creds)
 
@@ -155,7 +161,9 @@ class TestPublishVisualAssetsPartial:
         with patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
                    return_value="gid://1") as mock_upload, \
              patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
-                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await adapter.publish_visual_assets(state, creds)
 
@@ -307,7 +315,9 @@ class TestPublishVisualAssetsFailure:
              patch(_UPLOAD_MEDIA, new_callable=AsyncMock,
                    return_value="gid://1") as mock_upload, \
              patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
-                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await adapter.publish_visual_assets(state, creds)
 
@@ -331,7 +341,9 @@ class TestPublishVisualAssetsFailure:
         with patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
              patch(_UPLOAD_MEDIA, side_effect=flaky_upload), \
              patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
-                   return_value="gid://shopify/MediaImage/1") as mock_add_img:
+                   return_value="gid://shopify/MediaImage/1") as mock_add_img, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await adapter.publish_visual_assets(state_with_assets, creds)
 
@@ -353,7 +365,9 @@ class TestPublishVisualAssetsFailure:
 
         with patch(_ADD_PRODUCT_IMAGE, new_callable=AsyncMock,
                    return_value="gid://shopify/MediaImage/1") as mock_add_img, \
-             patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload:
+             patch(_UPLOAD_MEDIA, new_callable=AsyncMock) as mock_upload, \
+             patch(_GET_BODY, new_callable=AsyncMock, return_value="<p>existing</p>"), \
+             patch(_UPDATE_BODY, new_callable=AsyncMock):
 
             await adapter.publish_visual_assets(state, creds)
 
