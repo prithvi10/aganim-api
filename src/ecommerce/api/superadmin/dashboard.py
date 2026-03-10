@@ -213,6 +213,125 @@ async def feature_usage(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/dashboard/revenue")
+async def revenue_breakdown(db: Session = Depends(get_db)):
+    """Monthly revenue based on active paid plan subscriptions, broken down by plan."""
+    plan_prices: dict[str, float] = {}
+    for plan in db.query(Plan).all():
+        if plan.price_usd_monthly and float(plan.price_usd_monthly) > 0:
+            plan_prices[plan.name] = float(plan.price_usd_monthly)
+
+    paid_plans = list(plan_prices.keys())
+    if not paid_plans:
+        return {"total_mrr": 0, "by_plan": {}, "merchants": []}
+
+    shops = (
+        db.query(Shop.domain, Shop.current_plan_name)
+        .filter(Shop.is_active == True, Shop.current_plan_name.in_(paid_plans))
+        .all()
+    )
+
+    by_plan: dict[str, dict] = {}
+    merchants: list[dict] = []
+    total_mrr = 0.0
+
+    for domain, plan_name in shops:
+        price = plan_prices.get(plan_name, 0)
+        total_mrr += price
+        if plan_name not in by_plan:
+            by_plan[plan_name] = {"count": 0, "revenue": 0.0}
+        by_plan[plan_name]["count"] += 1
+        by_plan[plan_name]["revenue"] += price
+        merchants.append({"domain": domain, "plan": plan_name, "revenue": price})
+
+    return {
+        "total_mrr": round(total_mrr, 2),
+        "by_plan": {k: {"count": v["count"], "revenue": round(v["revenue"], 2)} for k, v in by_plan.items()},
+        "merchants": merchants,
+    }
+
+
+@router.get("/dashboard/attrition")
+async def attrition_stats(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    """Merchants who left (uninstalled or cancelled paid plan) within the given period."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    plan_prices: dict[str, float] = {}
+    for plan in db.query(Plan).all():
+        if plan.price_usd_monthly and float(plan.price_usd_monthly) > 0:
+            plan_prices[plan.name] = float(plan.price_usd_monthly)
+
+    churned = (
+        db.query(Shop)
+        .filter(
+            Shop.is_active == False,
+            Shop.last_uninstalled_at >= since,
+        )
+        .order_by(Shop.last_uninstalled_at.desc())
+        .all()
+    )
+
+    cancelled = (
+        db.query(Shop)
+        .filter(
+            Shop.is_active == True,
+            Shop.last_shopify_subscription_status == "CANCELLED",
+            Shop.last_plan_change_at >= since,
+            Shop.last_plan_name.isnot(None),
+        )
+        .order_by(Shop.last_plan_change_at.desc())
+        .all()
+    )
+
+    merchants: list[dict] = []
+    total_lost_revenue = 0.0
+    plan_lost: dict[str, dict] = {}
+
+    for shop in churned:
+        plan = shop.last_plan_name or shop.current_plan_name or "Free"
+        price = plan_prices.get(plan, 0)
+        total_lost_revenue += price
+        plan_lost.setdefault(plan, {"count": 0, "revenue": 0.0})
+        plan_lost[plan]["count"] += 1
+        plan_lost[plan]["revenue"] += price
+        merchants.append({
+            "domain": shop.domain,
+            "type": "uninstalled",
+            "last_plan": plan,
+            "lost_revenue": price,
+            "date": str(shop.last_uninstalled_at)[:10] if shop.last_uninstalled_at else None,
+        })
+
+    churned_ids = {s.id for s in churned}
+    for shop in cancelled:
+        if shop.id in churned_ids:
+            continue
+        plan = shop.last_plan_name or "Free"
+        price = plan_prices.get(plan, 0)
+        total_lost_revenue += price
+        plan_lost.setdefault(plan, {"count": 0, "revenue": 0.0})
+        plan_lost[plan]["count"] += 1
+        plan_lost[plan]["revenue"] += price
+        merchants.append({
+            "domain": shop.domain,
+            "type": "cancelled",
+            "last_plan": plan,
+            "lost_revenue": price,
+            "date": str(shop.last_plan_change_at)[:10] if shop.last_plan_change_at else None,
+        })
+
+    return {
+        "period_days": days,
+        "total_churned": len(merchants),
+        "total_lost_revenue": round(total_lost_revenue, 2),
+        "by_plan": {k: {"count": v["count"], "revenue": round(v["revenue"], 2)} for k, v in plan_lost.items()},
+        "merchants": merchants,
+    }
+
+
 THRESHOLD_PCT = 80
 
 

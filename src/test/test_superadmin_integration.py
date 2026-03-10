@@ -604,6 +604,218 @@ class TestAuthLifecycle:
 
 
 # ===================================================================
+# Integration: Revenue Tracking
+# ===================================================================
+
+class TestRevenueTracking:
+    """
+    Scenario: Multiple merchants on various plans. Revenue endpoint should
+    correctly sum up MRR from active paid merchants and exclude free/inactive.
+    """
+
+    def test_revenue_multi_plan_breakdown(self, client):
+        _reset_tables()
+        token = _get_token(client)
+        db = TestingSessionLocal()
+
+        db.add(Plan(name="Basic", price_usd_monthly=9.99, monthly_rewrite_limit=100, max_request_rate=10, is_active=True))
+        db.add(Plan(name="Standard", price_usd_monthly=19.99, monthly_rewrite_limit=500, max_request_rate=50, is_active=True))
+        db.add(Plan(name="Pro", price_usd_monthly=29.99, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
+
+        db.add(Shop(domain="rev-basic.myshopify.com", access_token="t", current_plan_name="Basic", is_active=True))
+        db.add(Shop(domain="rev-std1.myshopify.com", access_token="t", current_plan_name="Standard", is_active=True))
+        db.add(Shop(domain="rev-std2.myshopify.com", access_token="t", current_plan_name="Standard", is_active=True))
+        db.add(Shop(domain="rev-pro.myshopify.com", access_token="t", current_plan_name="Pro", is_active=True))
+        db.add(Shop(domain="rev-free.myshopify.com", access_token="t", current_plan_name="Free", is_active=True))
+        db.add(Shop(domain="rev-inactive.myshopify.com", access_token="t", current_plan_name="Pro", is_active=False))
+
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/superadmin/dashboard/revenue", headers=_auth(token))
+        assert resp.status_code == 200
+        data = resp.json()
+
+        expected_mrr = round(9.99 + 19.99 * 2 + 29.99, 2)
+        assert data["total_mrr"] == expected_mrr
+        assert data["by_plan"]["Basic"]["count"] == 1
+        assert data["by_plan"]["Basic"]["revenue"] == 9.99
+        assert data["by_plan"]["Standard"]["count"] == 2
+        assert data["by_plan"]["Standard"]["revenue"] == round(19.99 * 2, 2)
+        assert data["by_plan"]["Pro"]["count"] == 1
+        assert "Free" not in data["by_plan"]
+        assert len(data["merchants"]) == 4
+        inactive_domains = [m["domain"] for m in data["merchants"]]
+        assert "rev-inactive.myshopify.com" not in inactive_domains
+        assert "rev-free.myshopify.com" not in inactive_domains
+
+
+# ===================================================================
+# Integration: Attrition Analysis
+# ===================================================================
+
+class TestAttritionFlow:
+    """
+    Scenario: Multiple merchants leave the platform via uninstall or plan cancellation.
+    Attrition endpoint should correctly categorize and calculate lost revenue.
+    """
+
+    def test_attrition_full_flow(self, client):
+        _reset_tables()
+        token = _get_token(client)
+        db = TestingSessionLocal()
+        now = datetime.now(timezone.utc)
+
+        db.add(Plan(name="Basic", price_usd_monthly=9.99, monthly_rewrite_limit=100, max_request_rate=10, is_active=True))
+        db.add(Plan(name="Pro", price_usd_monthly=29.99, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
+
+        # Uninstalled Pro merchant (5 days ago)
+        db.add(Shop(
+            domain="uninstalled-pro.myshopify.com", access_token="t",
+            current_plan_name=None, last_plan_name="Pro",
+            is_active=False,
+            last_uninstalled_at=now - timedelta(days=5),
+        ))
+        # Cancelled Basic merchant (still active app, cancelled plan 10 days ago)
+        db.add(Shop(
+            domain="cancelled-basic.myshopify.com", access_token="t",
+            current_plan_name=None, last_plan_name="Basic",
+            is_active=True,
+            last_shopify_subscription_status="CANCELLED",
+            last_plan_change_at=now - timedelta(days=10),
+        ))
+        # Uninstalled Free merchant (3 days ago, no revenue loss)
+        db.add(Shop(
+            domain="uninstalled-free.myshopify.com", access_token="t",
+            current_plan_name=None, last_plan_name="Free",
+            is_active=False,
+            last_uninstalled_at=now - timedelta(days=3),
+        ))
+        # Old churn outside period (60 days ago)
+        db.add(Shop(
+            domain="old-uninstall.myshopify.com", access_token="t",
+            current_plan_name=None, last_plan_name="Pro",
+            is_active=False,
+            last_uninstalled_at=now - timedelta(days=60),
+        ))
+        # Active healthy merchant (should not appear)
+        db.add(Shop(
+            domain="active-healthy.myshopify.com", access_token="t",
+            current_plan_name="Pro", is_active=True,
+        ))
+
+        db.commit()
+        db.close()
+
+        # 30-day window
+        resp = client.get("/api/superadmin/dashboard/attrition?days=30", headers=_auth(token))
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["period_days"] == 30
+        assert data["total_churned"] == 3
+
+        domains = {m["domain"] for m in data["merchants"]}
+        assert "uninstalled-pro.myshopify.com" in domains
+        assert "cancelled-basic.myshopify.com" in domains
+        assert "uninstalled-free.myshopify.com" in domains
+        assert "old-uninstall.myshopify.com" not in domains
+        assert "active-healthy.myshopify.com" not in domains
+
+        assert data["total_lost_revenue"] == round(29.99 + 9.99, 2)
+
+        pro_entry = next(m for m in data["merchants"] if m["domain"] == "uninstalled-pro.myshopify.com")
+        assert pro_entry["type"] == "uninstalled"
+        assert pro_entry["lost_revenue"] == 29.99
+
+        basic_entry = next(m for m in data["merchants"] if m["domain"] == "cancelled-basic.myshopify.com")
+        assert basic_entry["type"] == "cancelled"
+        assert basic_entry["lost_revenue"] == 9.99
+
+        free_entry = next(m for m in data["merchants"] if m["domain"] == "uninstalled-free.myshopify.com")
+        assert free_entry["lost_revenue"] == 0
+
+        assert "Pro" in data["by_plan"]
+        assert data["by_plan"]["Pro"]["count"] == 1
+        assert data["by_plan"]["Pro"]["revenue"] == 29.99
+
+        # Verify 7-day window excludes the 10-day-old cancellation
+        resp7 = client.get("/api/superadmin/dashboard/attrition?days=7", headers=_auth(token))
+        assert resp7.status_code == 200
+        data7 = resp7.json()
+        domains7 = {m["domain"] for m in data7["merchants"]}
+        assert "cancelled-basic.myshopify.com" not in domains7
+        assert "uninstalled-pro.myshopify.com" in domains7
+
+
+# ===================================================================
+# Integration: Approaching Limits
+# ===================================================================
+
+class TestApproachingLimitsFlow:
+    """
+    Scenario: Merchants on various plans with different usage levels.
+    Approaching-limits endpoint should flag those near their limits.
+    """
+
+    def test_approaching_limits_mixed_plans(self, client):
+        _reset_tables()
+        token = _get_token(client)
+        db = TestingSessionLocal()
+
+        # Free merchant with nearly exhausted lifetime credits
+        db.add(Shop(
+            domain="free-exhausted.myshopify.com", access_token="t",
+            current_plan_name="Free", is_active=True,
+            lifetime_rewrites_remaining=0,
+            lifetime_missions_remaining=0,
+            lifetime_image_credits_remaining=0,
+        ))
+        # Free merchant with plenty left
+        db.add(Shop(
+            domain="free-safe.myshopify.com", access_token="t",
+            current_plan_name="Free", is_active=True,
+            lifetime_rewrites_remaining=8,
+            lifetime_missions_remaining=3,
+            lifetime_image_credits_remaining=5,
+        ))
+        # Pro merchant with high image usage (entitlement: 150)
+        db.add(Plan(name="Pro", price_usd_monthly=29.99, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
+        db.add(Shop(
+            domain="pro-img-high.myshopify.com", access_token="t",
+            current_plan_name="Pro", is_active=True,
+            monthly_image_generations_used=140,
+        ))
+        # Inactive merchant (should be excluded)
+        db.add(Shop(
+            domain="inactive-exhausted.myshopify.com", access_token="t",
+            current_plan_name="Free", is_active=False,
+            lifetime_rewrites_remaining=0,
+        ))
+
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/superadmin/dashboard/approaching-limits?threshold=80", headers=_auth(token))
+        assert resp.status_code == 200
+        data = resp.json()
+
+        domains = {m["domain"] for m in data["merchants"]}
+        assert "free-exhausted.myshopify.com" in domains
+        assert "free-safe.myshopify.com" not in domains
+        assert "pro-img-high.myshopify.com" in domains
+        assert "inactive-exhausted.myshopify.com" not in domains
+
+        exhausted = next(m for m in data["merchants"] if m["domain"] == "free-exhausted.myshopify.com")
+        assert any(b["pct"] == 100 for b in exhausted["breaches"])
+
+        pro_img = next(m for m in data["merchants"] if m["domain"] == "pro-img-high.myshopify.com")
+        img_breach = next(b for b in pro_img["breaches"] if b["resource"] == "Image Credits")
+        assert img_breach["pct"] == round(140 / 150 * 100)
+        assert img_breach["limit_type"] == "monthly"
+
+
+# ===================================================================
 # Integration: Feature Usage Tracking
 # ===================================================================
 
