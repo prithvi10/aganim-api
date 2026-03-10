@@ -151,6 +151,22 @@ def _seed_usage_event(db_session, shop_domain="test-shop.myshopify.com", **kwarg
     return e
 
 
+def _seed_plan(db_session, name="Pro", price_usd_monthly=29.99, **kwargs):
+    defaults = dict(
+        name=name,
+        price_usd_monthly=price_usd_monthly,
+        monthly_rewrite_limit=1000,
+        max_request_rate=100,
+        product_limit=-1,
+        is_active=True,
+    )
+    defaults.update(kwargs)
+    plan = Plan(**defaults)
+    db_session.add(plan)
+    db_session.flush()
+    return plan
+
+
 def _seed_concern(db_session, shop_domain="test-shop.myshopify.com", **kwargs):
     defaults = dict(
         shop_domain=shop_domain,
@@ -289,6 +305,45 @@ class TestDashboardEmptyDB:
         )
         assert resp.status_code == 422
 
+    def test_revenue_empty(self, client):
+        resp = client.get("/api/superadmin/dashboard/revenue", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_mrr"] == 0
+        assert data["by_plan"] == {}
+        assert data["merchants"] == []
+
+    def test_attrition_empty(self, client):
+        resp = client.get("/api/superadmin/dashboard/attrition", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_churned"] == 0
+        assert data["total_lost_revenue"] == 0
+        assert data["by_plan"] == {}
+        assert data["merchants"] == []
+        assert data["period_days"] == 30
+
+    def test_approaching_limits_empty(self, client):
+        resp = client.get("/api/superadmin/dashboard/approaching-limits", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["threshold"] == 80
+        assert data["merchants"] == []
+
+    def test_attrition_invalid_days(self, client):
+        resp = client.get(
+            "/api/superadmin/dashboard/attrition?days=0",
+            headers=_auth_header(),
+        )
+        assert resp.status_code == 422
+
+    def test_approaching_limits_invalid_threshold(self, client):
+        resp = client.get(
+            "/api/superadmin/dashboard/approaching-limits?threshold=0",
+            headers=_auth_header(),
+        )
+        assert resp.status_code == 422
+
 
 # ===================================================================
 # DASHBOARD — WITH DATA
@@ -350,6 +405,290 @@ class TestDashboardWithData:
 
 
 # ===================================================================
+# REVENUE ENDPOINT
+# ===================================================================
+
+class TestRevenue:
+    def test_revenue_no_plans_in_db(self, client):
+        resp = client.get("/api/superadmin/dashboard/revenue", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_mrr"] == 0
+
+    def test_revenue_with_paid_merchants(self, client, db_session):
+        _seed_plan(db_session, "Basic", 9.99)
+        _seed_plan(db_session, "Standard", 19.99)
+        _seed_plan(db_session, "Pro", 29.99)
+        _seed_shop(db_session, "rev-basic.myshopify.com", "Basic")
+        _seed_shop(db_session, "rev-pro1.myshopify.com", "Pro")
+        _seed_shop(db_session, "rev-pro2.myshopify.com", "Pro")
+        _seed_shop(db_session, "rev-free.myshopify.com", "Free")
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/revenue", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_mrr"] == round(9.99 + 29.99 + 29.99, 2)
+        assert data["by_plan"]["Pro"]["count"] == 2
+        assert data["by_plan"]["Pro"]["revenue"] == round(29.99 * 2, 2)
+        assert data["by_plan"]["Basic"]["count"] == 1
+        assert "Free" not in data["by_plan"]
+        assert len(data["merchants"]) == 3
+
+    def test_revenue_inactive_merchants_excluded(self, client, db_session):
+        _seed_plan(db_session, "RevPlan", 49.99)
+        _seed_shop(db_session, "rev-inactive.myshopify.com", "RevPlan", is_active=False)
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/revenue", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        inactive_domains = [m["domain"] for m in data["merchants"]]
+        assert "rev-inactive.myshopify.com" not in inactive_domains
+
+
+# ===================================================================
+# ATTRITION ENDPOINT
+# ===================================================================
+
+class TestAttrition:
+    def test_attrition_uninstalled_merchant(self, client, db_session):
+        _seed_plan(db_session, "AttrPro", 29.99)
+        now = datetime.now(timezone.utc)
+        _seed_shop(
+            db_session, "churned.myshopify.com", None,
+            is_active=False,
+            last_plan_name="AttrPro",
+            last_uninstalled_at=now - timedelta(days=5),
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/attrition?days=30", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_churned"] >= 1
+        churned_domains = [m["domain"] for m in data["merchants"]]
+        assert "churned.myshopify.com" in churned_domains
+        entry = next(m for m in data["merchants"] if m["domain"] == "churned.myshopify.com")
+        assert entry["type"] == "uninstalled"
+        assert entry["lost_revenue"] == 29.99
+
+    def test_attrition_cancelled_plan_merchant(self, client, db_session):
+        _seed_plan(db_session, "AttrStd", 19.99)
+        now = datetime.now(timezone.utc)
+        _seed_shop(
+            db_session, "cancelled.myshopify.com", None,
+            is_active=True,
+            last_plan_name="AttrStd",
+            last_shopify_subscription_status="CANCELLED",
+            last_plan_change_at=now - timedelta(days=3),
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/attrition?days=30", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        cancelled = [m for m in data["merchants"] if m["domain"] == "cancelled.myshopify.com"]
+        assert len(cancelled) == 1
+        assert cancelled[0]["type"] == "cancelled"
+        assert cancelled[0]["lost_revenue"] == 19.99
+
+    def test_attrition_old_churn_excluded(self, client, db_session):
+        now = datetime.now(timezone.utc)
+        _seed_shop(
+            db_session, "old-churn.myshopify.com", None,
+            is_active=False,
+            last_plan_name="Free",
+            last_uninstalled_at=now - timedelta(days=90),
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/attrition?days=30", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        old_domains = [m["domain"] for m in data["merchants"]]
+        assert "old-churn.myshopify.com" not in old_domains
+
+    def test_attrition_custom_period(self, client, db_session):
+        resp = client.get("/api/superadmin/dashboard/attrition?days=7", headers=_auth_header())
+        assert resp.status_code == 200
+        assert resp.json()["period_days"] == 7
+
+    def test_attrition_free_plan_no_revenue_loss(self, client, db_session):
+        now = datetime.now(timezone.utc)
+        _seed_shop(
+            db_session, "free-churn.myshopify.com", None,
+            is_active=False,
+            last_plan_name="Free",
+            last_uninstalled_at=now - timedelta(days=2),
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/attrition?days=30", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        entry = next((m for m in data["merchants"] if m["domain"] == "free-churn.myshopify.com"), None)
+        if entry:
+            assert entry["lost_revenue"] == 0
+
+
+# ===================================================================
+# APPROACHING LIMITS ENDPOINT
+# ===================================================================
+
+class TestApproachingLimits:
+    def test_free_plan_near_lifetime_limits(self, client, db_session):
+        _seed_shop(
+            db_session, "free-near-limit.myshopify.com", "Free",
+            lifetime_rewrites_remaining=1,
+            lifetime_missions_remaining=0,
+            lifetime_image_credits_remaining=1,
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/approaching-limits?threshold=80", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        match = next((m for m in data["merchants"] if m["domain"] == "free-near-limit.myshopify.com"), None)
+        assert match is not None
+        resources = [b["resource"] for b in match["breaches"]]
+        assert "Rewrites" in resources
+        assert "Missions" in resources
+        assert "Image Credits" in resources
+
+    def test_pro_plan_below_threshold_not_shown(self, client, db_session):
+        _seed_plan(db_session, "LimitsPro", 29.99, monthly_rewrite_limit=1000)
+        _seed_shop(
+            db_session, "pro-safe.myshopify.com", "Pro",
+            monthly_rewrites_used=10,
+            monthly_missions_used=0,
+            monthly_image_generations_used=5,
+            lifetime_rewrites_remaining=10,
+            lifetime_missions_remaining=3,
+            lifetime_image_credits_remaining=5,
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/approaching-limits?threshold=80", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        match = next((m for m in data["merchants"] if m["domain"] == "pro-safe.myshopify.com"), None)
+        assert match is None
+
+    def test_custom_threshold(self, client, db_session):
+        _seed_shop(
+            db_session, "threshold-test.myshopify.com", "Free",
+            lifetime_rewrites_remaining=0,
+            lifetime_missions_remaining=0,
+            lifetime_image_credits_remaining=0,
+        )
+        db_session.commit()
+
+        resp = client.get(
+            "/api/superadmin/dashboard/approaching-limits?threshold=50",
+            headers=_auth_header(),
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["threshold"] == 50
+        match = next((m for m in data["merchants"] if m["domain"] == "threshold-test.myshopify.com"), None)
+        assert match is not None
+
+    def test_sorted_by_highest_pct(self, client, db_session):
+        _seed_shop(
+            db_session, "pct-high.myshopify.com", "Free",
+            lifetime_rewrites_remaining=0,
+            lifetime_missions_remaining=0,
+            lifetime_image_credits_remaining=0,
+        )
+        _seed_shop(
+            db_session, "pct-low.myshopify.com", "Free",
+            lifetime_rewrites_remaining=2,
+            lifetime_missions_remaining=1,
+            lifetime_image_credits_remaining=1,
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/dashboard/approaching-limits", headers=_auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        matching = [m for m in data["merchants"] if m["domain"] in ("pct-high.myshopify.com", "pct-low.myshopify.com")]
+        if len(matching) >= 2:
+            max_pcts = [max(b["pct"] for b in m["breaches"]) for m in matching]
+            assert max_pcts == sorted(max_pcts, reverse=True)
+
+
+# ===================================================================
+# MERCHANT plan_display FIELD
+# ===================================================================
+
+class TestMerchantPlanDisplay:
+    def test_active_plan_shows_plan_name(self, client, db_session):
+        _seed_shop(db_session, "display-pro.myshopify.com", "Pro")
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/merchants?search=display-pro", headers=_auth_header())
+        assert resp.status_code == 200
+        m = resp.json()["merchants"][0]
+        assert m["plan_display"] == "Pro"
+
+    def test_cancelled_shows_plan_cancelled(self, client, db_session):
+        _seed_shop(
+            db_session, "display-cancel.myshopify.com", None,
+            last_plan_name="Pro",
+            last_shopify_subscription_status="CANCELLED",
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/merchants?search=display-cancel", headers=_auth_header())
+        assert resp.status_code == 200
+        m = resp.json()["merchants"][0]
+        assert m["plan_display"] == "Pro (Cancelled)"
+
+    def test_pending_plan_shows_pending(self, client, db_session):
+        _seed_shop(
+            db_session, "display-pending.myshopify.com", None,
+            pending_plan_name="Free",
+        )
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/merchants?search=display-pending", headers=_auth_header())
+        assert resp.status_code == 200
+        m = resp.json()["merchants"][0]
+        assert m["plan_display"] == "Free (Pending)"
+
+    def test_no_plan_shows_free(self, client, db_session):
+        _seed_shop(db_session, "display-none.myshopify.com", None)
+        db_session.commit()
+
+        resp = client.get("/api/superadmin/merchants?search=display-none", headers=_auth_header())
+        assert resp.status_code == 200
+        m = resp.json()["merchants"][0]
+        assert m["plan_display"] == "Free"
+
+    def test_detail_includes_subscription_status(self, client, db_session):
+        _seed_shop(
+            db_session, "detail-sub.myshopify.com", None,
+            last_plan_name="Standard",
+            last_shopify_subscription_status="CANCELLED",
+            last_plan_change_type="cancel",
+            pending_plan_name="Free",
+        )
+        db_session.commit()
+
+        resp = client.get(
+            "/api/superadmin/merchants/detail-sub.myshopify.com",
+            headers=_auth_header(),
+        )
+        assert resp.status_code == 200
+        shop = resp.json()["shop"]
+        assert shop["plan_display"] == "Standard (Cancelled)"
+        assert shop["last_shopify_subscription_status"] == "CANCELLED"
+        assert shop["pending_plan_name"] == "Free"
+        assert shop["last_plan_change_type"] == "cancel"
+
+
+# ===================================================================
 # DASHBOARD — UNHAPPY PATHS (DB failures)
 # ===================================================================
 
@@ -387,6 +726,24 @@ class TestDashboardFailures:
         app.dependency_overrides[get_db] = self._broken_db_override
         with TestClient(app, raise_server_exceptions=False) as c:
             resp = c.get("/api/superadmin/dashboard/token-usage", headers=_auth_header())
+            assert resp.status_code == 500
+
+    def test_revenue_db_error(self, db_session):
+        app.dependency_overrides[get_db] = self._broken_db_override
+        with TestClient(app, raise_server_exceptions=False) as c:
+            resp = c.get("/api/superadmin/dashboard/revenue", headers=_auth_header())
+            assert resp.status_code == 500
+
+    def test_attrition_db_error(self, db_session):
+        app.dependency_overrides[get_db] = self._broken_db_override
+        with TestClient(app, raise_server_exceptions=False) as c:
+            resp = c.get("/api/superadmin/dashboard/attrition", headers=_auth_header())
+            assert resp.status_code == 500
+
+    def test_approaching_limits_db_error(self, db_session):
+        app.dependency_overrides[get_db] = self._broken_db_override
+        with TestClient(app, raise_server_exceptions=False) as c:
+            resp = c.get("/api/superadmin/dashboard/approaching-limits", headers=_auth_header())
             assert resp.status_code == 500
 
 
