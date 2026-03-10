@@ -223,6 +223,37 @@ def _ensure_agentic_tables_exist():
         """))
 
 
+def _ensure_superadmin_tables_exist():
+    """Create outreach_log and concern_log tables if they don't exist."""
+    if engine.dialect.name == "sqlite":
+        return
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS outreach_log (
+                id SERIAL PRIMARY KEY,
+                recipient_email VARCHAR NOT NULL,
+                recipient_shop VARCHAR,
+                subject VARCHAR NOT NULL,
+                body TEXT NOT NULL,
+                status VARCHAR DEFAULT 'sent',
+                sent_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS concern_log (
+                id SERIAL PRIMARY KEY,
+                shop_domain VARCHAR NOT NULL,
+                email VARCHAR,
+                subject VARCHAR NOT NULL,
+                message TEXT NOT NULL,
+                status VARCHAR DEFAULT 'open',
+                admin_reply TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS concern_log_shop_idx ON concern_log(shop_domain)"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Create tables
@@ -231,6 +262,7 @@ async def lifespan(app: FastAPI):
     _ensure_shop_columns_exist()
     _ensure_pgvector_extension_and_indexes()
     _ensure_agentic_tables_exist()
+    _ensure_superadmin_tables_exist()
     yield
     # Shutdown: (Cleanup if needed)
 
