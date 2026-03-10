@@ -167,6 +167,33 @@ class BrandEntity(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class OutreachLog(Base):
+    """Tracks outreach emails sent to merchants."""
+    __tablename__ = "outreach_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_email = Column(String, nullable=False)
+    recipient_shop = Column(String, nullable=True)
+    subject = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    status = Column(String, default="sent")
+    sent_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConcernLog(Base):
+    """Tracks merchant concerns / support requests."""
+    __tablename__ = "concern_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_domain = Column(String, index=True, nullable=False)
+    email = Column(String, nullable=True)
+    subject = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    status = Column(String, default="open")
+    admin_reply = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 # ---------------------------------------------------------------------------
 # Re-export agentic_core models so callers can import everything from one place
 # ---------------------------------------------------------------------------
