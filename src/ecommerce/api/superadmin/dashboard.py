@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from src.shared.db.database import get_db
 from src.ecommerce.db.models import Shop, Plan, UsageEventLog, FeatureUsage, Mission
+from src.ecommerce.plans.entitlements import PLAN_ENTITLEMENTS
 from .auth import verify_admin_token
 
 router = APIRouter(dependencies=[Depends(verify_admin_token)])
@@ -47,7 +48,7 @@ async def dashboard_overview(db: Session = Depends(get_db)):
     return {
         "total_merchants": total_merchants,
         "active_merchants_30d": active_merchants,
-        "plan_breakdown": {name or "None": count for name, count in plan_breakdown},
+        "plan_breakdown": {name or "No Active Plan": count for name, count in plan_breakdown},
         "total_rewrites": int(total_rewrites),
         "total_missions": total_missions,
         "total_image_generations": int(total_image_gens),
@@ -174,7 +175,7 @@ async def plan_stats(db: Session = Depends(get_db)):
     ) or 0
 
     return {
-        "enrollment": {name or "None": count for name, count in enrollment},
+        "enrollment": {name or "No Active Plan": count for name, count in enrollment},
         "recent_changes": [
             {
                 "shop_domain": r.domain,
@@ -210,3 +211,108 @@ async def feature_usage(db: Session = Depends(get_db)):
         }
         for r in rows
     ]
+
+
+THRESHOLD_PCT = 80
+
+
+@router.get("/dashboard/approaching-limits")
+async def approaching_limits(
+    threshold: int = Query(THRESHOLD_PCT, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """Return merchants whose usage is at or above *threshold*% of any plan limit."""
+    shops = db.query(Shop).filter(Shop.is_active == True).all()
+
+    rewrite_limits: dict[str, int] = {}
+    for plan in db.query(Plan).all():
+        if plan.monthly_rewrite_limit and plan.monthly_rewrite_limit > 0:
+            rewrite_limits[plan.name] = int(plan.monthly_rewrite_limit)
+
+    alerts: list[dict] = []
+
+    for shop in shops:
+        plan_name = shop.current_plan_name or "Free"
+        ent = PLAN_ENTITLEMENTS.get(plan_name, PLAN_ENTITLEMENTS["Free"])
+        breaches: list[dict] = []
+
+        is_lifetime = ent.get("mission_limit_type") == "lifetime"
+
+        if is_lifetime:
+            lr = shop.lifetime_rewrites_remaining or 0
+            if lr <= 2:
+                breaches.append({
+                    "resource": "Rewrites",
+                    "used": 10 - lr,
+                    "limit": 10,
+                    "remaining": lr,
+                    "pct": round((10 - lr) / 10 * 100) if lr < 10 else 0,
+                    "limit_type": "lifetime",
+                })
+            lm = shop.lifetime_missions_remaining or 0
+            m_limit = ent.get("mission_limit", 3)
+            if m_limit > 0 and lm <= max(1, int(m_limit * (1 - threshold / 100))):
+                breaches.append({
+                    "resource": "Missions",
+                    "used": m_limit - lm,
+                    "limit": m_limit,
+                    "remaining": lm,
+                    "pct": round((m_limit - lm) / m_limit * 100) if m_limit > 0 else 0,
+                    "limit_type": "lifetime",
+                })
+            li = shop.lifetime_image_credits_remaining or 0
+            i_limit = ent.get("image_generation_limit", 5)
+            if i_limit > 0 and li <= max(1, int(i_limit * (1 - threshold / 100))):
+                breaches.append({
+                    "resource": "Image Credits",
+                    "used": i_limit - li,
+                    "limit": i_limit,
+                    "remaining": li,
+                    "pct": round((i_limit - li) / i_limit * 100) if i_limit > 0 else 0,
+                    "limit_type": "lifetime",
+                })
+        else:
+            rw_limit = rewrite_limits.get(plan_name, 0)
+            rw_used = shop.monthly_rewrites_used or 0
+            if rw_limit > 0 and rw_used >= rw_limit * threshold / 100:
+                breaches.append({
+                    "resource": "Rewrites",
+                    "used": rw_used,
+                    "limit": rw_limit,
+                    "remaining": max(0, rw_limit - rw_used),
+                    "pct": min(100, round(rw_used / rw_limit * 100)),
+                    "limit_type": "monthly",
+                })
+            m_limit = ent.get("mission_limit", 0)
+            m_used = shop.monthly_missions_used or 0
+            if m_limit > 0 and m_used >= m_limit * threshold / 100:
+                breaches.append({
+                    "resource": "Missions",
+                    "used": m_used,
+                    "limit": m_limit,
+                    "remaining": max(0, m_limit - m_used),
+                    "pct": min(100, round(m_used / m_limit * 100)),
+                    "limit_type": "monthly",
+                })
+            i_limit = ent.get("image_generation_limit", 0)
+            i_used = shop.monthly_image_generations_used or 0
+            if i_limit > 0 and i_used >= i_limit * threshold / 100:
+                breaches.append({
+                    "resource": "Image Credits",
+                    "used": i_used,
+                    "limit": i_limit,
+                    "remaining": max(0, i_limit - i_used),
+                    "pct": min(100, round(i_used / i_limit * 100)),
+                    "limit_type": "monthly",
+                })
+
+        if breaches:
+            alerts.append({
+                "domain": shop.domain,
+                "plan": plan_name,
+                "next_reset": str(shop.next_reset_date) if shop.next_reset_date else None,
+                "breaches": breaches,
+            })
+
+    alerts.sort(key=lambda a: max(b["pct"] for b in a["breaches"]), reverse=True)
+    return {"threshold": threshold, "merchants": alerts}

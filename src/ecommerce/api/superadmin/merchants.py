@@ -18,11 +18,25 @@ router = APIRouter(dependencies=[Depends(verify_admin_token)])
 PAGE_SIZE = 25
 
 
+def _resolve_plan_display(shop: Shop) -> str:
+    """Derive a human-readable plan label from the shop's plan lifecycle fields."""
+    if shop.current_plan_name:
+        return shop.current_plan_name
+    if shop.last_shopify_subscription_status == "CANCELLED" and shop.last_plan_name:
+        return f"{shop.last_plan_name} (Cancelled)"
+    if shop.pending_plan_name:
+        return f"{shop.pending_plan_name} (Pending)"
+    return "Free"
+
+
 def _shop_to_summary(shop: Shop) -> dict:
     return {
         "id": shop.id,
         "domain": shop.domain,
         "current_plan_name": shop.current_plan_name,
+        "plan_display": _resolve_plan_display(shop),
+        "last_plan_name": shop.last_plan_name,
+        "subscription_status": shop.last_shopify_subscription_status,
         "is_active": shop.is_active,
         "created_at": str(shop.created_at) if shop.created_at else None,
         "updated_at": str(shop.updated_at) if shop.updated_at else None,
@@ -103,9 +117,11 @@ async def merchant_detail(shop_domain: str, db: Session = Depends(get_db)):
             "id": shop.id,
             "domain": shop.domain,
             "current_plan_name": shop.current_plan_name,
+            "plan_display": _resolve_plan_display(shop),
             "last_plan_name": shop.last_plan_name,
             "pending_plan_name": shop.pending_plan_name,
             "last_plan_change_type": shop.last_plan_change_type,
+            "last_shopify_subscription_status": shop.last_shopify_subscription_status,
             "last_plan_change_at": str(shop.last_plan_change_at) if shop.last_plan_change_at else None,
             "is_active": shop.is_active,
             "created_at": str(shop.created_at) if shop.created_at else None,
