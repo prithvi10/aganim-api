@@ -1416,3 +1416,30 @@ async def upload_product_image(
     url = await r2_svc.upload_asset(data, key, content_type=file.content_type or "image/png")
 
     return {"url": url, "key": key}
+
+
+# ---------------------------------------------------------
+# Merchant Concern Submission
+# ---------------------------------------------------------
+from pydantic import BaseModel as _BaseModel
+
+class _SubmitConcernReq(_BaseModel):
+    subject: str
+    message: str
+    email: str = ""
+
+
+@router.post("/api/admin/submit-concern")
+async def submit_concern(body: _SubmitConcernReq, shop: str = Depends(resolve_shop_domain), db: Session = Depends(get_db)):
+    from src.ecommerce.db.models import ConcernLog
+    concern = ConcernLog(
+        shop_domain=shop,
+        email=body.email,
+        subject=body.subject,
+        message=body.message,
+        status="open",
+    )
+    db.add(concern)
+    db.commit()
+    db.refresh(concern)
+    return {"message": "Concern submitted", "concern_id": concern.id}

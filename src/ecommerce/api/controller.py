@@ -26,6 +26,7 @@ from fastapi import APIRouter
 # Import platform-specific routers
 from .shopify import shopify_router
 from .shopee import shopee_router
+from .superadmin import superadmin_router
 
 # Import generic agentic-core router (domain-agnostic mission CRUD)
 from src.agentic_core.api.mission_router import router as agentic_core_router
@@ -51,6 +52,9 @@ router.include_router(shopify_router)
 
 # Include Shopee routes (future expansion)
 router.include_router(shopee_router)
+
+# Include SuperAdmin portal routes
+router.include_router(superadmin_router, prefix="/api/superadmin")
 
 
 # =============================================================================
