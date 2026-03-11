@@ -15,6 +15,10 @@ from src.ecommerce.services.email_templates import (
     plan_upgrade_email,
     credit_limit_reached_email,
     enterprise_invite_email,
+    feedback_email,
+    rating_email,
+    custom_admin_email,
+    generate_base_email_template,
     TEMPLATE_REGISTRY,
     _base_layout,
     _LOGO_URL,
@@ -197,18 +201,127 @@ class TestEnterpriseInviteEmail:
 # Template Registry
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Template E: Feedback Email
+# ---------------------------------------------------------------------------
+
+class TestFeedbackEmail:
+    def test_returns_valid_tuple(self):
+        result = feedback_email("Acme", "https://feedback.example.com")
+        _assert_valid_template_tuple(result)
+
+    def test_subject(self):
+        subject, _, _ = feedback_email("Acme", "https://feedback.example.com")
+        assert "feedback" in subject.lower()
+
+    def test_html_contains_merchant_name(self):
+        _, html, _ = feedback_email("Acme Store", "https://feedback.example.com")
+        assert "Acme Store" in html
+
+    def test_html_contains_cta(self):
+        _, html, _ = feedback_email("Acme", "https://feedback.example.com")
+        assert "Share Your Feedback" in html
+        assert "https://feedback.example.com" in html
+
+    def test_html_structure(self):
+        _, html, _ = feedback_email("X", "https://example.com")
+        _assert_html_structure(html)
+
+    def test_text_contains_link(self):
+        _, _, text = feedback_email("Acme", "https://feedback.example.com")
+        assert "https://feedback.example.com" in text
+
+
+# ---------------------------------------------------------------------------
+# Template F: Rating Email
+# ---------------------------------------------------------------------------
+
+class TestRatingEmail:
+    def test_returns_valid_tuple(self):
+        result = rating_email("Acme", "https://apps.shopify.com/myapp#reviews")
+        _assert_valid_template_tuple(result)
+
+    def test_subject(self):
+        subject, _, _ = rating_email("Acme", "https://apps.shopify.com/myapp")
+        assert "review" in subject.lower()
+
+    def test_html_contains_review_cta(self):
+        _, html, _ = rating_email("Acme", "https://apps.shopify.com/myapp#reviews")
+        assert "Leave a Review" in html
+        assert "https://apps.shopify.com/myapp#reviews" in html
+
+    def test_html_structure(self):
+        _, html, _ = rating_email("X", "https://example.com")
+        _assert_html_structure(html)
+
+    def test_text_contains_link(self):
+        _, _, text = rating_email("Acme", "https://apps.shopify.com/myapp#reviews")
+        assert "https://apps.shopify.com/myapp#reviews" in text
+
+
+# ---------------------------------------------------------------------------
+# Template G: Custom Admin Email
+# ---------------------------------------------------------------------------
+
+class TestCustomAdminEmail:
+    def test_returns_tuple(self):
+        result = custom_admin_email("<p>Hello world</p>")
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+
+    def test_subject_is_empty(self):
+        subject, _, _ = custom_admin_email("<p>content</p>")
+        assert subject == ""
+
+    def test_html_wraps_content_in_base_template(self):
+        _, html, _ = custom_admin_email("<h2>Big News</h2>")
+        assert "<h2>Big News</h2>" in html
+        assert "<!DOCTYPE html>" in html
+        assert _LOGO_URL in html
+
+    def test_text_strips_html(self):
+        _, _, text = custom_admin_email("<h2>Hello</h2><p>World</p>")
+        assert "Hello" in text
+        assert "World" in text
+        assert "<" not in text
+
+
+# ---------------------------------------------------------------------------
+# generate_base_email_template (public API)
+# ---------------------------------------------------------------------------
+
+class TestGenerateBaseEmailTemplate:
+    def test_is_same_as_base_layout(self):
+        content = "<p>test</p>"
+        assert generate_base_email_template(content) == _base_layout(content)
+
+    def test_contains_support_link(self):
+        html = generate_base_email_template("<p>content</p>")
+        assert "Support" in html
+
+
+# ---------------------------------------------------------------------------
+# Template Registry
+# ---------------------------------------------------------------------------
+
 class TestTemplateRegistry:
     def test_all_templates_registered(self):
         assert "welcome" in TEMPLATE_REGISTRY
         assert "upgrade" in TEMPLATE_REGISTRY
         assert "credit_limit" in TEMPLATE_REGISTRY
         assert "enterprise" in TEMPLATE_REGISTRY
+        assert "feedback" in TEMPLATE_REGISTRY
+        assert "rating" in TEMPLATE_REGISTRY
+        assert "custom" in TEMPLATE_REGISTRY
 
     def test_registry_maps_to_correct_functions(self):
         assert TEMPLATE_REGISTRY["welcome"] is welcome_email
         assert TEMPLATE_REGISTRY["upgrade"] is plan_upgrade_email
         assert TEMPLATE_REGISTRY["credit_limit"] is credit_limit_reached_email
         assert TEMPLATE_REGISTRY["enterprise"] is enterprise_invite_email
+        assert TEMPLATE_REGISTRY["feedback"] is feedback_email
+        assert TEMPLATE_REGISTRY["rating"] is rating_email
+        assert TEMPLATE_REGISTRY["custom"] is custom_admin_email
 
-    def test_registry_has_exactly_four_entries(self):
-        assert len(TEMPLATE_REGISTRY) == 4
+    def test_registry_has_seven_entries(self):
+        assert len(TEMPLATE_REGISTRY) == 7

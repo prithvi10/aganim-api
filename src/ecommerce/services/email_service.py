@@ -20,6 +20,8 @@ logger = get_logger(__name__)
 
 _ses_client = None
 
+BATCH_DELAY_SECONDS = 1.0
+
 
 def _get_ses_client():
     """Lazily create a boto3 SES client."""
@@ -109,5 +111,49 @@ async def send_bulk_email(
         except Exception as exc:
             logger.error("[SES] failed to=%s error=%s", email, exc)
             results.append({"email": email, "status": "failed", "error": str(exc)})
+
+    return results
+
+
+async def send_rate_limited_bulk_email(
+    recipients: list[str],
+    subject: str,
+    html_body: str,
+    text_body: str,
+    reply_to: Optional[str] = None,
+    delay_seconds: float = BATCH_DELAY_SECONDS,
+) -> list[dict]:
+    """
+    Send to many recipients with a per-email delay to stay within SES rate
+    limits (typically 14/s for new accounts).
+
+    Sleeps ``delay_seconds`` (default 1s) between each send.  Failures for
+    individual recipients are logged and collected, but sending continues.
+    """
+    results: list[dict] = []
+
+    for idx, email in enumerate(recipients):
+        try:
+            resp = await send_email(
+                to=email,
+                subject=subject,
+                html_body=html_body,
+                text_body=text_body,
+                reply_to=reply_to,
+            )
+            results.append({"email": email, "status": "sent", **resp})
+        except Exception as exc:
+            logger.error("[SES] rate-limited send failed to=%s error=%s", email, exc)
+            results.append({"email": email, "status": "failed", "error": str(exc)})
+
+        if idx < len(recipients) - 1:
+            await asyncio.sleep(delay_seconds)
+
+    logger.info(
+        "[SES] rate-limited bulk complete total=%d sent=%d failed=%d",
+        len(results),
+        sum(1 for r in results if r["status"] == "sent"),
+        sum(1 for r in results if r["status"] == "failed"),
+    )
 
     return results

@@ -1,8 +1,16 @@
 """
 SuperAdmin outreach endpoints — SES email integration.
+
+Includes:
+- Legacy send/send-template endpoints
+- Admin email composer endpoints (send-custom, send-feedback, send-rating)
+- Rate-limited bulk sending with 1 s delay between emails
+- Recipient filtering (all_active, pro_only, installed_14d_ago)
 """
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
@@ -12,8 +20,18 @@ from sqlalchemy.orm import Session
 
 from src.shared.db.database import get_db
 from src.ecommerce.db.models import OutreachLog, Shop
-from src.ecommerce.services.email_service import send_email, send_bulk_email
-from src.ecommerce.services.email_templates import TEMPLATE_REGISTRY
+from src.ecommerce.services.email_service import (
+    send_email,
+    send_bulk_email,
+    send_rate_limited_bulk_email,
+)
+from src.ecommerce.services.email_templates import (
+    TEMPLATE_REGISTRY,
+    generate_base_email_template,
+    feedback_email,
+    rating_email,
+    custom_admin_email,
+)
 from .auth import verify_admin_token
 from src.shared.logging.logger import get_logger
 
@@ -22,13 +40,22 @@ logger = get_logger(__name__)
 router = APIRouter(dependencies=[Depends(verify_admin_token)])
 
 
-# ── Request / response models ──────────────────────────────────────
+# ── Enums & request models ─────────────────────────────────────────
 
 class TemplateName(str, Enum):
     welcome = "welcome"
     upgrade = "upgrade"
     credit_limit = "credit_limit"
     enterprise = "enterprise"
+    feedback = "feedback"
+    rating = "rating"
+    custom = "custom"
+
+
+class RecipientFilter(str, Enum):
+    all_active = "all_active"
+    pro_only = "pro_only"
+    installed_14d_ago = "installed_14d_ago"
 
 
 class SendEmailRequest(BaseModel):
@@ -43,6 +70,39 @@ class SendTemplateRequest(BaseModel):
     template: TemplateName
     merchant_domain: str
     extra_params: dict = {}
+
+
+class SendCustomEmailRequest(BaseModel):
+    recipient_filter: RecipientFilter
+    subject: str
+    html_body: str
+
+
+class SendFeedbackRequest(BaseModel):
+    recipient_filter: RecipientFilter
+    feedback_link: str = "https://forms.gle/crossborderagent-feedback"
+
+
+class SendRatingRequest(BaseModel):
+    recipient_filter: RecipientFilter
+    app_store_review_link: str = "https://apps.shopify.com/crossborderagent#reviews"
+
+
+# ── Recipient resolution ───────────────────────────────────────────
+
+def _resolve_recipients(
+    db: Session, recipient_filter: RecipientFilter
+) -> list[Shop]:
+    """Return a list of Shop objects matching the filter."""
+    q = db.query(Shop).filter(Shop.is_active == True)  # noqa: E712
+
+    if recipient_filter == RecipientFilter.pro_only:
+        q = q.filter(Shop.current_plan_name == "Pro")
+    elif recipient_filter == RecipientFilter.installed_14d_ago:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+        q = q.filter(Shop.created_at <= cutoff)
+
+    return q.all()
 
 
 # ── POST /outreach/send ────────────────────────────────────────────
@@ -152,6 +212,21 @@ async def send_template_outreach(
             subject, html_body, text_body = template_fn(
                 merchant_name=merchant_name,
             )
+        elif req.template == TemplateName.feedback:
+            subject, html_body, text_body = template_fn(
+                merchant_name=merchant_name,
+                feedback_link=params.get("feedback_link", ""),
+            )
+        elif req.template == TemplateName.rating:
+            subject, html_body, text_body = template_fn(
+                merchant_name=merchant_name,
+                app_store_review_link=params.get("app_store_review_link", ""),
+            )
+        elif req.template == TemplateName.custom:
+            _, html_body, text_body = template_fn(
+                custom_html_body=params.get("html_body", ""),
+            )
+            subject = params.get("subject", "Message from CrossBorderAgent")
         else:
             raise HTTPException(status_code=400, detail="Unsupported template")
     except TypeError as exc:
@@ -188,6 +263,167 @@ async def send_template_outreach(
         "recipient": recipient_email,
         **result,
     }
+
+
+# ── POST /outreach/emails/send-custom ──────────────────────────────
+
+@router.post("/outreach/emails/send-custom")
+async def send_custom_email_endpoint(
+    req: SendCustomEmailRequest, db: Session = Depends(get_db)
+):
+    """
+    Send a custom HTML email to filtered merchants.  The HTML body is wrapped
+    in the branded base template.  Emails are sent with a 1 s delay between
+    each to stay within SES rate limits.
+    """
+    shops = _resolve_recipients(db, req.recipient_filter)
+    if not shops:
+        raise HTTPException(status_code=400, detail="No recipients match the filter")
+
+    _, html_body, text_body = custom_admin_email(req.html_body)
+
+    recipient_emails = [s.domain for s in shops]
+    results = await send_rate_limited_bulk_email(
+        recipients=recipient_emails,
+        subject=req.subject,
+        html_body=html_body,
+        text_body=text_body,
+    )
+
+    for r in results:
+        shop_domain = r["email"]
+        log = OutreachLog(
+            recipient_email=shop_domain,
+            recipient_shop=shop_domain,
+            subject=req.subject,
+            body=text_body[:500],
+            status=r["status"],
+        )
+        db.add(log)
+    db.commit()
+
+    sent = sum(1 for r in results if r["status"] == "sent")
+    failed = sum(1 for r in results if r["status"] == "failed")
+
+    return {
+        "message": f"Custom email sent to {sent}/{len(results)} merchants",
+        "total": len(results),
+        "sent": sent,
+        "failed": failed,
+        "filter": req.recipient_filter.value,
+    }
+
+
+# ── POST /outreach/emails/send-feedback ────────────────────────────
+
+@router.post("/outreach/emails/send-feedback")
+async def send_feedback_email_endpoint(
+    req: SendFeedbackRequest, db: Session = Depends(get_db)
+):
+    """Send the feedback request template to filtered merchants."""
+    shops = _resolve_recipients(db, req.recipient_filter)
+    if not shops:
+        raise HTTPException(status_code=400, detail="No recipients match the filter")
+
+    results: list[dict] = []
+    for idx, shop in enumerate(shops):
+        subject, html_body, text_body = feedback_email(
+            merchant_name=shop.domain,
+            feedback_link=req.feedback_link,
+        )
+        try:
+            resp = await send_email(
+                to=shop.domain, subject=subject,
+                html_body=html_body, text_body=text_body,
+            )
+            status = "sent"
+        except Exception as exc:
+            logger.error("[Outreach] feedback failed for %s: %s", shop.domain, exc)
+            resp = {"error": str(exc)}
+            status = "failed"
+
+        results.append({"email": shop.domain, "status": status})
+        log = OutreachLog(
+            recipient_email=shop.domain, recipient_shop=shop.domain,
+            subject=subject, body=text_body[:500], status=status,
+        )
+        db.add(log)
+
+        if idx < len(shops) - 1:
+            await asyncio.sleep(1.0)
+
+    db.commit()
+
+    sent = sum(1 for r in results if r["status"] == "sent")
+    return {
+        "message": f"Feedback email sent to {sent}/{len(results)} merchants",
+        "total": len(results),
+        "sent": sent,
+        "failed": len(results) - sent,
+        "filter": req.recipient_filter.value,
+    }
+
+
+# ── POST /outreach/emails/send-rating ──────────────────────────────
+
+@router.post("/outreach/emails/send-rating")
+async def send_rating_email_endpoint(
+    req: SendRatingRequest, db: Session = Depends(get_db)
+):
+    """Send the app-store rating request template to filtered merchants."""
+    shops = _resolve_recipients(db, req.recipient_filter)
+    if not shops:
+        raise HTTPException(status_code=400, detail="No recipients match the filter")
+
+    results: list[dict] = []
+    for idx, shop in enumerate(shops):
+        subject, html_body, text_body = rating_email(
+            merchant_name=shop.domain,
+            app_store_review_link=req.app_store_review_link,
+        )
+        try:
+            resp = await send_email(
+                to=shop.domain, subject=subject,
+                html_body=html_body, text_body=text_body,
+            )
+            status = "sent"
+        except Exception as exc:
+            logger.error("[Outreach] rating failed for %s: %s", shop.domain, exc)
+            resp = {"error": str(exc)}
+            status = "failed"
+
+        results.append({"email": shop.domain, "status": status})
+        log = OutreachLog(
+            recipient_email=shop.domain, recipient_shop=shop.domain,
+            subject=subject, body=text_body[:500], status=status,
+        )
+        db.add(log)
+
+        if idx < len(shops) - 1:
+            await asyncio.sleep(1.0)
+
+    db.commit()
+
+    sent = sum(1 for r in results if r["status"] == "sent")
+    return {
+        "message": f"Rating email sent to {sent}/{len(results)} merchants",
+        "total": len(results),
+        "sent": sent,
+        "failed": len(results) - sent,
+        "filter": req.recipient_filter.value,
+    }
+
+
+# ── GET /outreach/recipients/count ──────────────────────────────────
+
+@router.get("/outreach/recipients/count")
+async def recipient_count(
+    recipient_filter: RecipientFilter = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Preview how many merchants match a filter before sending."""
+    shops = _resolve_recipients(db, recipient_filter)
+    return {"filter": recipient_filter.value, "count": len(shops)}
 
 
 # ── GET /outreach/history ──────────────────────────────────────────

@@ -552,3 +552,177 @@ class TestOutreachLifecycleSES:
             },
         )
         assert resp.status_code == 422
+
+
+# ===================================================================
+# Admin email endpoints: send-custom, send-feedback, send-rating
+# ===================================================================
+
+class TestAdminEmailEndpoints:
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_custom_email(self, mock_get_client, client):
+        _reset_tables()
+        _seed_shop("custom-a.myshopify.com", "Pro")
+        _seed_shop("custom-b.myshopify.com", "Free")
+        mock_get_client.return_value = _mock_ses_success()
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/emails/send-custom",
+            json={
+                "recipient_filter": "all_active",
+                "subject": "Big Announcement",
+                "html_body": "<h2>New Feature</h2><p>Check it out!</p>",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        assert data["sent"] == 2
+        assert data["filter"] == "all_active"
+
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_custom_pro_only(self, mock_get_client, client):
+        _reset_tables()
+        _seed_shop("pro-only.myshopify.com", "Pro")
+        _seed_shop("free-user.myshopify.com", "Free")
+        mock_get_client.return_value = _mock_ses_success()
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/emails/send-custom",
+            json={
+                "recipient_filter": "pro_only",
+                "subject": "Pro Exclusive",
+                "html_body": "<p>VIP content</p>",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+        assert resp.json()["filter"] == "pro_only"
+
+    def test_send_custom_no_recipients(self, client):
+        _reset_tables()
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/emails/send-custom",
+            json={
+                "recipient_filter": "pro_only",
+                "subject": "Test",
+                "html_body": "<p>No one</p>",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 400
+        assert "No recipients" in resp.json()["detail"]
+
+    @patch("src.ecommerce.api.superadmin.outreach.asyncio.sleep", new_callable=AsyncMock)
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_feedback_email(self, mock_get_client, mock_sleep, client):
+        _reset_tables()
+        _seed_shop("fb-shop.myshopify.com", "Free")
+        mock_get_client.return_value = _mock_ses_success()
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/emails/send-feedback",
+            json={
+                "recipient_filter": "all_active",
+                "feedback_link": "https://forms.example.com/feedback",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["sent"] == 1
+        assert data["filter"] == "all_active"
+
+    @patch("src.ecommerce.api.superadmin.outreach.asyncio.sleep", new_callable=AsyncMock)
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_rating_email(self, mock_get_client, mock_sleep, client):
+        _reset_tables()
+        _seed_shop("rate-shop.myshopify.com", "Pro")
+        mock_get_client.return_value = _mock_ses_success()
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/emails/send-rating",
+            json={
+                "recipient_filter": "all_active",
+                "app_store_review_link": "https://apps.shopify.com/myapp#reviews",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["sent"] == 1
+
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_recipient_count_endpoint(self, mock_get_client, client):
+        _reset_tables()
+        _seed_shop("cnt-a.myshopify.com", "Pro")
+        _seed_shop("cnt-b.myshopify.com", "Pro")
+        _seed_shop("cnt-c.myshopify.com", "Free")
+        token = _get_token(client)
+
+        resp = client.get(
+            "/api/superadmin/outreach/recipients/count?recipient_filter=pro_only",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["filter"] == "pro_only"
+        assert data["count"] == 2
+
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_custom_logs_to_history(self, mock_get_client, client):
+        _reset_tables()
+        _seed_shop("log-test.myshopify.com", "Free")
+        mock_get_client.return_value = _mock_ses_success()
+        token = _get_token(client)
+
+        client.post(
+            "/api/superadmin/outreach/emails/send-custom",
+            json={
+                "recipient_filter": "all_active",
+                "subject": "Log Check",
+                "html_body": "<p>Logged?</p>",
+            },
+            headers=_auth(token),
+        )
+
+        resp = client.get("/api/superadmin/outreach/history", headers=_auth(token))
+        assert resp.status_code == 200
+        history = resp.json()["history"]
+        match = [h for h in history if h["subject"] == "Log Check"]
+        assert len(match) >= 1
+        assert match[0]["status"] == "sent"
+
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_custom_ses_failure(self, mock_get_client, client):
+        _reset_tables()
+        _seed_shop("fail-custom.myshopify.com", "Free")
+        mock_get_client.return_value = _mock_ses_failure("SES down")
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/emails/send-custom",
+            json={
+                "recipient_filter": "all_active",
+                "subject": "Fail Test",
+                "html_body": "<p>fail</p>",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["failed"] == 1
+        assert resp.json()["sent"] == 0

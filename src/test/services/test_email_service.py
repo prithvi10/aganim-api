@@ -8,7 +8,7 @@ Covers:
 - Environment variable defaults
 """
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -276,3 +276,92 @@ class TestSendBulkEmail:
 
         assert results == []
         ses.send_email.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# send_rate_limited_bulk_email
+# ---------------------------------------------------------------------------
+
+class TestSendRateLimitedBulkEmail:
+    @pytest.mark.asyncio
+    @patch("src.ecommerce.services.email_service.asyncio.sleep", new_callable=AsyncMock)
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    async def test_all_succeed_with_delay(self, mock_get_client, mock_sleep):
+        from src.ecommerce.services.email_service import send_rate_limited_bulk_email
+
+        ses = _mock_ses_client("rl-ok")
+        mock_get_client.return_value = ses
+
+        results = await send_rate_limited_bulk_email(
+            recipients=["a@b.com", "c@d.com", "e@f.com"],
+            subject="Rate Limited",
+            html_body="<p>hi</p>",
+            text_body="hi",
+            delay_seconds=0.01,
+        )
+
+        assert len(results) == 3
+        assert all(r["status"] == "sent" for r in results)
+        assert mock_sleep.call_count == 2  # sleep between each, not after last
+
+    @pytest.mark.asyncio
+    @patch("src.ecommerce.services.email_service.asyncio.sleep", new_callable=AsyncMock)
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    async def test_partial_failure_continues(self, mock_get_client, mock_sleep):
+        from src.ecommerce.services.email_service import send_rate_limited_bulk_email
+
+        ses = MagicMock()
+        ses.send_email.side_effect = [
+            {"MessageId": "ok-1"},
+            Exception("Bounce"),
+            {"MessageId": "ok-3"},
+        ]
+        mock_get_client.return_value = ses
+
+        results = await send_rate_limited_bulk_email(
+            recipients=["a@b.com", "bad@bounce.com", "c@d.com"],
+            subject="Test",
+            html_body="h",
+            text_body="t",
+            delay_seconds=0.01,
+        )
+
+        assert results[0]["status"] == "sent"
+        assert results[1]["status"] == "failed"
+        assert results[2]["status"] == "sent"
+
+    @pytest.mark.asyncio
+    @patch("src.ecommerce.services.email_service.asyncio.sleep", new_callable=AsyncMock)
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    async def test_single_recipient_no_sleep(self, mock_get_client, mock_sleep):
+        from src.ecommerce.services.email_service import send_rate_limited_bulk_email
+
+        ses = _mock_ses_client()
+        mock_get_client.return_value = ses
+
+        results = await send_rate_limited_bulk_email(
+            recipients=["only@one.com"],
+            subject="s",
+            html_body="h",
+            text_body="t",
+        )
+
+        assert len(results) == 1
+        assert results[0]["status"] == "sent"
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.ecommerce.services.email_service.asyncio.sleep", new_callable=AsyncMock)
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    async def test_empty_recipients(self, mock_get_client, mock_sleep):
+        from src.ecommerce.services.email_service import send_rate_limited_bulk_email
+
+        ses = _mock_ses_client()
+        mock_get_client.return_value = ses
+
+        results = await send_rate_limited_bulk_email(
+            recipients=[], subject="s", html_body="h", text_body="t",
+        )
+
+        assert results == []
+        mock_sleep.assert_not_called()
