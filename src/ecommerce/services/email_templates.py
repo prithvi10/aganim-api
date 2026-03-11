@@ -3,6 +3,9 @@ HTML email templates for CrossBorderAgent merchant communications.
 
 Each public function returns a ``(subject, html_body, text_body)`` tuple
 ready to pass into ``email_service.send_email``.
+
+The shared ``generate_base_email_template(content_html)`` wrapper can also
+be used directly to wrap arbitrary admin-authored HTML.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ _LOGO_URL = "https://pub-2d05fd38ba8549c0811a1e0bc9426e81.r2.dev/logo/Icon-final
 _BRAND_COLOR = "#2563EB"
 _BRAND_DARK = "#1E40AF"
 _UNSUBSCRIBE_EMAIL = "unsubscribe@crossborderagent.com"
+_SUPPORT_EMAIL = "support@crossborderagent.com"
 
 _FEATURE_LABELS: dict[str, str] = {
     "rewriter": "AI Product Rewriting",
@@ -31,7 +35,16 @@ _FEATURE_LABELS: dict[str, str] = {
 }
 
 
-def _base_layout(content_html: str) -> str:
+# ── Reusable base wrapper ──────────────────────────────────────────
+
+def generate_base_email_template(content_html: str) -> str:
+    """
+    Wrap arbitrary content HTML in the branded email shell.
+
+    Includes ``<html>``/``<head>`` boilerplate, inline CSS reset, the branded
+    header with logo, a central content area, and a footer with copyright,
+    support link, and List-Unsubscribe mailto.
+    """
     return f"""\
 <!DOCTYPE html>
 <html lang="en">
@@ -54,8 +67,9 @@ def _base_layout(content_html: str) -> str:
 
 <!-- Footer -->
 <tr><td style="background-color:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;">
-  <p style="margin:0;font-size:12px;color:#6b7280;text-align:center;">
+  <p style="margin:0 0 8px;font-size:12px;color:#6b7280;text-align:center;">
     &copy; CrossBorderAgent &middot;
+    <a href="mailto:{_SUPPORT_EMAIL}" style="color:#6b7280;text-decoration:underline;">Support</a> &middot;
     <a href="mailto:{_UNSUBSCRIBE_EMAIL}?subject=Unsubscribe" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a>
   </p>
 </td></tr>
@@ -65,6 +79,10 @@ def _base_layout(content_html: str) -> str:
 </table>
 </body>
 </html>"""
+
+
+# Keep backward-compatible private alias
+_base_layout = generate_base_email_template
 
 
 def _cta_button(label: str, url: str) -> str:
@@ -104,7 +122,7 @@ def _feature_list_text(features: dict[str, bool], *, only_true: bool = True) -> 
     return "\n".join(lines)
 
 
-# ── Template A ──────────────────────────────────────────────────────
+# ── Template A: Welcome ────────────────────────────────────────────
 
 def welcome_email(merchant_name: str, app_url: str) -> tuple[str, str, str]:
     """Welcome email sent when a merchant first installs the app."""
@@ -136,7 +154,7 @@ def welcome_email(merchant_name: str, app_url: str) -> tuple[str, str, str]:
     return subject, html_body, text_body
 
 
-# ── Template B ──────────────────────────────────────────────────────
+# ── Template B: Plan Upgrade ───────────────────────────────────────
 
 def plan_upgrade_email(
     merchant_name: str, plan_name: str, app_url: str
@@ -175,7 +193,7 @@ def plan_upgrade_email(
     return subject, html_body, text_body
 
 
-# ── Template C ──────────────────────────────────────────────────────
+# ── Template C: Credit Limit Reached ──────────────────────────────
 
 def credit_limit_reached_email(
     merchant_name: str, plan_name: str, upgrade_url: str
@@ -206,7 +224,7 @@ def credit_limit_reached_email(
     return subject, html_body, text_body
 
 
-# ── Template D ──────────────────────────────────────────────────────
+# ── Template D: Enterprise Invite ─────────────────────────────────
 
 def enterprise_invite_email(merchant_name: str) -> tuple[str, str, str]:
     """High-touch enterprise invitation — reply-based, no button."""
@@ -243,6 +261,94 @@ def enterprise_invite_email(merchant_name: str) -> tuple[str, str, str]:
     return subject, html_body, text_body
 
 
+# ── Template E: Feedback Request ──────────────────────────────────
+
+def feedback_email(merchant_name: str, feedback_link: str) -> tuple[str, str, str]:
+    """Ask a merchant to share their experience via a feedback form."""
+    subject = "We'd love your feedback on CrossBorderAgent"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  You've been using CrossBorderAgent and we'd love to hear what you think.
+  Your feedback helps us build the features that matter most to merchants
+  like you.
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  It takes less than 2 minutes and makes a real difference.
+</p>
+{_cta_button("Share Your Feedback", feedback_link)}
+<p style="margin:16px 0 0;font-size:14px;color:#6b7280;">
+  Thank you for helping us improve!
+</p>"""
+
+    html_body = _base_layout(content)
+
+    text_body = (
+        f"Hi {merchant_name},\n\n"
+        f"You've been using CrossBorderAgent and we'd love to hear what "
+        f"you think. Your feedback helps us build the features that matter "
+        f"most.\n\n"
+        f"Share your feedback: {feedback_link}\n\n"
+        f"Thank you for helping us improve!\n"
+    )
+
+    return subject, html_body, text_body
+
+
+# ── Template F: App Store Rating ──────────────────────────────────
+
+def rating_email(merchant_name: str, app_store_review_link: str) -> tuple[str, str, str]:
+    """Ask a merchant to leave a review on the Shopify App Store."""
+    subject = "Enjoying CrossBorderAgent? Leave us a review!"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  We hope CrossBorderAgent has been helping your store reach new markets.
+  If you've had a positive experience, we'd really appreciate a quick
+  review on the Shopify App Store.
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  It only takes a moment and helps other merchants discover the app.
+</p>
+{_cta_button("Leave a Review ⭐", app_store_review_link)}
+<p style="margin:16px 0 0;font-size:14px;color:#6b7280;">
+  Thank you for your support — it means the world to us.
+</p>"""
+
+    html_body = _base_layout(content)
+
+    text_body = (
+        f"Hi {merchant_name},\n\n"
+        f"We hope CrossBorderAgent has been helping your store reach new "
+        f"markets. If you've had a positive experience, we'd really "
+        f"appreciate a quick review on the Shopify App Store.\n\n"
+        f"Leave a review: {app_store_review_link}\n\n"
+        f"Thank you for your support!\n"
+    )
+
+    return subject, html_body, text_body
+
+
+# ── Template G: Custom Admin Email ────────────────────────────────
+
+def custom_admin_email(custom_html_body: str) -> tuple[str, str, str]:
+    """
+    Wrap admin-authored HTML in the branded template.
+
+    Subject is not set here — the caller provides it separately.
+    Returns an empty subject so the caller can override it.
+    """
+    html_body = generate_base_email_template(custom_html_body)
+
+    import re
+    text_body = re.sub(r"<[^>]+>", "", custom_html_body)
+    text_body = re.sub(r"\s+", " ", text_body).strip()
+
+    return "", html_body, text_body
+
+
 # ── Dispatcher ──────────────────────────────────────────────────────
 
 TEMPLATE_REGISTRY: dict[str, callable] = {
@@ -250,4 +356,7 @@ TEMPLATE_REGISTRY: dict[str, callable] = {
     "upgrade": plan_upgrade_email,
     "credit_limit": credit_limit_reached_email,
     "enterprise": enterprise_invite_email,
+    "feedback": feedback_email,
+    "rating": rating_email,
+    "custom": custom_admin_email,
 }
