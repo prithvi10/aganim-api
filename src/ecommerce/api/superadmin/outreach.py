@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.shared.db.database import get_db
-from src.ecommerce.db.models import OutreachLog, Shop
+from src.ecommerce.db.models import OutreachLog, Shop, User
 from src.ecommerce.services.email_service import (
     send_email,
     send_bulk_email,
@@ -90,10 +90,19 @@ class SendRatingRequest(BaseModel):
 
 # ── Recipient resolution ───────────────────────────────────────────
 
+def _get_email_for_shop(db: Session, shop_domain: str) -> str:
+    """Look up the merchant's real email from the User table, fall back to domain."""
+    user = db.query(User).filter(User.username == shop_domain).first()
+    return user.email if user and user.email else shop_domain
+
+
 def _resolve_recipients(
     db: Session, recipient_filter: RecipientFilter
-) -> list[Shop]:
-    """Return a list of Shop objects matching the filter."""
+) -> list[dict]:
+    """
+    Return a list of dicts with ``domain`` and ``email`` for each matching shop.
+    Uses ``User.email`` when available, falls back to ``Shop.domain``.
+    """
     q = db.query(Shop).filter(Shop.is_active == True)  # noqa: E712
 
     if recipient_filter == RecipientFilter.pro_only:
@@ -102,7 +111,13 @@ def _resolve_recipients(
         cutoff = datetime.now(timezone.utc) - timedelta(days=14)
         q = q.filter(Shop.created_at <= cutoff)
 
-    return q.all()
+    shops = q.all()
+
+    results = []
+    for shop in shops:
+        email = _get_email_for_shop(db, shop.domain)
+        results.append({"domain": shop.domain, "email": email})
+    return results
 
 
 # ── POST /outreach/send ────────────────────────────────────────────
@@ -121,7 +136,8 @@ async def send_outreach(req: SendEmailRequest, db: Session = Depends(get_db)):
             .all()
         )
         for shop in shops:
-            recipients.append({"email": shop.domain, "shop": shop.domain})
+            email = _get_email_for_shop(db, shop.domain)
+            recipients.append({"email": email, "shop": shop.domain})
 
     if not recipients:
         raise HTTPException(status_code=400, detail="No recipients specified")
@@ -232,7 +248,7 @@ async def send_template_outreach(
     except TypeError as exc:
         raise HTTPException(status_code=400, detail=f"Missing template params: {exc}")
 
-    recipient_email = params.get("email", shop.domain)
+    recipient_email = params.get("email") or _get_email_for_shop(db, shop.domain)
 
     try:
         result = await send_email(
@@ -276,13 +292,13 @@ async def send_custom_email_endpoint(
     in the branded base template.  Emails are sent with a 1 s delay between
     each to stay within SES rate limits.
     """
-    shops = _resolve_recipients(db, req.recipient_filter)
-    if not shops:
+    recipients = _resolve_recipients(db, req.recipient_filter)
+    if not recipients:
         raise HTTPException(status_code=400, detail="No recipients match the filter")
 
     _, html_body, text_body = custom_admin_email(req.html_body)
 
-    recipient_emails = [s.domain for s in shops]
+    recipient_emails = [r["email"] for r in recipients]
     results = await send_rate_limited_bulk_email(
         recipients=recipient_emails,
         subject=req.subject,
@@ -290,11 +306,11 @@ async def send_custom_email_endpoint(
         text_body=text_body,
     )
 
+    email_to_domain = {r["email"]: r["domain"] for r in recipients}
     for r in results:
-        shop_domain = r["email"]
         log = OutreachLog(
-            recipient_email=shop_domain,
-            recipient_shop=shop_domain,
+            recipient_email=r["email"],
+            recipient_shop=email_to_domain.get(r["email"], r["email"]),
             subject=req.subject,
             body=text_body[:500],
             status=r["status"],
@@ -321,35 +337,35 @@ async def send_feedback_email_endpoint(
     req: SendFeedbackRequest, db: Session = Depends(get_db)
 ):
     """Send the feedback request template to filtered merchants."""
-    shops = _resolve_recipients(db, req.recipient_filter)
-    if not shops:
+    recipients = _resolve_recipients(db, req.recipient_filter)
+    if not recipients:
         raise HTTPException(status_code=400, detail="No recipients match the filter")
 
     results: list[dict] = []
-    for idx, shop in enumerate(shops):
+    for idx, rcpt in enumerate(recipients):
         subject, html_body, text_body = feedback_email(
-            merchant_name=shop.domain,
+            merchant_name=rcpt["domain"],
             feedback_link=req.feedback_link,
         )
         try:
             resp = await send_email(
-                to=shop.domain, subject=subject,
+                to=rcpt["email"], subject=subject,
                 html_body=html_body, text_body=text_body,
             )
             status = "sent"
         except Exception as exc:
-            logger.error("[Outreach] feedback failed for %s: %s", shop.domain, exc)
+            logger.error("[Outreach] feedback failed for %s: %s", rcpt["email"], exc)
             resp = {"error": str(exc)}
             status = "failed"
 
-        results.append({"email": shop.domain, "status": status})
+        results.append({"email": rcpt["email"], "status": status})
         log = OutreachLog(
-            recipient_email=shop.domain, recipient_shop=shop.domain,
+            recipient_email=rcpt["email"], recipient_shop=rcpt["domain"],
             subject=subject, body=text_body[:500], status=status,
         )
         db.add(log)
 
-        if idx < len(shops) - 1:
+        if idx < len(recipients) - 1:
             await asyncio.sleep(1.0)
 
     db.commit()
@@ -371,35 +387,35 @@ async def send_rating_email_endpoint(
     req: SendRatingRequest, db: Session = Depends(get_db)
 ):
     """Send the app-store rating request template to filtered merchants."""
-    shops = _resolve_recipients(db, req.recipient_filter)
-    if not shops:
+    recipients = _resolve_recipients(db, req.recipient_filter)
+    if not recipients:
         raise HTTPException(status_code=400, detail="No recipients match the filter")
 
     results: list[dict] = []
-    for idx, shop in enumerate(shops):
+    for idx, rcpt in enumerate(recipients):
         subject, html_body, text_body = rating_email(
-            merchant_name=shop.domain,
+            merchant_name=rcpt["domain"],
             app_store_review_link=req.app_store_review_link,
         )
         try:
             resp = await send_email(
-                to=shop.domain, subject=subject,
+                to=rcpt["email"], subject=subject,
                 html_body=html_body, text_body=text_body,
             )
             status = "sent"
         except Exception as exc:
-            logger.error("[Outreach] rating failed for %s: %s", shop.domain, exc)
+            logger.error("[Outreach] rating failed for %s: %s", rcpt["email"], exc)
             resp = {"error": str(exc)}
             status = "failed"
 
-        results.append({"email": shop.domain, "status": status})
+        results.append({"email": rcpt["email"], "status": status})
         log = OutreachLog(
-            recipient_email=shop.domain, recipient_shop=shop.domain,
+            recipient_email=rcpt["email"], recipient_shop=rcpt["domain"],
             subject=subject, body=text_body[:500], status=status,
         )
         db.add(log)
 
-        if idx < len(shops) - 1:
+        if idx < len(recipients) - 1:
             await asyncio.sleep(1.0)
 
     db.commit()

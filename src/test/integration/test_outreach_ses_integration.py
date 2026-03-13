@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.ecommerce.api.main import app
 from src.shared.db.database import Base, get_db
-from src.ecommerce.db.models import Shop, OutreachLog
+from src.ecommerce.db.models import Shop, OutreachLog, User, Plan
 from src.ecommerce.api.superadmin.auth import (
     ADMIN_JWT_SECRET, JWT_ALGORITHM, ADMIN_USERNAME, ADMIN_PASSWORD,
 )
@@ -63,13 +63,14 @@ def _auth(token: str) -> dict:
 
 def _reset_tables():
     db = TestingSessionLocal()
-    for model in [OutreachLog, Shop]:
+    for model in [OutreachLog, User, Shop]:
         db.query(model).delete()
     db.commit()
     db.close()
 
 
-def _seed_shop(domain="test-shop.myshopify.com", plan="Free"):
+def _seed_shop(domain="test-shop.myshopify.com", plan="Free", email=None):
+    """Seed a Shop and optionally a User with an email address."""
     db = TestingSessionLocal()
     shop = Shop(
         domain=domain,
@@ -78,6 +79,19 @@ def _seed_shop(domain="test-shop.myshopify.com", plan="Free"):
         is_active=True,
     )
     db.add(shop)
+    db.flush()
+
+    plan_obj = db.query(Plan).filter_by(name=plan).first()
+    if not plan_obj:
+        plan_obj = Plan(
+            name=plan, monthly_rewrite_limit=10, product_limit=10,
+            billing_cycle_type="monthly", max_request_rate=10,
+        )
+        db.add(plan_obj)
+        db.flush()
+
+    user = User(username=domain, email=email, plan_id=plan_obj.id)
+    db.add(user)
     db.commit()
     db.close()
     return shop
@@ -726,3 +740,80 @@ class TestAdminEmailEndpoints:
         assert resp.status_code == 200
         assert resp.json()["failed"] == 1
         assert resp.json()["sent"] == 0
+
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_custom_uses_user_email(self, mock_get_client, client):
+        """When User.email is populated, outreach should send to that address."""
+        _reset_tables()
+        _seed_shop("email-shop.myshopify.com", "Free", email="owner@realmail.com")
+        ses = _mock_ses_success()
+        mock_get_client.return_value = ses
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/emails/send-custom",
+            json={
+                "recipient_filter": "all_active",
+                "subject": "User Email Test",
+                "html_body": "<p>Hello</p>",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["sent"] == 1
+
+        call_args = ses.send_email.call_args
+        destination = call_args[1].get("Destination") or call_args[0][0] if call_args[0] else call_args[1]["Destination"]
+        assert "owner@realmail.com" in destination["ToAddresses"]
+
+    @patch("src.ecommerce.api.superadmin.outreach.asyncio.sleep", new_callable=AsyncMock)
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_feedback_uses_user_email(self, mock_get_client, mock_sleep, client):
+        """Feedback emails should also go to User.email when available."""
+        _reset_tables()
+        _seed_shop("fb-email.myshopify.com", "Free", email="merchant@store.com")
+        ses = _mock_ses_success()
+        mock_get_client.return_value = ses
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/emails/send-feedback",
+            json={
+                "recipient_filter": "all_active",
+                "feedback_link": "https://forms.example.com/feedback",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["sent"] == 1
+
+        call_args = ses.send_email.call_args
+        destination = call_args[1].get("Destination") or call_args[0][0] if call_args[0] else call_args[1]["Destination"]
+        assert "merchant@store.com" in destination["ToAddresses"]
+
+    @patch("src.ecommerce.services.email_service._get_ses_client")
+    def test_send_template_uses_user_email_as_fallback(self, mock_get_client, client):
+        """send-template should use User.email when no explicit email param."""
+        _reset_tables()
+        _seed_shop("tmpl-email.myshopify.com", "Free", email="tmpl-owner@gmail.com")
+        ses = _mock_ses_success()
+        mock_get_client.return_value = ses
+        token = _get_token(client)
+
+        resp = client.post(
+            "/api/superadmin/outreach/send-template",
+            json={
+                "template": "welcome",
+                "merchant_domain": "tmpl-email.myshopify.com",
+                "extra_params": {
+                    "merchant_name": "Template Shop",
+                    "app_url": "https://app.crossborderagent.com",
+                },
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["recipient"] == "tmpl-owner@gmail.com"
