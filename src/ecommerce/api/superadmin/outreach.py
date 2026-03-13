@@ -28,6 +28,10 @@ from src.ecommerce.services.email_service import (
 from src.ecommerce.services.email_templates import (
     TEMPLATE_REGISTRY,
     generate_base_email_template,
+    welcome_email,
+    plan_upgrade_email,
+    credit_limit_reached_email,
+    enterprise_invite_email,
     feedback_email,
     rating_email,
     custom_admin_email,
@@ -86,6 +90,18 @@ class SendFeedbackRequest(BaseModel):
 class SendRatingRequest(BaseModel):
     recipient_filter: RecipientFilter
     app_store_review_link: str = "https://apps.shopify.com/crossborderagent#reviews"
+
+
+class SendTemplateBulkRequest(BaseModel):
+    template: TemplateName
+    recipient_filter: RecipientFilter
+    app_url: str = ""
+    plan_name: str = ""
+    upgrade_url: str = ""
+    feedback_link: str = ""
+    app_store_review_link: str = ""
+    subject: str = ""
+    html_body: str = ""
 
 
 # ── Recipient resolution ───────────────────────────────────────────
@@ -186,6 +202,55 @@ async def send_outreach(req: SendEmailRequest, db: Session = Depends(get_db)):
         "failed": failed,
         "details": logs,
     }
+
+
+# ── POST /outreach/send-test-template ──────────────────────────────
+
+class SendTestTemplateRequest(BaseModel):
+    template: TemplateName
+    to_email: str
+    merchant_name: str = "Test Store"
+    app_url: str = "https://app.crossborderagent.com"
+    plan_name: str = "Pro"
+    upgrade_url: str = "https://app.crossborderagent.com/pricing"
+    feedback_link: str = "https://forms.gle/crossborderagent-feedback"
+    app_store_review_link: str = "https://apps.shopify.com/crossborderagent#reviews"
+    subject: str = ""
+    html_body: str = ""
+
+
+@router.post("/outreach/send-test-template")
+async def send_test_template(req: SendTestTemplateRequest):
+    """Render any template and send to a single test email address."""
+    try:
+        if req.template == TemplateName.welcome:
+            subj, html, text = welcome_email(req.merchant_name, req.app_url)
+        elif req.template == TemplateName.upgrade:
+            subj, html, text = plan_upgrade_email(req.merchant_name, req.plan_name, req.app_url)
+        elif req.template == TemplateName.credit_limit:
+            subj, html, text = credit_limit_reached_email(req.merchant_name, req.plan_name, req.upgrade_url)
+        elif req.template == TemplateName.enterprise:
+            subj, html, text = enterprise_invite_email(req.merchant_name)
+        elif req.template == TemplateName.feedback:
+            subj, html, text = feedback_email(req.merchant_name, req.feedback_link)
+        elif req.template == TemplateName.rating:
+            subj, html, text = rating_email(req.merchant_name, req.app_store_review_link)
+        elif req.template == TemplateName.custom:
+            _, html, text = custom_admin_email(req.html_body or "<p>Test custom email</p>")
+            subj = req.subject or "Test Custom Email"
+        else:
+            raise HTTPException(status_code=400, detail="Unknown template")
+    except TypeError as exc:
+        raise HTTPException(status_code=400, detail=f"Missing template params: {exc}")
+
+    subj = f"[TEST] {subj}"
+
+    try:
+        result = await send_email(to=req.to_email, subject=subj, html_body=html, text_body=text)
+        return {"status": "sent", "template": req.template.value, "recipient": req.to_email, **result}
+    except Exception as exc:
+        logger.error("[Outreach] test-template failed: %s", exc)
+        return {"status": "failed", "template": req.template.value, "error": str(exc)}
 
 
 # ── POST /outreach/send-template ───────────────────────────────────
@@ -427,6 +492,94 @@ async def send_rating_email_endpoint(
         "sent": sent,
         "failed": len(results) - sent,
         "filter": req.recipient_filter.value,
+    }
+
+
+# ── POST /outreach/emails/send-template-bulk ───────────────────────
+
+@router.post("/outreach/emails/send-template-bulk")
+async def send_template_bulk_endpoint(
+    req: SendTemplateBulkRequest, db: Session = Depends(get_db)
+):
+    """Send any template to filtered merchants with rate-limiting."""
+    recipients = _resolve_recipients(db, req.recipient_filter)
+    if not recipients:
+        raise HTTPException(status_code=400, detail="No recipients match the filter")
+
+    results: list[dict] = []
+    for idx, rcpt in enumerate(recipients):
+        merchant_name = rcpt["domain"]
+        try:
+            if req.template == TemplateName.welcome:
+                subject, html_body, text_body = welcome_email(
+                    merchant_name=merchant_name,
+                    app_url=req.app_url or "https://app.crossborderagent.com",
+                )
+            elif req.template == TemplateName.upgrade:
+                subject, html_body, text_body = plan_upgrade_email(
+                    merchant_name=merchant_name,
+                    plan_name=req.plan_name or "Pro",
+                    app_url=req.app_url or "https://app.crossborderagent.com",
+                )
+            elif req.template == TemplateName.credit_limit:
+                subject, html_body, text_body = credit_limit_reached_email(
+                    merchant_name=merchant_name,
+                    plan_name=req.plan_name or "Free",
+                    upgrade_url=req.upgrade_url or "https://app.crossborderagent.com/pricing",
+                )
+            elif req.template == TemplateName.enterprise:
+                subject, html_body, text_body = enterprise_invite_email(
+                    merchant_name=merchant_name,
+                )
+            elif req.template == TemplateName.feedback:
+                subject, html_body, text_body = feedback_email(
+                    merchant_name=merchant_name,
+                    feedback_link=req.feedback_link,
+                )
+            elif req.template == TemplateName.rating:
+                subject, html_body, text_body = rating_email(
+                    merchant_name=merchant_name,
+                    app_store_review_link=req.app_store_review_link,
+                )
+            elif req.template == TemplateName.custom:
+                _, html_body, text_body = custom_admin_email(req.html_body)
+                subject = req.subject or "Message from CrossBorderAgent"
+            else:
+                raise HTTPException(status_code=400, detail="Unknown template")
+        except TypeError as exc:
+            raise HTTPException(status_code=400, detail=f"Missing template params: {exc}")
+
+        try:
+            resp = await send_email(
+                to=rcpt["email"], subject=subject,
+                html_body=html_body, text_body=text_body,
+            )
+            status = "sent"
+        except Exception as exc:
+            logger.error("[Outreach] %s failed for %s: %s", req.template.value, rcpt["email"], exc)
+            resp = {"error": str(exc)}
+            status = "failed"
+
+        results.append({"email": rcpt["email"], "status": status})
+        log = OutreachLog(
+            recipient_email=rcpt["email"], recipient_shop=rcpt["domain"],
+            subject=subject, body=text_body[:500], status=status,
+        )
+        db.add(log)
+
+        if idx < len(recipients) - 1:
+            await asyncio.sleep(1.0)
+
+    db.commit()
+
+    sent = sum(1 for r in results if r["status"] == "sent")
+    return {
+        "message": f"{req.template.value} email sent to {sent}/{len(results)} merchants",
+        "total": len(results),
+        "sent": sent,
+        "failed": len(results) - sent,
+        "filter": req.recipient_filter.value,
+        "template": req.template.value,
     }
 
 
