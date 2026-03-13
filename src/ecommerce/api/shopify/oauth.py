@@ -104,9 +104,42 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Successfully exchanged token for shop: {shop}")
         logger.info(f"Auth callback params: host={host}, timestamp={params.get('timestamp')}")
         store_shop_access_token(db, shop, access_token)
-        
+
+        # Send automatic welcome email (best-effort, never block install)
+        try:
+            user = db.query(User).filter(User.username == shop).first()
+            recipient_email = user.email if user and user.email else None
+            if recipient_email:
+                from src.ecommerce.services.email_templates import welcome_email
+                from src.ecommerce.services.email_service import send_email
+                from src.ecommerce.db.models import OutreachLog
+
+                subj, html_body, text_body = welcome_email(
+                    merchant_name=shop,
+                    app_url=f"{SHOPIFY_UI_URL}/app",
+                )
+                await send_email(
+                    to=recipient_email,
+                    subject=subj,
+                    html_body=html_body,
+                    text_body=text_body,
+                )
+                log = OutreachLog(
+                    recipient_email=recipient_email,
+                    recipient_shop=shop,
+                    subject=subj,
+                    body=text_body[:500],
+                    status="sent",
+                )
+                db.add(log)
+                db.commit()
+                logger.info(f"[WelcomeEmail] sent to {recipient_email} for {shop}")
+            else:
+                logger.info(f"[WelcomeEmail] skipped for {shop} — no email on file")
+        except Exception as e:
+            logger.warning(f"[WelcomeEmail] failed for {shop}: {e}")
+
         # Redirect to the Remix UI's login route to ensure the UI also authenticates
-        # The Remix app will handle the second half of the handshake and then load the embedded app
         ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"
         if host:
             ui_login_url += f"&host={host}"
