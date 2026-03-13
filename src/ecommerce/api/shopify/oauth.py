@@ -30,6 +30,56 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
+async def _send_welcome_email_if_new(db: Session, shop_domain: str) -> None:
+    """
+    Send a welcome email if this is a brand-new user (no prior outreach).
+    Best-effort: failures are logged but never block the install flow.
+    """
+    from src.ecommerce.db.models import OutreachLog
+
+    existing = (
+        db.query(OutreachLog)
+        .filter(OutreachLog.recipient_shop == shop_domain, OutreachLog.subject.ilike("%welcome%"))
+        .first()
+    )
+    if existing:
+        logger.info("[WelcomeEmail] already sent for %s — skipping", shop_domain)
+        return
+
+    user = db.query(User).filter(User.username == shop_domain).first()
+    recipient_email = user.email if user and user.email else None
+    if not recipient_email:
+        logger.info("[WelcomeEmail] skipped for %s — no email on file", shop_domain)
+        return
+
+    try:
+        from src.ecommerce.services.email_templates import welcome_email
+        from src.ecommerce.services.email_service import send_email
+
+        subj, html_body, text_body = welcome_email(
+            merchant_name=shop_domain,
+            app_url=f"{SHOPIFY_UI_URL}/app",
+        )
+        await send_email(
+            to=recipient_email,
+            subject=subj,
+            html_body=html_body,
+            text_body=text_body,
+        )
+        log = OutreachLog(
+            recipient_email=recipient_email,
+            recipient_shop=shop_domain,
+            subject=subj,
+            body=text_body[:500],
+            status="sent",
+        )
+        db.add(log)
+        db.commit()
+        logger.info("[WelcomeEmail] sent to %s for %s", recipient_email, shop_domain)
+    except Exception as e:
+        logger.warning("[WelcomeEmail] failed for %s: %s", shop_domain, e)
+
+
 # =============================================================================
 # OAuth Entry Point (Install App)
 # =============================================================================
@@ -104,40 +154,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Successfully exchanged token for shop: {shop}")
         logger.info(f"Auth callback params: host={host}, timestamp={params.get('timestamp')}")
         store_shop_access_token(db, shop, access_token)
-
-        # Send automatic welcome email (best-effort, never block install)
-        try:
-            user = db.query(User).filter(User.username == shop).first()
-            recipient_email = user.email if user and user.email else None
-            if recipient_email:
-                from src.ecommerce.services.email_templates import welcome_email
-                from src.ecommerce.services.email_service import send_email
-                from src.ecommerce.db.models import OutreachLog
-
-                subj, html_body, text_body = welcome_email(
-                    merchant_name=shop,
-                    app_url=f"{SHOPIFY_UI_URL}/app",
-                )
-                await send_email(
-                    to=recipient_email,
-                    subject=subj,
-                    html_body=html_body,
-                    text_body=text_body,
-                )
-                log = OutreachLog(
-                    recipient_email=recipient_email,
-                    recipient_shop=shop,
-                    subject=subj,
-                    body=text_body[:500],
-                    status="sent",
-                )
-                db.add(log)
-                db.commit()
-                logger.info(f"[WelcomeEmail] sent to {recipient_email} for {shop}")
-            else:
-                logger.info(f"[WelcomeEmail] skipped for {shop} — no email on file")
-        except Exception as e:
-            logger.warning(f"[WelcomeEmail] failed for {shop}: {e}")
+        await _send_welcome_email_if_new(db, shop)
 
         # Redirect to the Remix UI's login route to ensure the UI also authenticates
         ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"
@@ -190,6 +207,7 @@ async def sync_token(
 
     logger.info("[SyncToken] start rid=%s shop=%s type=%s force=%s", _rid(request), shop, token_type, force)
     store_shop_access_token(db, shop, access_token, token_type=token_type, force=force)
+    await _send_welcome_email_if_new(db, shop)
     return Response(status_code=204)
 
 
