@@ -29,10 +29,91 @@ from datetime import datetime, timezone
 from src.ecommerce.config.configs import PROMO_PRICING_ENABLED
 from src.shared.logging.logger import get_logger
 
+from src.ecommerce.db.models import User, OutreachLog
+from src.ecommerce.db.transactions import _fetch_shop_owner_email, get_shop_access_token
+from src.ecommerce.services.email_templates import welcome_email
+from src.ecommerce.services.email_service import send_email
+from src.ecommerce.config.shopify_config import SHOPIFY_UI_URL
+
 from .shared import resolve_shop_domain, _rid
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+
+# =============================================================================
+# Complete Install — fetch email + send welcome (called by UI after auth settles)
+# =============================================================================
+
+@router.post("/api/admin/complete-install")
+async def complete_install(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Called by the UI after OAuth + token sync are fully settled.
+    Fetches the shop owner email from Shopify (if missing) and sends
+    the welcome email on first install.
+    """
+    shop_domain = request.query_params.get("shop", "").strip()
+    if not shop_domain:
+        return {"status": "skipped", "reason": "no_shop"}
+
+    logger.info("[CompleteInstall] start shop=%s", shop_domain)
+
+    user = db.query(User).filter(User.username == shop_domain).first()
+    if not user:
+        return {"status": "skipped", "reason": "no_user"}
+
+    # Backfill email if still missing
+    if not user.email:
+        access_token = get_shop_access_token(db, shop_domain)
+        if access_token:
+            owner_email = _fetch_shop_owner_email(shop_domain, access_token)
+            if owner_email:
+                user.email = owner_email
+                db.commit()
+                logger.info("[CompleteInstall] backfilled email for %s: %s", shop_domain, owner_email)
+
+    if not user.email:
+        logger.info("[CompleteInstall] still no email for %s — skipping welcome", shop_domain)
+        return {"status": "skipped", "reason": "no_email"}
+
+    # Check if welcome was already sent
+    existing = (
+        db.query(OutreachLog)
+        .filter(OutreachLog.recipient_shop == shop_domain, OutreachLog.subject.ilike("%welcome%"))
+        .first()
+    )
+    if existing:
+        return {"status": "already_sent"}
+
+    # Send welcome email
+    try:
+        subj, html_body, text_body = welcome_email(
+            merchant_name=shop_domain,
+            app_url=f"{SHOPIFY_UI_URL}/app",
+        )
+        await send_email(
+            to=user.email,
+            subject=subj,
+            html_body=html_body,
+            text_body=text_body,
+        )
+        log = OutreachLog(
+            recipient_email=user.email,
+            recipient_shop=shop_domain,
+            subject=subj,
+            body=text_body[:500],
+            status="sent",
+        )
+        db.add(log)
+        db.commit()
+        logger.info("[CompleteInstall] welcome email sent to %s for %s", user.email, shop_domain)
+        return {"status": "sent", "email": user.email}
+    except Exception as e:
+        logger.warning("[CompleteInstall] welcome email failed for %s: %s", shop_domain, e)
+        return {"status": "failed", "error": str(e)}
 
 
 # =============================================================================

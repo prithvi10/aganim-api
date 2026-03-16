@@ -77,15 +77,13 @@ def test_get_shop_quota_context_invalid_shop(db_session):
     context = get_shop_quota_context(db_session, "non_existent_shop")
     assert context is None
 
-@patch("src.ecommerce.db.transactions._fetch_shop_owner_email", return_value="owner@newshop.com")
-def test_store_shop_access_token_create(mock_fetch_email, db_session):
+def test_store_shop_access_token_create(db_session):
     """
     Should create a new Shop record AND a User record if they don't exist.
-    The email fetched from Shopify should be stored on the User.
+    Email fetch is deferred to complete-install, so email should be None.
     """
     from src.ecommerce.db.models import User, Plan
     
-    # Ensure default plan exists for the auto-creation logic
     if not db_session.query(Plan).filter_by(name="Free").first():
         db_session.add(Plan(name="Free", monthly_rewrite_limit=10, product_limit=10, billing_cycle_type="lifetime", max_request_rate=10))
         db_session.commit()
@@ -93,21 +91,17 @@ def test_store_shop_access_token_create(mock_fetch_email, db_session):
     shop_domain = "new-shop.myshopify.com"
     token = "new_token_123"
     
-    # Execute
     shop = store_shop_access_token(db_session, shop_domain, token)
     
-    # 1. Verify Shop
     assert shop.domain == shop_domain
     assert shop.access_token == token
     assert shop.id is not None
     
-    # 2. Verify User Created with email
     user = db_session.query(User).filter_by(username=shop_domain).first()
     assert user is not None
     assert user.plan is not None
     assert user.plan.name == "Free"
-    assert user.email == "owner@newshop.com"
-    mock_fetch_email.assert_called_once_with(shop_domain, token)
+    assert user.email is None
 
 
 def test_record_successful_rewrite_free_decrements_lifetime(db_session):
@@ -147,8 +141,7 @@ def test_record_successful_rewrite_free_decrements_lifetime(db_session):
     assert updated.lifetime_rewrites_remaining == 1
     assert int(updated.monthly_rewrites_used or 0) == 0
 
-@patch("src.ecommerce.db.transactions._fetch_shop_owner_email", return_value=None)
-def test_store_shop_access_token_update(mock_fetch_email, db_session):
+def test_store_shop_access_token_update(db_session):
     """Should update the access token if the Shop record exists."""
     from src.ecommerce.db.models import Shop
     
@@ -156,28 +149,23 @@ def test_store_shop_access_token_update(mock_fetch_email, db_session):
     old_token = "old_token_123"
     new_token = "new_token_456"
     
-    # Create existing
     existing = Shop(domain=shop_domain, access_token=old_token)
     db_session.add(existing)
     db_session.commit()
     
-    # Update
     updated = store_shop_access_token(db_session, shop_domain, new_token)
     
     assert updated.id == existing.id
     assert updated.domain == shop_domain
     assert updated.access_token == new_token
 
-@patch("src.ecommerce.db.transactions._fetch_shop_owner_email", return_value=None)
-def test_get_shop_access_token_found(mock_fetch_email, db_session):
+def test_get_shop_access_token_found(db_session):
     """Should return the access token if shop exists."""
     shop_domain = "token-test.myshopify.com"
     token = "secret_token"
     
-    # Seed
     store_shop_access_token(db_session, shop_domain, token)
     
-    # Test
     retrieved_token = get_shop_access_token(db_session, shop_domain)
     assert retrieved_token == token
 
@@ -348,31 +336,24 @@ class TestFetchShopOwnerEmail:
         assert result is None
 
 
-class TestStoreShopAccessTokenEmailBackfill:
-    @patch("src.ecommerce.db.transactions._fetch_shop_owner_email", return_value="backfill@shop.com")
-    def test_backfills_email_on_existing_user(self, mock_fetch, db_session):
-        """When an existing user has email=None, re-installing should backfill it."""
+class TestStoreShopAccessTokenNoEmailFetch:
+    """Verify that store_shop_access_token no longer fetches email (deferred to complete-install)."""
+
+    def test_new_user_created_without_email(self, db_session):
         free = db_session.query(Plan).filter_by(name="Free").first()
         if not free:
             free = Plan(name="Free", monthly_rewrite_limit=10, product_limit=10, billing_cycle_type="lifetime", max_request_rate=10)
             db_session.add(free)
             db_session.commit()
 
-        domain = "backfill-shop.myshopify.com"
-        shop = Shop(domain=domain, access_token="old_tok")
-        db_session.add(shop)
-        user = User(username=domain, email=None, plan_id=free.id)
-        db_session.add(user)
-        db_session.commit()
+        domain = "no-email-shop.myshopify.com"
+        store_shop_access_token(db_session, domain, "tok123")
 
-        store_shop_access_token(db_session, domain, "new_tok")
+        user = db_session.query(User).filter_by(username=domain).first()
+        assert user is not None
+        assert user.email is None
 
-        db_session.refresh(user)
-        assert user.email == "backfill@shop.com"
-
-    @patch("src.ecommerce.db.transactions._fetch_shop_owner_email", return_value="new@email.com")
-    def test_does_not_overwrite_existing_email(self, mock_fetch, db_session):
-        """If the user already has an email, don't overwrite it."""
+    def test_existing_user_email_not_overwritten(self, db_session):
         free = db_session.query(Plan).filter_by(name="Free").first()
         if not free:
             free = Plan(name="Free", monthly_rewrite_limit=10, product_limit=10, billing_cycle_type="lifetime", max_request_rate=10)

@@ -396,29 +396,24 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
     # 2. Update/Create User Record (Billing Identity)
     user = db.query(User).filter(User.username == shop_domain).first()
 
-    # Fetch the shop owner email from Shopify (best-effort)
-    effective_token = access_token if should_update else (shop_record.access_token if shop_record else access_token)
-    owner_email = _fetch_shop_owner_email(shop_domain, effective_token) if effective_token else None
+    # Email fetch is now deferred to /api/admin/complete-install (called by UI
+    # once the OAuth flow has fully settled and the token is active).
 
     if not user:
-        # Assign default plan
         default_plan = db.query(Plan).filter(Plan.name == "Free").first()
         if not default_plan:
              logger.warning("Plan 'Free' not found. Falling back to first available plan.")
              default_plan = db.query(Plan).first()
         
         if default_plan:
-            logger.info(f"Creating new user for {shop_domain} with plan {default_plan.name} email={owner_email}")
-            user = User(username=shop_domain, email=owner_email, plan_id=default_plan.id)
+            logger.info(f"Creating new user for {shop_domain} with plan {default_plan.name}")
+            user = User(username=shop_domain, plan_id=default_plan.id)
             db.add(user)
             db.commit()
             db.refresh(user)
         else:
             logger.error(f"CRITICAL: No plans found in database. Cannot create user for {shop_domain}.")
             pass
-    elif owner_email and not user.email:
-        user.email = owner_email
-        logger.info(f"Backfilled email for existing user {shop_domain}: {owner_email}")
 
     db.commit()
     db.refresh(shop_record)
