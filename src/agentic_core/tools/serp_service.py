@@ -59,7 +59,7 @@ class SerpService:
     ):
         self.api_key = api_key or SERP_API_KEY or os.getenv("SERP_API_KEY")
         self.api_url = api_url or SERP_API_URL or "https://serpapi.com/search"
-        self.timeout = httpx.Timeout(5.0)
+        self.timeout = httpx.Timeout(15.0)
 
     async def search(
         self,
@@ -105,7 +105,7 @@ class SerpService:
         if hl:
             params["hl"] = hl
 
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 async with httpx.AsyncClient(
                     timeout=self.timeout,
@@ -197,9 +197,9 @@ class SerpService:
         if hl:
             params["hl"] = hl
 
-        shopping_timeout = httpx.Timeout(8.0)
+        shopping_timeout = httpx.Timeout(20.0)
 
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 async with httpx.AsyncClient(
                     timeout=shopping_timeout,
