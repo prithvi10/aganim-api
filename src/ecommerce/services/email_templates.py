@@ -10,6 +10,7 @@ be used directly to wrap arbitrary admin-authored HTML.
 
 from __future__ import annotations
 
+import os
 from src.ecommerce.plans.entitlements import PLAN_ENTITLEMENTS
 
 _LOGO_URL = "https://pub-2d05fd38ba8549c0811a1e0bc9426e81.r2.dev/logo/Icon-final.png"
@@ -17,6 +18,10 @@ _BRAND_COLOR = "#2563EB"
 _BRAND_DARK = "#1E40AF"
 _UNSUBSCRIBE_EMAIL = "unsubscribe@crossborderagent.com"
 _SUPPORT_EMAIL = "support@crossborderagent.com"
+
+_UI_BASE_URL = os.getenv("SHOPIFY_UI_URL", "https://shopify-translator-ui.onrender.com")
+_LANDING_URL = _UI_BASE_URL
+_SUPPORT_URL = f"{_UI_BASE_URL}/support"
 
 _FEATURE_LABELS: dict[str, str] = {
     "rewriter": "AI Product Rewriting",
@@ -69,7 +74,8 @@ def generate_base_email_template(content_html: str) -> str:
 <tr><td style="background-color:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;">
   <p style="margin:0 0 8px;font-size:12px;color:#6b7280;text-align:center;">
     &copy; CrossBorderAgent &middot;
-    <a href="mailto:{_SUPPORT_EMAIL}" style="color:#6b7280;text-decoration:underline;">Support</a> &middot;
+    <a href="{_LANDING_URL}" style="color:#6b7280;text-decoration:underline;">CrossBorderAgent</a> &middot;
+    <a href="{_SUPPORT_URL}" style="color:#6b7280;text-decoration:underline;">Support</a> &middot;
     <a href="mailto:{_UNSUBSCRIBE_EMAIL}?subject=Unsubscribe" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a>
   </p>
 </td></tr>
@@ -124,7 +130,7 @@ def _feature_list_text(features: dict[str, bool], *, only_true: bool = True) -> 
 
 # ── Template A: Welcome ────────────────────────────────────────────
 
-def welcome_email(merchant_name: str, app_url: str) -> tuple[str, str, str]:
+def welcome_email(merchant_name: str, app_url: str = "") -> tuple[str, str, str]:
     """Welcome email sent when a merchant first installs the app."""
     subject = "Welcome to CrossBorderAgent!"
 
@@ -140,7 +146,10 @@ def welcome_email(merchant_name: str, app_url: str) -> tuple[str, str, str]:
 <p style="margin:16px 0 0;font-size:16px;color:#374151;line-height:1.6;">
   Jump in and start optimising your products for global markets.
 </p>
-{_cta_button("Get Started", app_url)}"""
+{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+<p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
+  Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
+</p>"""
 
     html_body = _base_layout(content)
 
@@ -148,7 +157,8 @@ def welcome_email(merchant_name: str, app_url: str) -> tuple[str, str, str]:
         f"Welcome, {merchant_name}!\n\n"
         f"Thanks for installing CrossBorderAgent. Your Free plan includes:\n"
         f"{_feature_list_text(free_features)}\n\n"
-        f"Get started: {app_url}\n"
+        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Support: {_SUPPORT_URL}\n"
     )
 
     return subject, html_body, text_body
@@ -157,7 +167,7 @@ def welcome_email(merchant_name: str, app_url: str) -> tuple[str, str, str]:
 # ── Template B: Plan Upgrade ───────────────────────────────────────
 
 def plan_upgrade_email(
-    merchant_name: str, plan_name: str, app_url: str
+    merchant_name: str, plan_name: str, app_url: str = ""
 ) -> tuple[str, str, str]:
     """Confirmation email after upgrading to a paid plan."""
     subject = f"You've upgraded to {plan_name}!"
@@ -179,7 +189,10 @@ def plan_upgrade_email(
 <p style="margin:16px 0 0;font-size:16px;color:#374151;line-height:1.6;">
   All your new features are ready to use right now.
 </p>
-{_cta_button("Explore Your New Features", app_url)}"""
+{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+<p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
+  Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
+</p>"""
 
     html_body = _base_layout(content)
 
@@ -187,7 +200,8 @@ def plan_upgrade_email(
         f"You're on {plan_name} now, {merchant_name}!\n\n"
         f"Here's what you've just unlocked:\n"
         f"{_feature_list_text(unlocked)}\n\n"
-        f"Explore your features: {app_url}\n"
+        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Support: {_SUPPORT_URL}\n"
     )
 
     return subject, html_body, text_body
@@ -196,7 +210,7 @@ def plan_upgrade_email(
 # ── Template C: Credit Limit Reached ──────────────────────────────
 
 def credit_limit_reached_email(
-    merchant_name: str, plan_name: str, upgrade_url: str
+    merchant_name: str, plan_name: str, upgrade_url: str = ""
 ) -> tuple[str, str, str]:
     """Nudge email when a merchant hits their plan credit limits."""
     subject = f"You've reached your {plan_name} limits"
@@ -209,16 +223,22 @@ def credit_limit_reached_email(
 </p>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
   Upgrade to keep the momentum going and unlock higher limits, more
-  missions, and premium features.
+  missions, and premium features. Open CrossBorderAgent from your Shopify
+  admin panel to manage your plan.
 </p>
-{_cta_button("Upgrade Plan", upgrade_url)}"""
+{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+<p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
+  Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
+</p>"""
 
     html_body = _base_layout(content)
 
     text_body = (
         f"You're on a roll, {merchant_name}!\n\n"
         f"You've used all the credits available on your {plan_name} plan.\n"
-        f"Upgrade to keep the momentum going: {upgrade_url}\n"
+        f"Upgrade to keep the momentum going.\n\n"
+        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Support: {_SUPPORT_URL}\n"
     )
 
     return subject, html_body, text_body
@@ -244,7 +264,10 @@ def enterprise_invite_email(merchant_name: str) -> tuple[str, str, str]:
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;font-weight:600;">
   Simply reply to this email and we'll set up a quick call.
 </p>
-<p style="margin:24px 0 0;font-size:14px;color:#6b7280;">— The CrossBorderAgent Team</p>"""
+{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+<p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
+  Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
+</p>"""
 
     html_body = _base_layout(content)
 
@@ -255,7 +278,8 @@ def enterprise_invite_email(merchant_name: str) -> tuple[str, str, str]:
         f"We'd love to put together a custom Enterprise package tailored to "
         f"your volume and workflow.\n\n"
         f"Simply reply to this email and we'll set up a quick call.\n\n"
-        f"— The CrossBorderAgent Team\n"
+        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Support: {_SUPPORT_URL}\n"
     )
 
     return subject, html_body, text_body
@@ -263,8 +287,8 @@ def enterprise_invite_email(merchant_name: str) -> tuple[str, str, str]:
 
 # ── Template E: Feedback Request ──────────────────────────────────
 
-def feedback_email(merchant_name: str, feedback_link: str) -> tuple[str, str, str]:
-    """Ask a merchant to share their experience via a feedback form."""
+def feedback_email(merchant_name: str, feedback_link: str = "") -> tuple[str, str, str]:
+    """Ask a merchant to share their experience via the support page."""
     subject = "We'd love your feedback on CrossBorderAgent"
 
     content = f"""\
@@ -275,11 +299,13 @@ def feedback_email(merchant_name: str, feedback_link: str) -> tuple[str, str, st
   like you.
 </p>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  It takes less than 2 minutes and makes a real difference.
+  It takes less than 2 minutes and makes a real difference. Visit our
+  support page to share your thoughts.
 </p>
-{_cta_button("Share Your Feedback", feedback_link)}
+{_cta_button("Share Your Feedback", _SUPPORT_URL)}
 <p style="margin:16px 0 0;font-size:14px;color:#6b7280;">
-  Thank you for helping us improve!
+  Thank you for helping us improve! &middot;
+  <a href="{_LANDING_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">CrossBorderAgent</a>
 </p>"""
 
     html_body = _base_layout(content)
@@ -289,8 +315,9 @@ def feedback_email(merchant_name: str, feedback_link: str) -> tuple[str, str, st
         f"You've been using CrossBorderAgent and we'd love to hear what "
         f"you think. Your feedback helps us build the features that matter "
         f"most.\n\n"
-        f"Share your feedback: {feedback_link}\n\n"
+        f"Share your feedback: {_SUPPORT_URL}\n\n"
         f"Thank you for helping us improve!\n"
+        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
     )
 
     return subject, html_body, text_body
@@ -298,23 +325,24 @@ def feedback_email(merchant_name: str, feedback_link: str) -> tuple[str, str, st
 
 # ── Template F: App Store Rating ──────────────────────────────────
 
-def rating_email(merchant_name: str, app_store_review_link: str) -> tuple[str, str, str]:
+def rating_email(merchant_name: str, app_store_review_link: str = "") -> tuple[str, str, str]:
     """Ask a merchant to leave a review on the Shopify App Store."""
-    subject = "Enjoying CrossBorderAgent? Leave us a review!"
+    subject = "Enjoying CrossBorderAgent? We'd love to hear from you!"
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
   We hope CrossBorderAgent has been helping your store reach new markets.
-  If you've had a positive experience, we'd really appreciate a quick
-  review on the Shopify App Store.
+  If you've had a positive experience, we'd really appreciate hearing
+  about it.
 </p>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  It only takes a moment and helps other merchants discover the app.
+  Visit our support page to share your thoughts, or simply reply to this
+  email — it means the world to us.
 </p>
-{_cta_button("Leave a Review ⭐", app_store_review_link)}
-<p style="margin:16px 0 0;font-size:14px;color:#6b7280;">
-  Thank you for your support — it means the world to us.
+{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+<p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
+  Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
 </p>"""
 
     html_body = _base_layout(content)
@@ -323,9 +351,9 @@ def rating_email(merchant_name: str, app_store_review_link: str) -> tuple[str, s
         f"Hi {merchant_name},\n\n"
         f"We hope CrossBorderAgent has been helping your store reach new "
         f"markets. If you've had a positive experience, we'd really "
-        f"appreciate a quick review on the Shopify App Store.\n\n"
-        f"Leave a review: {app_store_review_link}\n\n"
-        f"Thank you for your support!\n"
+        f"appreciate hearing about it.\n\n"
+        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Support: {_SUPPORT_URL}\n"
     )
 
     return subject, html_body, text_body

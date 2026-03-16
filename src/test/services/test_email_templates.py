@@ -23,6 +23,8 @@ from src.ecommerce.services.email_templates import (
     _base_layout,
     _LOGO_URL,
     _UNSUBSCRIBE_EMAIL,
+    _LANDING_URL,
+    _SUPPORT_URL,
 )
 
 
@@ -83,23 +85,25 @@ class TestWelcomeEmail:
         assert "Acme Store" in html
 
     def test_html_contains_cta(self):
-        _, html, _ = welcome_email("Acme", "https://app.example.com")
-        assert "Get Started" in html
-        assert "https://app.example.com" in html
+        _, html, _ = welcome_email("Acme")
+        assert "Visit CrossBorderAgent" in html
+        assert _LANDING_URL in html
+        assert _SUPPORT_URL in html
 
     def test_html_structure(self):
-        _, html, _ = welcome_email("X", "https://example.com")
+        _, html, _ = welcome_email("X")
         _assert_html_structure(html)
 
     def test_html_lists_free_features(self):
-        _, html, _ = welcome_email("X", "https://example.com")
+        _, html, _ = welcome_email("X")
         assert "AI Product Rewriting" in html
         assert "Marketing Copy" in html
 
     def test_text_contains_key_info(self):
-        _, _, text = welcome_email("Acme", "https://app.example.com")
+        _, _, text = welcome_email("Acme")
         assert "Acme" in text
-        assert "https://app.example.com" in text
+        assert _LANDING_URL in text
+        assert _SUPPORT_URL in text
         assert "Free plan" in text
 
 
@@ -122,9 +126,10 @@ class TestPlanUpgradeEmail:
         assert "Pro" in html
 
     def test_html_contains_cta(self):
-        _, html, _ = plan_upgrade_email("Acme", "Pro", "https://app.example.com")
-        assert "Explore Your New Features" in html
-        assert "https://app.example.com" in html
+        _, html, _ = plan_upgrade_email("Acme", "Pro")
+        assert "Visit CrossBorderAgent" in html
+        assert _LANDING_URL in html
+        assert _SUPPORT_URL in html
 
     def test_html_shows_unlocked_features_for_pro(self):
         _, html, _ = plan_upgrade_email("Acme", "Pro", "https://example.com")
@@ -153,17 +158,19 @@ class TestCreditLimitReachedEmail:
         assert "Basic" in subject
 
     def test_html_contains_upgrade_cta(self):
-        _, html, _ = credit_limit_reached_email("Acme", "Free", "https://upgrade.example.com")
-        assert "Upgrade Plan" in html
-        assert "https://upgrade.example.com" in html
+        _, html, _ = credit_limit_reached_email("Acme", "Free")
+        assert "Visit CrossBorderAgent" in html
+        assert _LANDING_URL in html
+        assert _SUPPORT_URL in html
 
     def test_html_friendly_tone(self):
-        _, html, _ = credit_limit_reached_email("Acme", "Free", "https://example.com")
+        _, html, _ = credit_limit_reached_email("Acme", "Free")
         assert "on a roll" in html
 
-    def test_text_contains_upgrade_url(self):
-        _, _, text = credit_limit_reached_email("Acme", "Free", "https://upgrade.example.com")
-        assert "https://upgrade.example.com" in text
+    def test_text_contains_landing_and_support(self):
+        _, _, text = credit_limit_reached_email("Acme", "Free")
+        assert _LANDING_URL in text
+        assert _SUPPORT_URL in text
 
 
 # ---------------------------------------------------------------------------
@@ -183,10 +190,11 @@ class TestEnterpriseInviteEmail:
         _, html, _ = enterprise_invite_email("Acme Store")
         assert "Acme Store" in html
 
-    def test_html_no_button_cta(self):
-        """Enterprise template should not have a button, just a reply prompt."""
+    def test_html_has_reply_prompt_and_links(self):
         _, html, _ = enterprise_invite_email("Acme")
         assert "reply to this email" in html.lower()
+        assert _LANDING_URL in html
+        assert _SUPPORT_URL in html
 
     def test_html_structure(self):
         _, html, _ = enterprise_invite_email("Acme")
@@ -219,17 +227,18 @@ class TestFeedbackEmail:
         assert "Acme Store" in html
 
     def test_html_contains_cta(self):
-        _, html, _ = feedback_email("Acme", "https://feedback.example.com")
+        _, html, _ = feedback_email("Acme")
         assert "Share Your Feedback" in html
-        assert "https://feedback.example.com" in html
+        assert _SUPPORT_URL in html
 
     def test_html_structure(self):
-        _, html, _ = feedback_email("X", "https://example.com")
+        _, html, _ = feedback_email("X")
         _assert_html_structure(html)
 
     def test_text_contains_link(self):
-        _, _, text = feedback_email("Acme", "https://feedback.example.com")
-        assert "https://feedback.example.com" in text
+        _, _, text = feedback_email("Acme")
+        assert _SUPPORT_URL in text
+        assert _LANDING_URL in text
 
 
 # ---------------------------------------------------------------------------
@@ -242,21 +251,23 @@ class TestRatingEmail:
         _assert_valid_template_tuple(result)
 
     def test_subject(self):
-        subject, _, _ = rating_email("Acme", "https://apps.shopify.com/myapp")
-        assert "review" in subject.lower()
+        subject, _, _ = rating_email("Acme")
+        assert "crossborderagent" in subject.lower()
 
-    def test_html_contains_review_cta(self):
-        _, html, _ = rating_email("Acme", "https://apps.shopify.com/myapp#reviews")
-        assert "Leave a Review" in html
-        assert "https://apps.shopify.com/myapp#reviews" in html
+    def test_html_contains_cta(self):
+        _, html, _ = rating_email("Acme")
+        assert "Visit CrossBorderAgent" in html
+        assert _LANDING_URL in html
+        assert _SUPPORT_URL in html
 
     def test_html_structure(self):
-        _, html, _ = rating_email("X", "https://example.com")
+        _, html, _ = rating_email("X")
         _assert_html_structure(html)
 
     def test_text_contains_link(self):
-        _, _, text = rating_email("Acme", "https://apps.shopify.com/myapp#reviews")
-        assert "https://apps.shopify.com/myapp#reviews" in text
+        _, _, text = rating_email("Acme")
+        assert _LANDING_URL in text
+        assert _SUPPORT_URL in text
 
 
 # ---------------------------------------------------------------------------

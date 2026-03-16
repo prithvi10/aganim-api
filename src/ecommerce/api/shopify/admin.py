@@ -45,6 +45,9 @@ router = APIRouter()
 # Complete Install — fetch email + send welcome (called by UI after auth settles)
 # =============================================================================
 
+_INSTALL_RETRY_DELAYS = [3.0, 5.0, 8.0]
+
+
 @router.post("/api/admin/complete-install")
 async def complete_install(
     request: Request,
@@ -52,9 +55,12 @@ async def complete_install(
 ):
     """
     Called by the UI after OAuth + token sync are fully settled.
-    Fetches the shop owner email from Shopify (if missing) and sends
-    the welcome email on first install.
+    Fetches the shop owner email from Shopify (if missing) — with retries
+    to handle Shopify's token propagation delay — and sends the welcome
+    email on first install.
     """
+    import asyncio
+
     shop_domain = request.query_params.get("shop", "").strip()
     if not shop_domain:
         return {"status": "skipped", "reason": "no_shop"}
@@ -65,11 +71,18 @@ async def complete_install(
     if not user:
         return {"status": "skipped", "reason": "no_user"}
 
-    # Backfill email if still missing
+    # Backfill email if still missing — retry with backoff for token propagation
     if not user.email:
         access_token = get_shop_access_token(db, shop_domain)
         if access_token:
             owner_email = _fetch_shop_owner_email(shop_domain, access_token)
+            if not owner_email:
+                for delay in _INSTALL_RETRY_DELAYS:
+                    logger.info("[CompleteInstall] retry in %.0fs for %s", delay, shop_domain)
+                    await asyncio.sleep(delay)
+                    owner_email = _fetch_shop_owner_email(shop_domain, access_token)
+                    if owner_email:
+                        break
             if owner_email:
                 user.email = owner_email
                 db.commit()
@@ -92,7 +105,7 @@ async def complete_install(
     try:
         subj, html_body, text_body = welcome_email(
             merchant_name=shop_domain,
-            app_url=f"{SHOPIFY_UI_URL}/app",
+            app_url=SHOPIFY_UI_URL,
         )
         await send_email(
             to=user.email,
