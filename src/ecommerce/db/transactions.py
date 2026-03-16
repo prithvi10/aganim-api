@@ -1,4 +1,8 @@
 from __future__ import annotations
+
+import os
+
+import httpx
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from .models import User, Plan, Shop, FeatureUsage, UsageEventLog
@@ -303,10 +307,42 @@ def create_user(db: Session, username: str, email: str | None, plan_id: int) -> 
     db.refresh(new_user)
     return new_user
 
+def _fetch_shop_owner_email(shop_domain: str, access_token: str) -> str | None:
+    """
+    Call Shopify REST API to retrieve the shop owner's email address.
+    Returns the email string, or None if the call fails.
+    """
+    from src.shared.logging.logger import get_logger
+    logger = get_logger(__name__)
+
+    api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    url = f"https://{shop_domain}/admin/api/{api_version}/shop.json"
+
+    try:
+        resp = httpx.get(
+            url,
+            headers={"X-Shopify-Access-Token": access_token},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            shop_data = resp.json().get("shop", {})
+            email = shop_data.get("email") or shop_data.get("customer_email")
+            if email:
+                logger.info("[ShopEmail] fetched email for %s: %s", shop_domain, email)
+                return email
+        else:
+            logger.warning("[ShopEmail] failed for %s: status=%d", shop_domain, resp.status_code)
+    except Exception as exc:
+        logger.warning("[ShopEmail] error for %s: %s", shop_domain, exc)
+
+    return None
+
+
 def store_shop_access_token(db: Session, shop_domain: str, access_token: str, token_type: str = "offline", force: bool = False):
     """
     Stores or updates the access token for a given shop.
     ALSO ensures a corresponding User record exists for billing/quota.
+    Fetches the shop owner's email from Shopify and stores it on the User.
     """
     from .models import Shop, User, Plan
     import secrets
@@ -359,9 +395,11 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
     
     # 2. Update/Create User Record (Billing Identity)
     user = db.query(User).filter(User.username == shop_domain).first()
-    
+
+    # Email fetch is now deferred to /api/admin/complete-install (called by UI
+    # once the OAuth flow has fully settled and the token is active).
+
     if not user:
-        # Assign default plan
         default_plan = db.query(Plan).filter(Plan.name == "Free").first()
         if not default_plan:
              logger.warning("Plan 'Free' not found. Falling back to first available plan.")
@@ -369,13 +407,12 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
         
         if default_plan:
             logger.info(f"Creating new user for {shop_domain} with plan {default_plan.name}")
-            user = User(username=shop_domain, email=None, plan_id=default_plan.id)
+            user = User(username=shop_domain, plan_id=default_plan.id)
             db.add(user)
             db.commit()
             db.refresh(user)
         else:
             logger.error(f"CRITICAL: No plans found in database. Cannot create user for {shop_domain}.")
-            # We should probably raise here, but for now just logging
             pass
 
     db.commit()

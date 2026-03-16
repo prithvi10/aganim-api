@@ -104,9 +104,8 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Successfully exchanged token for shop: {shop}")
         logger.info(f"Auth callback params: host={host}, timestamp={params.get('timestamp')}")
         store_shop_access_token(db, shop, access_token)
-        
+
         # Redirect to the Remix UI's login route to ensure the UI also authenticates
-        # The Remix app will handle the second half of the handshake and then load the embedded app
         ui_login_url = f"{SHOPIFY_UI_URL}/auth/login?shop={shop}"
         if host:
             ui_login_url += f"&host={host}"

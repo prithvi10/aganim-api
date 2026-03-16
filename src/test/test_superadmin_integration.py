@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, pool
 from sqlalchemy.orm import sessionmaker
+from unittest.mock import patch, AsyncMock
 
 from src.ecommerce.api.main import app
 from src.shared.db.database import Base, get_db
@@ -321,7 +322,9 @@ class TestOutreachLifecycle:
     sends it, and verifies it shows up in history.
     """
 
-    def test_send_and_verify_history(self, client):
+    @patch("src.ecommerce.api.superadmin.outreach.send_email", new_callable=AsyncMock)
+    def test_send_and_verify_history(self, mock_send, client):
+        mock_send.return_value = {"message_id": "int-msg-001"}
         _reset_tables()
         token = _get_token(client)
         db = TestingSessionLocal()
@@ -346,7 +349,7 @@ class TestOutreachLifecycle:
         assert resp.status_code == 200
         data = resp.json()
         assert data["recipients"] == 3  # 1 email + 2 domains
-        assert data["status"] == "dummy"
+        assert data["sent"] == 3
 
         # Step 2: Verify history
         resp = client.get("/api/superadmin/outreach/history", headers=_auth(token))

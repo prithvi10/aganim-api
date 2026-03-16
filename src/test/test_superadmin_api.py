@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from src.ecommerce.api.main import app
 from src.shared.db.database import Base, get_db
@@ -1056,7 +1056,9 @@ class TestOutreach:
         assert resp.status_code == 400
         assert "No recipients" in resp.json()["detail"]
 
-    def test_send_success(self, client, db_session):
+    @patch("src.ecommerce.api.superadmin.outreach.send_email", new_callable=AsyncMock)
+    def test_send_success(self, mock_send, client, db_session):
+        mock_send.return_value = {"message_id": "test-123"}
         resp = client.post(
             "/api/superadmin/outreach/send",
             json={
@@ -1069,9 +1071,11 @@ class TestOutreach:
         assert resp.status_code == 200
         data = resp.json()
         assert data["recipients"] == 1
-        assert data["status"] == "dummy"
+        assert data["sent"] == 1
 
-    def test_send_and_history(self, client, db_session):
+    @patch("src.ecommerce.api.superadmin.outreach.send_email", new_callable=AsyncMock)
+    def test_send_and_history(self, mock_send, client, db_session):
+        mock_send.return_value = {"message_id": "test-456"}
         client.post(
             "/api/superadmin/outreach/send",
             json={
@@ -1088,7 +1092,9 @@ class TestOutreach:
         data = resp.json()
         assert data["total"] >= 2
 
-    def test_send_with_merchant_domains(self, client, db_session):
+    @patch("src.ecommerce.api.superadmin.outreach.send_email", new_callable=AsyncMock)
+    def test_send_with_merchant_domains(self, mock_send, client, db_session):
+        mock_send.return_value = {"message_id": "test-789"}
         _seed_shop(db_session, "outreach-shop.myshopify.com", "Pro")
         db_session.commit()
 
