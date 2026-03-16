@@ -1,14 +1,11 @@
 """
-ImageRefinementAgent -- Product image cleanup and background refinement.
+ImageRefinementAgent -- Product image cleanup via Nano Banana /edit.
 
-Pipeline:
-1.  Product Isolation (rembg local or BiRefNet cloud fallback)
-2.  Background Refinement (Flux 2.0 Pro Redux via fal.ai)
-
-Text and object removal steps are intentionally omitted: the background
-is regenerated from scratch by Flux Pro, so background text is already
-eliminated.  Removing text from the product itself (labels, logos, brand
-names) would damage the product image.
+Single-step pipeline:
+  Send the original product image to fal-ai/nano-banana/edit with a
+  fidelity-first prompt that preserves the product exactly while cleaning
+  up overlay text, promotional banners, and replacing the background with
+  a clean studio surface.
 
 Only runs for Pro-tier users.  Produces a single refined product image
 stored in Cloudflare R2.
@@ -16,18 +13,23 @@ stored in Cloudflare R2.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+
+import httpx
 
 from src.agentic_core.agents.base import BaseAgent
 from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 from src.ecommerce.state import ShopifyMissionState as MissionState
-from src.ecommerce.agents.visual.prompts import build_inpaint_prompt
+from src.ecommerce.agents.visual.prompts import build_nano_banana_refinement_prompt
 from src.shared.logging.logger import get_logger
 
 if TYPE_CHECKING:
     from src.agentic_core.registry import ServiceRegistry
 
 logger = get_logger(__name__)
+
+NANO_BANANA_EDIT_MODEL = "fal-ai/nano-banana/edit"
 
 
 class ImageRefinementAgent(BaseAgent):
@@ -42,7 +44,7 @@ class ImageRefinementAgent(BaseAgent):
         - ``state.visual_assets``: dict with refined_url + original_image_url
         - ``state.visual_progress``: dict with phase/pct/label for SSE
 
-    LLM Calls: 0 (all generation via fal.ai image models)
+    LLM Calls: 0 (all generation via fal.ai Nano Banana)
     """
 
     role_name = "ImageRefinement"
@@ -90,9 +92,9 @@ class ImageRefinementAgent(BaseAgent):
         plan: AgentPlan,
     ) -> Tuple[List[AgentAction], MissionState]:
         from src.ecommerce.services.visual_service import (
-            VisualService,
             validate_image_url,
             ImageURLValidationError,
+            _get_fal_client,
         )
         from src.ecommerce.services.r2_storage_service import R2StorageService
 
@@ -125,7 +127,6 @@ class ImageRefinementAgent(BaseAgent):
             ))
             return actions, state
 
-        visual_svc = VisualService()
         r2_svc = R2StorageService()
         mission_id = state.mission_id or "unknown"
 
@@ -134,7 +135,7 @@ class ImageRefinementAgent(BaseAgent):
             state.add_log(f"ImageRefinement: [{pct}%] {label}")
 
         brand_soul = context.external_data.get("brand_soul", "")
-        inpaint_prompt = build_inpaint_prompt(brand_soul=brand_soul)
+        prompt = build_nano_banana_refinement_prompt(brand_soul=brand_soul)
 
         visual_assets: Dict[str, Optional[str]] = {
             "original_image_url": image_url,
@@ -145,28 +146,36 @@ class ImageRefinementAgent(BaseAgent):
         state.visual_assets = visual_assets
 
         try:
-            # Step 1: Isolate product (background removal)
-            masked_bytes = await visual_svc.isolate_product(
-                image_url=image_url, progress=_progress,
+            _progress("refining", 10, "Building refinement prompt...")
+
+            logger.info(
+                "[ImageRefinementAgent] prompt=%s url=%s",
+                prompt[:200], image_url,
             )
 
-            # Upload isolated product to R2
-            mask_key = R2StorageService.build_key(state.shop_id, mission_id, "masked")
-            await r2_svc.upload_asset(masked_bytes, mask_key)
+            _progress("refining", 20, "Sending image to Nano Banana for refinement...")
 
-            # Step 2: Refine background
-            refined_url = await visual_svc.refine_product(
-                masked_image_bytes=masked_bytes,
-                brand_prompt=inpaint_prompt,
-                progress=_progress,
+            fal_client = _get_fal_client()
+            result = await asyncio.to_thread(
+                fal_client.subscribe,
+                NANO_BANANA_EDIT_MODEL,
+                arguments={
+                    "image_urls": [image_url],
+                    "prompt": prompt,
+                    "aspect_ratio": "1:1",
+                    "num_images": 1,
+                },
             )
-            visual_assets["refined_url"] = refined_url
 
-            import httpx
-            async with httpx.AsyncClient(timeout=30) as client:
+            refined_url = self._extract_url(result)
+            _progress("refining", 60, "Downloading refined image...")
+
+            async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.get(refined_url)
                 resp.raise_for_status()
                 refined_bytes = resp.content
+
+            _progress("uploading", 80, "Uploading refined image...")
 
             refined_key = R2StorageService.build_key(state.shop_id, mission_id, "refined")
             refined_r2_url = await r2_svc.upload_asset(refined_bytes, refined_key)
@@ -233,3 +242,22 @@ class ImageRefinementAgent(BaseAgent):
             state.visual_assets = visual_assets
 
         return actions, state
+
+    @staticmethod
+    def _extract_url(result: dict) -> str:
+        """Extract the first image URL from a fal.ai result dict."""
+        if isinstance(result, dict):
+            images = result.get("images", [])
+            if images:
+                first = images[0]
+                if isinstance(first, dict):
+                    return first.get("url", "")
+                return str(first)
+            image = result.get("image")
+            if isinstance(image, dict):
+                return image.get("url", "")
+            if isinstance(image, str):
+                return image
+        raise ValueError(
+            f"Could not extract image URL from Nano Banana result: {result}"
+        )

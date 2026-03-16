@@ -389,6 +389,46 @@ def build_nano_banana_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Nano Banana refinement prompt (fal-ai/nano-banana/edit -- fidelity-first)
+# ---------------------------------------------------------------------------
+
+NANO_BANANA_REFINEMENT_TEMPLATE = """\
+Professional e-commerce product photo. Clean studio background.
+CRITICAL FIDELITY RULES -- follow these exactly:
+- Reproduce the product from the reference image with 100% fidelity.
+- Keep the EXACT same shape, size, proportions, color, texture, material, \
+and every physical detail of the product.
+- Preserve ALL labels, brand names, logos, and text that are physically \
+printed, embossed, or attached to the product or its packaging.
+- Do NOT alter, redraw, or reinterpret any part of the physical product.
+CLEANUP RULES:
+- Remove all overlay text, promotional banners, sale stickers, price tags, \
+watermarks, and decorative graphics that are NOT part of the physical product.
+- Replace the background with a clean, well-lit studio surface (white or \
+light grey).
+{brand_style}Soft, even lighting. No harsh shadows. No added text or graphics.
+"""
+
+
+def build_nano_banana_refinement_prompt(brand_soul: str = "") -> str:
+    """Build a fidelity-first prompt for Nano Banana /edit image refinement.
+
+    Unlike the marketing prompt, this prompt instructs the model to reproduce
+    the product exactly while only cleaning up the background and removing
+    non-product overlay text.
+    """
+    brand_style = ""
+    if brand_soul:
+        aesthetic = _distill_brand_aesthetic(brand_soul, max_len=120)
+        if aesthetic:
+            brand_style = f"{aesthetic} aesthetic. "
+
+    return NANO_BANANA_REFINEMENT_TEMPLATE.format(
+        brand_style=brand_style,
+    ).strip()
+
+
+# ---------------------------------------------------------------------------
 # Hero banner prompts (fal-ai/nano-banana text-to-image)
 # ---------------------------------------------------------------------------
 

@@ -1,10 +1,10 @@
 """
-Unit tests for ImageRefinementAgent -- AI product photo cleanup and background refinement.
+Unit tests for ImageRefinementAgent -- AI product photo cleanup via Nano Banana.
 
 Covers:
   - _perceive_domain: context extraction for image URL, brand soul
-  - _act_domain: full pipeline happy path, no-image skip, SSRF rejection,
-    error handling, partial results on failure
+  - _act_domain: full pipeline happy path (Nano Banana /edit),
+    no-image skip, SSRF rejection, error handling
 """
 
 import pytest
@@ -14,12 +14,12 @@ from src.ecommerce.agents.image_refinement.agent import ImageRefinementAgent
 from src.ecommerce.state import MissionState
 from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 
-_VISUAL_SVC = "src.ecommerce.services.visual_service.VisualService"
+_FAL_CLIENT = "src.ecommerce.services.visual_service._get_fal_client"
 _R2_SVC = "src.ecommerce.services.r2_storage_service.R2StorageService"
 _HTTPX_ASYNC_CLIENT = "httpx.AsyncClient"
 
-FAKE_MASKED = b"fake-masked-bytes"
 FAKE_IMAGE_BYTES = b"fake-image-bytes"
+FAKE_FAL_RESULT = {"images": [{"url": "https://fal.ai/refined.png"}]}
 
 
 def _make_httpx_mock(response_content=FAKE_IMAGE_BYTES):
@@ -31,6 +31,12 @@ def _make_httpx_mock(response_content=FAKE_IMAGE_BYTES):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
     return mock_client
+
+
+def _make_fal_client_mock(result=None):
+    mock_fal = MagicMock()
+    mock_fal.subscribe = MagicMock(return_value=result or FAKE_FAL_RESULT)
+    return mock_fal
 
 
 @pytest.fixture
@@ -78,13 +84,6 @@ def default_plan():
         confidence=1.0,
         reasoning="Image refinement pipeline",
     )
-
-
-def _make_visual_svc_mock():
-    mock_svc = MagicMock()
-    mock_svc.isolate_product = AsyncMock(return_value=FAKE_MASKED)
-    mock_svc.refine_product = AsyncMock(return_value="https://fal.ai/refined.png")
-    return mock_svc
 
 
 class TestImageRefinementAgentAttributes:
@@ -151,15 +150,12 @@ class TestActDomainHappyPath:
             },
         )
 
-        mock_visual_svc = _make_visual_svc_mock()
+        mock_fal = _make_fal_client_mock()
         mock_r2_svc = MagicMock()
-        mock_r2_svc.upload_asset = AsyncMock(side_effect=[
-            "r2://masked.png",
-            "r2://refined.png",
-        ])
+        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://refined.png")
         mock_client = _make_httpx_mock()
 
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
+        with patch(_FAL_CLIENT, return_value=mock_fal), \
              patch(_R2_SVC) as mock_r2_cls, \
              patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client):
 
@@ -168,10 +164,13 @@ class TestActDomainHappyPath:
 
             actions, state = await agent._act_domain(pro_state, context, default_plan)
 
-        mock_visual_svc.isolate_product.assert_called_once()
-        mock_visual_svc.refine_product.assert_called_once()
+        mock_fal.subscribe.assert_called_once()
+        call_args = mock_fal.subscribe.call_args
+        assert call_args[0][0] == "fal-ai/nano-banana/edit"
+        assert "https://cdn.shopify.com/product.jpg" in call_args[1]["arguments"]["image_urls"]
+        assert "fidelity" in call_args[1]["arguments"]["prompt"].lower()
 
-        assert mock_r2_svc.upload_asset.call_count == 2
+        mock_r2_svc.upload_asset.assert_called_once()
 
         assert len(actions) == 1
         assert actions[0].success is True
@@ -186,8 +185,8 @@ class TestActDomainHappyPath:
         assert state.visual_progress["pct"] == 100
 
     @pytest.mark.asyncio
-    async def test_does_not_call_ad_or_hero(self, agent, pro_state, default_plan):
-        """ImageRefinementAgent should NOT call generate_ad or expand_hero."""
+    async def test_does_not_use_visual_service(self, agent, pro_state, default_plan):
+        """ImageRefinementAgent no longer uses VisualService (no isolate/refine)."""
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
@@ -197,25 +196,22 @@ class TestActDomainHappyPath:
             },
         )
 
-        mock_visual_svc = _make_visual_svc_mock()
-        mock_visual_svc.generate_ad = AsyncMock()
-        mock_visual_svc.expand_hero = AsyncMock()
-
+        mock_fal = _make_fal_client_mock()
         mock_r2_svc = MagicMock()
         mock_r2_svc.upload_asset = AsyncMock(return_value="r2://asset.png")
         mock_client = _make_httpx_mock()
 
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
+        with patch(_FAL_CLIENT, return_value=mock_fal), \
              patch(_R2_SVC) as mock_r2_cls, \
-             patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client):
+             patch(_HTTPX_ASYNC_CLIENT, return_value=mock_client), \
+             patch("src.ecommerce.services.visual_service.VisualService") as mock_vs:
 
             mock_r2_cls.return_value = mock_r2_svc
             mock_r2_cls.build_key = MagicMock(return_value="key")
 
             await agent._act_domain(pro_state, context, default_plan)
 
-        mock_visual_svc.generate_ad.assert_not_called()
-        mock_visual_svc.expand_hero.assert_not_called()
+        mock_vs.assert_not_called()
 
 
 class TestActDomainNoImage:
@@ -255,7 +251,7 @@ class TestActDomainURLValidation:
 
 class TestActDomainFailure:
     @pytest.mark.asyncio
-    async def test_isolate_fails(self, agent, pro_state, default_plan):
+    async def test_nano_banana_call_fails(self, agent, pro_state, default_plan):
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
@@ -265,21 +261,19 @@ class TestActDomainFailure:
             },
         )
 
-        mock_visual_svc = MagicMock()
-        mock_visual_svc.isolate_product = AsyncMock(
-            side_effect=RuntimeError("birefnet failed")
-        )
+        mock_fal = MagicMock()
+        mock_fal.subscribe = MagicMock(side_effect=RuntimeError("fal.ai timeout"))
 
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
+        with patch(_FAL_CLIENT, return_value=mock_fal), \
              patch(_R2_SVC):
             actions, state = await agent._act_domain(pro_state, context, default_plan)
 
         assert actions[0].success is False
-        assert "birefnet failed" in actions[0].error
+        assert "fal.ai timeout" in actions[0].error
         assert state.visual_progress["phase"] == "error"
 
     @pytest.mark.asyncio
-    async def test_refine_fails_partial_results(self, agent, pro_state, default_plan):
+    async def test_bad_fal_result_fails(self, agent, pro_state, default_plan):
         context = AgentContext(
             raw_input=pro_state.raw_input,
             external_data={
@@ -289,21 +283,30 @@ class TestActDomainFailure:
             },
         )
 
-        mock_visual_svc = _make_visual_svc_mock()
-        mock_visual_svc.refine_product = AsyncMock(
-            side_effect=ValueError("fal.ai empty result")
-        )
+        mock_fal = _make_fal_client_mock(result={"images": []})
 
-        mock_r2_svc = MagicMock()
-        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://masked.png")
-
-        with patch(_VISUAL_SVC, return_value=mock_visual_svc), \
-             patch(_R2_SVC) as mock_r2_cls:
-            mock_r2_cls.return_value = mock_r2_svc
-            mock_r2_cls.build_key = MagicMock(return_value="key")
-
+        with patch(_FAL_CLIENT, return_value=mock_fal), \
+             patch(_R2_SVC):
             actions, state = await agent._act_domain(pro_state, context, default_plan)
 
         assert actions[0].success is False
         assert state.visual_assets["refined_url"] is None
         assert state.visual_assets["original_image_url"] == "https://cdn.shopify.com/product.jpg"
+
+
+class TestExtractUrl:
+    def test_extract_from_images_list(self):
+        result = {"images": [{"url": "https://fal.ai/img.png"}]}
+        assert ImageRefinementAgent._extract_url(result) == "https://fal.ai/img.png"
+
+    def test_extract_from_image_dict(self):
+        result = {"image": {"url": "https://fal.ai/img2.png"}}
+        assert ImageRefinementAgent._extract_url(result) == "https://fal.ai/img2.png"
+
+    def test_extract_from_image_string(self):
+        result = {"image": "https://fal.ai/img3.png"}
+        assert ImageRefinementAgent._extract_url(result) == "https://fal.ai/img3.png"
+
+    def test_empty_result_raises(self):
+        with pytest.raises(ValueError, match="Could not extract"):
+            ImageRefinementAgent._extract_url({})

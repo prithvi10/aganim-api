@@ -84,9 +84,30 @@ async def complete_install(
                     if owner_email:
                         break
             if owner_email:
-                user.email = owner_email
-                db.commit()
-                logger.info("[CompleteInstall] backfilled email for %s: %s", shop_domain, owner_email)
+                # Guard against unique constraint violation: another user may
+                # already have this email (e.g. same owner, multiple shops).
+                existing_user = (
+                    db.query(User)
+                    .filter(User.email == owner_email, User.id != user.id)
+                    .first()
+                )
+                if existing_user:
+                    logger.warning(
+                        "[CompleteInstall] email %s already belongs to user id=%s (%s); "
+                        "skipping assignment for %s",
+                        owner_email, existing_user.id, existing_user.username, shop_domain,
+                    )
+                else:
+                    try:
+                        user.email = owner_email
+                        db.commit()
+                        logger.info("[CompleteInstall] backfilled email for %s: %s", shop_domain, owner_email)
+                    except Exception:
+                        db.rollback()
+                        logger.warning(
+                            "[CompleteInstall] IntegrityError setting email %s for %s — skipping",
+                            owner_email, shop_domain,
+                        )
 
     if not user.email:
         logger.info("[CompleteInstall] still no email for %s — skipping welcome", shop_domain)
