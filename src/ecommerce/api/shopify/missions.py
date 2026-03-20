@@ -68,14 +68,14 @@ async def list_missions(
     logger.info("[MissionList] rid=%s shop=%s limit=%d", rid, shop, limit)
     
     all_missions = db.query(Mission).filter(
-        Mission.shop_id == shop
-    ).order_by(Mission.created_at.desc()).limit(limit * 2).all()  # Fetch extra to account for filtering
-    
-    # Filter out ad-hoc missions and bulk child missions
+        Mission.shop_id == shop,
+        Mission.bulk_mission_id.is_(None),  # exclude bulk children at DB level
+    ).order_by(Mission.created_at.desc()).limit(limit * 3).all()
+
+    # Filter out ad-hoc missions (stored in JSON, must filter in Python)
     missions = [
         m for m in all_missions
         if not (m.current_state or {}).get("is_adhoc", False)
-        and not m.bulk_mission_id  # hide child missions; parent is shown instead
     ][:limit]
     
     return {
