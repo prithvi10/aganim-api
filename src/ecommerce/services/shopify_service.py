@@ -1365,12 +1365,18 @@ async def create_product_in_shopify(
     mutation = """
     mutation productCreate($input: ProductInput!) {
       productCreate(input: $input) {
-        product { id title }
+        product { id title productType }
         userErrors { field message }
       }
     }
     """
     variables = {"input": product_input}
+    logger.info(
+        "productCreate input shop=%s productType=%r seo=%r",
+        shop_domain,
+        product_input.get("productType"),
+        bool(product_input.get("seo")),
+    )
 
     async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
         resp = await client.post(
@@ -1392,8 +1398,9 @@ async def create_product_in_shopify(
         product = data.get("data", {}).get("productCreate", {}).get("product", {})
         product_gid = product.get("id", "")
         logger.info(
-            "Product created (DRAFT) id=%s title=%s (%s)",
-            product_gid, product.get("title", "")[:60], shop_domain,
+            "Product created (DRAFT) id=%s title=%s productType=%s (%s)",
+            product_gid, product.get("title", "")[:60],
+            product.get("productType", ""), shop_domain,
         )
 
     # Attach image if provided

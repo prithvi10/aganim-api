@@ -71,11 +71,12 @@ async def list_missions(
         Mission.shop_id == shop
     ).order_by(Mission.created_at.desc()).limit(limit * 2).all()  # Fetch extra to account for filtering
     
-    # Filter out ad-hoc missions (single-agent runs like SEO-only or Pricing-only)
+    # Filter out ad-hoc missions and bulk child missions
     missions = [
         m for m in all_missions
         if not (m.current_state or {}).get("is_adhoc", False)
-    ][:limit]  # Apply limit after filtering
+        and not m.bulk_mission_id  # hide child missions; parent is shown instead
+    ][:limit]
     
     return {
         "missions": [
@@ -91,6 +92,8 @@ async def list_missions(
                 "product_name": (m.current_state or {}).get("raw_input", {}).get("product_name"),
                 # Mission title: preset name or agent names (set by wizard via extra_context)
                 "mission_title": (m.current_state or {}).get("raw_input", {}).get("mission_title"),
+                # Bulk parent flag for UI routing
+                "is_bulk_parent": bool((m.current_state or {}).get("is_bulk_parent")),
             }
             for m in missions
         ],
@@ -2411,15 +2414,25 @@ async def _run_bulk_mission_background(
                     db.commit()
 
                 if last_state and last_state.status != "ERROR":
-                    # Create product in Shopify
+                    # Read category from the original state dict first, then
+                    # fall back to the agent's preserved raw_input.
+                    raw = state_dict.get("raw_input") or {}
+                    agent_raw = (last_state.raw_input if hasattr(last_state, "raw_input") else {}) or {}
+                    category = raw.get("category") or agent_raw.get("category") or ""
+
                     product_data = {
-                        "title": last_state.draft_title or state_dict.get("raw_input", {}).get("product_name", ""),
+                        "title": last_state.draft_title or raw.get("product_name", ""),
                         "description_html": last_state.draft_content or "",
-                        "product_type": state_dict.get("raw_input", {}).get("category", ""),
+                        "product_type": category,
                         "seo_title": last_state.seo_title or "",
                         "seo_description": last_state.seo_description or "",
                         "seo_alt_text": last_state.seo_alt_text or "",
                     }
+
+                    logger.info(
+                        "[BulkBG] product_data child=%s category=%r title=%r",
+                        child_id, category, product_data["title"][:60],
+                    )
 
                     # For full_launch, use refined image if available
                     visual_assets = last_state.visual_assets or {}
