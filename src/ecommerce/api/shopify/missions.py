@@ -7,6 +7,7 @@ and user correction/feedback endpoints.
 from __future__ import annotations
 
 import json
+import os
 import asyncio
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
 from fastapi.responses import StreamingResponse
@@ -14,14 +15,19 @@ from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
 from src.ecommerce.api.models import (
-    MissionRequest, 
+    MissionRequest,
+    BulkMissionRequest,
     CorrectionRequest,
     RegenerateRequest,
     StepResponse,
     MissionStatusResponse,
 )
 from src.shared.db.database import get_db
-from src.ecommerce.api.validation import validate_shop_and_quota, validate_mission_access
+from src.ecommerce.api.validation import (
+    validate_shop_and_quota,
+    validate_mission_access,
+    validate_feature_access,
+)
 from src.ecommerce.plans.entitlements import get_entitlements
 from src.shared.logging.logger import get_logger
 
@@ -62,14 +68,15 @@ async def list_missions(
     logger.info("[MissionList] rid=%s shop=%s limit=%d", rid, shop, limit)
     
     all_missions = db.query(Mission).filter(
-        Mission.shop_id == shop
-    ).order_by(Mission.created_at.desc()).limit(limit * 2).all()  # Fetch extra to account for filtering
-    
-    # Filter out ad-hoc missions (single-agent runs like SEO-only or Pricing-only)
+        Mission.shop_id == shop,
+        Mission.bulk_mission_id.is_(None),  # exclude bulk children at DB level
+    ).order_by(Mission.created_at.desc()).limit(limit * 3).all()
+
+    # Filter out ad-hoc missions (stored in JSON, must filter in Python)
     missions = [
         m for m in all_missions
         if not (m.current_state or {}).get("is_adhoc", False)
-    ][:limit]  # Apply limit after filtering
+    ][:limit]
     
     return {
         "missions": [
@@ -85,6 +92,8 @@ async def list_missions(
                 "product_name": (m.current_state or {}).get("raw_input", {}).get("product_name"),
                 # Mission title: preset name or agent names (set by wizard via extra_context)
                 "mission_title": (m.current_state or {}).get("raw_input", {}).get("mission_title"),
+                # Bulk parent flag for UI routing
+                "is_bulk_parent": bool((m.current_state or {}).get("is_bulk_parent")),
             }
             for m in missions
         ],
@@ -2111,3 +2120,455 @@ async def list_corrections(
         ],
         "count": len(corrections),
     }
+
+
+# =============================================================================
+# Bulk Upload Mission Endpoints (Pro Only)
+# =============================================================================
+
+from fastapi import UploadFile, File, Form
+
+
+@router.post("/api/missions/bulk")
+async def create_bulk_mission(
+    request: Request,
+    file: UploadFile = File(...),
+    payload: str = Form(...),
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Create a bulk upload mission (Pro only).
+
+    Accepts multipart/form-data with a CSV or ZIP file and JSON preferences.
+    Creates a parent mission and up to 10 child missions, then launches
+    async background processing.
+    """
+    import uuid
+    import shutil
+    from datetime import datetime, timezone
+    from src.ecommerce.db.models import Mission, Shop as ShopModel
+    from src.ecommerce.services.bulk_upload_parser import parse_upload
+
+    rid = _rid(request)
+
+    # Parse JSON payload
+    try:
+        bulk_req = BulkMissionRequest(**json.loads(payload))
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid payload JSON: {e}")
+
+    # Auth + plan gating
+    auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
+    validate_feature_access(auth_context, "bulk_upload")
+
+    plan = auth_context["plan"]
+    plan_tier = getattr(plan, "name", "Pro")
+    shop_obj: ShopModel = auth_context["shop"]
+    ent = get_entitlements(plan_tier)
+
+    # Pre-flight image credit check for full_launch
+    if bulk_req.mission_type == "full_launch":
+        image_limit = int(ent.get("image_generation_limit", 0))
+        image_used = int(getattr(shop_obj, "monthly_image_generations_used", 0) or 0)
+        # We don't know N yet — read file first, then check
+    else:
+        image_limit = 0
+        image_used = 0
+
+    # Read and parse file
+    file_bytes = await file.read()
+    filename = file.filename or "upload.csv"
+    items, temp_dir = await parse_upload(file_bytes, filename, bulk_req.mission_type)
+    n_products = len(items)
+
+    # Image credit check (now that we know N)
+    if bulk_req.mission_type == "full_launch":
+        remaining = max(0, image_limit - image_used)
+        if n_products > remaining:
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=422,
+                detail=f"Batch requires {n_products} image credits but you have {remaining} remaining this month.",
+            )
+
+    # Upload images to R2 for full_launch
+    image_urls: dict[str, str] = {}
+    if bulk_req.mission_type == "full_launch" and temp_dir:
+        from src.ecommerce.services.r2_storage_service import R2StorageService
+        r2 = R2StorageService()
+        for item in items:
+            if item.image_path:
+                with open(item.image_path, "rb") as f:
+                    img_bytes = f.read()
+                ext = os.path.splitext(item.image_ref or "img.png")[1].lstrip(".") or "png"
+                key = f"bulk/{shop}/{uuid.uuid4().hex}/{item.image_ref or 'image.png'}"
+                url = await r2.upload_asset(img_bytes, key, content_type=f"image/{ext}")
+                image_urls[item.row_id] = url
+
+    # Clean up temp dir
+    if temp_dir:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # Build workflow_config based on mission type
+    if bulk_req.mission_type == "text_only":
+        workflow_config = [
+            {"agent_name": "RewriterAgent", "has_gate": False},
+            {"agent_name": "SEOAgent", "has_gate": False},
+        ]
+        mission_label = f"Bulk Text Upload ({n_products} products)"
+    else:
+        workflow_config = [
+            {"agent_name": "RewriterAgent", "has_gate": False},
+            {"agent_name": "ImageRefinementAgent", "has_gate": False},
+            {"agent_name": "SEOAgent", "has_gate": False},
+        ]
+        mission_label = f"Bulk Full Launch ({n_products} products)"
+
+    workflow_agents = [step["agent_name"] for step in workflow_config]
+    prefs = bulk_req.preferences
+
+    # Create parent bulk mission
+    parent_id = uuid.uuid4().hex
+    parent_mission = Mission(
+        id=parent_id,
+        shop_id=shop,
+        product_id="bulk",
+        status="IN_PROGRESS",
+        current_state={
+            "is_bulk_parent": True,
+            "mission_type": bulk_req.mission_type,
+            "total": n_products,
+            "completed": 0,
+            "failed": 0,
+            "image_credits_used": 0,
+            "child_ids": [],
+            "raw_input": {"mission_title": mission_label},
+        },
+        logs=[],
+        plan_tier=plan_tier,
+    )
+    db.add(parent_mission)
+
+    # Create child missions
+    child_ids = []
+    for item in items:
+        child_id = uuid.uuid4().hex
+        child_ids.append(child_id)
+
+        raw_input = {
+            "product_id": item.row_id,
+            "title": item.product_name_ja,
+            "product_name": item.product_name_ja,
+            "description": item.description_ja,
+            "japanese_description": item.description_ja,
+            "category": item.category,
+            "tone": prefs.tone_profile,
+            "target_locale": item.target_market,
+            "brand_soul_enabled": prefs.brand_soul_enabled,
+            "us_units_conversion": prefs.us_units_conversion,
+            "image_url": image_urls.get(item.row_id),
+            "_bulk_mission": True,
+            "_bulk_parent_id": parent_id,
+            "mission_title": mission_label,
+        }
+
+        initial_state = {
+            "product_id": item.row_id,
+            "shop_id": shop,
+            "plan_tier": plan_tier,
+            "raw_input": raw_input,
+            "target_locale": item.target_market,
+            "status": "PENDING",
+            "logs": [],
+            "current_agent_index": 0,
+            "skipped_agents": [],
+            "agent_outputs": {},
+            "workflow_agents": workflow_agents,
+            "workflow_config": workflow_config,
+            "autonomous": True,
+        }
+
+        child_mission = Mission(
+            id=child_id,
+            shop_id=shop,
+            product_id=item.row_id,
+            status="PENDING",
+            current_state=initial_state,
+            logs=[],
+            plan_tier=plan_tier,
+            bulk_mission_id=parent_id,
+        )
+        db.add(child_mission)
+
+    # Update parent with child IDs
+    parent_state = parent_mission.current_state.copy()
+    parent_state["child_ids"] = child_ids
+    parent_mission.current_state = parent_state
+
+    # Increment mission counter
+    mission_limit_type = ent.get("mission_limit_type", "monthly")
+    if mission_limit_type == "lifetime":
+        shop_obj.lifetime_missions_remaining = max(
+            0, int(getattr(shop_obj, "lifetime_missions_remaining", 0) or 0) - n_products
+        )
+    else:
+        shop_obj.monthly_missions_used = int(getattr(shop_obj, "monthly_missions_used", 0) or 0) + n_products
+    db.add(shop_obj)
+
+    db.commit()
+
+    # Estimate processing time (~2 min per product for text_only, ~3 for full_launch)
+    per_product_minutes = 3 if bulk_req.mission_type == "full_launch" else 2
+    estimated_minutes = n_products * per_product_minutes
+
+    logger.info(
+        "[BulkMission] created rid=%s shop=%s parent=%s children=%d type=%s",
+        rid, shop, parent_id, n_products, bulk_req.mission_type,
+    )
+
+    # Launch background task
+    asyncio.create_task(
+        _run_bulk_mission_background(
+            parent_id=parent_id,
+            child_ids=child_ids,
+            shop_domain=shop,
+            plan_tier=plan_tier,
+            mission_type=bulk_req.mission_type,
+        )
+    )
+
+    return {
+        "bulk_mission_id": parent_id,
+        "child_mission_ids": child_ids,
+        "total": n_products,
+        "estimated_minutes": estimated_minutes,
+    }
+
+
+async def _run_bulk_mission_background(
+    parent_id: str,
+    child_ids: list[str],
+    shop_domain: str,
+    plan_tier: str,
+    mission_type: str,
+) -> None:
+    """
+    Background task that processes each child mission sequentially,
+    then creates the product in Shopify and updates statuses.
+    """
+    from src.ecommerce.orchestrator import MissionControl, MissionState
+    from src.ecommerce.services import ServiceRegistry
+    from src.ecommerce.db.transactions import get_shop_access_token
+    from src.ecommerce.services.shopify_service import create_product_in_shopify
+    from src.shared.db.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        from src.ecommerce.db.models import Mission, Shop as ShopModel
+
+        parent = db.query(Mission).filter(Mission.id == parent_id).first()
+        if not parent:
+            logger.error("[BulkBG] parent mission not found: %s", parent_id)
+            return
+
+        access_token = get_shop_access_token(db, shop_domain)
+        completed = 0
+        failed = 0
+        image_credits_used = 0
+
+        for child_id in child_ids:
+            child = db.query(Mission).filter(Mission.id == child_id).first()
+            if not child:
+                failed += 1
+                continue
+
+            try:
+                child.status = "IN_PROGRESS"
+                db.add(child)
+                db.commit()
+
+                state_dict = child.current_state or {}
+                state = MissionState.from_dict(state_dict, db=db)
+                state.mission_id = child_id
+
+                services = ServiceRegistry.create_default(db=db, shop_domain=shop_domain)
+                wf_config = state_dict.get("workflow_config")
+
+                mission_control = MissionControl(
+                    plan_tier=plan_tier,
+                    shop_id=shop_domain,
+                    services=services,
+                    mission_id=child_id,
+                    workflow_config=wf_config,
+                )
+
+                last_state = None
+                async for s in mission_control.execute(state):
+                    last_state = s
+                    child.current_state = s.to_dict()
+                    child.status = s.status
+                    child.logs = s.logs
+                    db.add(child)
+                    db.commit()
+
+                if last_state and last_state.status != "ERROR":
+                    # Read category from the original state dict first, then
+                    # fall back to the agent's preserved raw_input.
+                    raw = state_dict.get("raw_input") or {}
+                    agent_raw = (last_state.raw_input if hasattr(last_state, "raw_input") else {}) or {}
+                    category = raw.get("category") or agent_raw.get("category") or ""
+
+                    product_data = {
+                        "title": last_state.draft_title or raw.get("product_name", ""),
+                        "description_html": last_state.draft_content or "",
+                        "product_type": category,
+                        "seo_title": last_state.seo_title or "",
+                        "seo_description": last_state.seo_description or "",
+                        "seo_alt_text": last_state.seo_alt_text or "",
+                    }
+
+                    logger.info(
+                        "[BulkBG] product_data child=%s category=%r title=%r",
+                        child_id, category, product_data["title"][:60],
+                    )
+
+                    # For full_launch, use refined image if available
+                    visual_assets = last_state.visual_assets or {}
+                    refined_url = visual_assets.get("refined_url")
+                    if refined_url:
+                        product_data["image_url"] = refined_url
+                        image_credits_used += 1
+                    elif state_dict.get("raw_input", {}).get("image_url"):
+                        product_data["image_url"] = state_dict["raw_input"]["image_url"]
+
+                    if access_token:
+                        try:
+                            product_gid = await create_product_in_shopify(
+                                shop_domain=shop_domain,
+                                access_token=access_token,
+                                product_data=product_data,
+                            )
+                            logger.info(
+                                "[BulkBG] product_created child=%s product_gid=%s",
+                                child_id, product_gid,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "[BulkBG] product_create_failed child=%s err=%s",
+                                child_id, str(e)[:200],
+                            )
+
+                    child.status = "COMPLETED"
+                    from datetime import datetime, timezone as tz
+                    child.completed_at = datetime.now(tz.utc)
+                    completed += 1
+                else:
+                    child.status = "ERROR"
+                    child.error_message = getattr(last_state, "error_message", None) or "Agent pipeline failed"
+                    failed += 1
+
+            except Exception as e:
+                logger.exception("[BulkBG] child_failed child=%s err=%s", child_id, str(e)[:200])
+                child.status = "ERROR"
+                child.error_message = str(e)[:500]
+                failed += 1
+
+            db.add(child)
+            db.commit()
+
+            # Update parent progress
+            parent_state = dict(parent.current_state or {})
+            parent_state["completed"] = completed
+            parent_state["failed"] = failed
+            parent_state["image_credits_used"] = image_credits_used
+            parent.current_state = parent_state
+            db.add(parent)
+            db.commit()
+
+        # Finalize parent
+        from datetime import datetime, timezone as tz
+        parent.status = "COMPLETED"
+        parent.completed_at = datetime.now(tz.utc)
+        parent_state = dict(parent.current_state or {})
+        parent_state["completed"] = completed
+        parent_state["failed"] = failed
+        parent_state["image_credits_used"] = image_credits_used
+        parent.current_state = parent_state
+        db.add(parent)
+        db.commit()
+
+        logger.info(
+            "[BulkBG] done parent=%s completed=%d failed=%d images=%d",
+            parent_id, completed, failed, image_credits_used,
+        )
+
+    except Exception as e:
+        logger.exception("[BulkBG] fatal error parent=%s err=%s", parent_id, str(e)[:300])
+        try:
+            parent = db.query(Mission).filter(Mission.id == parent_id).first()
+            if parent:
+                parent.status = "ERROR"
+                parent.error_message = str(e)[:500]
+                db.add(parent)
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+@router.get("/api/missions/bulk/{bulk_id}/status")
+async def get_bulk_mission_status(
+    bulk_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Poll the status of a bulk upload mission.
+
+    Returns aggregate progress counts and a shop products URL when complete.
+    """
+    from src.ecommerce.db.models import Mission
+
+    mission = db.query(Mission).filter(
+        Mission.id == bulk_id,
+        Mission.shop_id == shop,
+    ).first()
+
+    if not mission:
+        raise HTTPException(status_code=404, detail="Bulk mission not found")
+
+    state = mission.current_state or {}
+    if not state.get("is_bulk_parent"):
+        raise HTTPException(status_code=404, detail="Not a bulk mission")
+
+    total = state.get("total", 0)
+    completed = state.get("completed", 0)
+    failed = state.get("failed", 0)
+    image_credits_used = state.get("image_credits_used", 0)
+    mission_type = state.get("mission_type", "text_only")
+
+    # Estimate remaining time
+    remaining_products = total - completed - failed
+    per_product = 3 if mission_type == "full_launch" else 2
+    estimated_remaining_minutes = max(0, remaining_products * per_product)
+
+    result = {
+        "bulk_mission_id": bulk_id,
+        "status": mission.status,
+        "mission_type": mission_type,
+        "total": total,
+        "completed": completed,
+        "failed": failed,
+        "image_credits_used": image_credits_used,
+        "estimated_remaining_minutes": estimated_remaining_minutes,
+    }
+
+    if mission.status == "COMPLETED":
+        shop_base = shop.replace(".myshopify.com", "")
+        result["shop_products_url"] = f"https://admin.shopify.com/store/{shop_base}/products"
+
+    return result

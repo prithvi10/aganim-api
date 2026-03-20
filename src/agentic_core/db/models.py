@@ -66,6 +66,9 @@ class Mission(Base):
     # Backward-compat synonym
     plan_tier = synonym("tier")
 
+    # Bulk upload: links child missions to their parent bulk mission row
+    bulk_mission_id = Column(String, nullable=True, index=True)
+
     # Error tracking
     error_message = Column(Text, nullable=True)
 
