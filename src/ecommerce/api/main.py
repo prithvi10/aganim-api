@@ -192,8 +192,10 @@ def _ensure_agentic_tables_exist():
         _rename_column_if_exists(conn, "missions", "product_id", "resource_id")
         _rename_column_if_exists(conn, "missions", "plan_tier", "tier")
 
+        conn.execute(text("ALTER TABLE missions ADD COLUMN IF NOT EXISTS bulk_mission_id VARCHAR"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS missions_tenant_id_idx ON missions(tenant_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS missions_resource_id_idx ON missions(resource_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS missions_bulk_mission_id_idx ON missions(bulk_mission_id)"))
 
         # Agent corrections table
         conn.execute(text("""
