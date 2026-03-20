@@ -631,14 +631,21 @@ def test_bulk_missions_in_history(mock_create_task, client):
     assert create_resp.status_code == 200
 
     # Get mission list
+    bulk_id = create_resp.json()["bulk_mission_id"]
     list_resp = client.get("/api/missions")
     assert list_resp.status_code == 200
     missions = list_resp.json()["missions"]
 
-    # The parent should appear; children are also visible but parent has the title
+    # Parent should appear with is_bulk_parent=True
     parent_missions = [
         m for m in missions
         if m.get("mission_title") and "Bulk" in m["mission_title"]
     ]
     assert len(parent_missions) >= 1
     assert "2 products" in parent_missions[0]["mission_title"]
+    assert parent_missions[0]["is_bulk_parent"] is True
+
+    # Child missions should NOT appear in the list
+    child_ids = set(create_resp.json()["child_mission_ids"])
+    listed_ids = {m["id"] for m in missions}
+    assert child_ids.isdisjoint(listed_ids), "Child missions should be filtered from history"
