@@ -1321,6 +1321,102 @@ async def add_product_image(
         return media_gid
 
 
+async def create_product_in_shopify(
+    shop_domain: str,
+    access_token: str,
+    product_data: dict,
+) -> str:
+    """
+    Create a new DRAFT product in Shopify via GraphQL ``productCreate``.
+
+    Args:
+        shop_domain: Shop domain (e.g., "myshop.myshopify.com").
+        access_token: Shopify access token.
+        product_data: Dict with keys: title, description_html, product_type,
+                      seo_title, seo_description, image_url (optional),
+                      seo_alt_text (optional).
+
+    Returns:
+        The created product GID (e.g. "gid://shopify/Product/123456").
+    """
+    shopify_api_version = os.getenv("SHOPIFY_API_VERSION", "2024-07")
+    headers = {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+    }
+    graphql_url = f"https://{shop_domain}/admin/api/{shopify_api_version}/graphql.json"
+
+    product_input: dict = {
+        "title": product_data.get("title", "Untitled Product"),
+        "descriptionHtml": product_data.get("description_html", ""),
+        "productType": product_data.get("product_type", ""),
+        "status": "DRAFT",
+    }
+
+    seo_title = product_data.get("seo_title")
+    seo_description = product_data.get("seo_description")
+    if seo_title or seo_description:
+        product_input["seo"] = {}
+        if seo_title:
+            product_input["seo"]["title"] = seo_title
+        if seo_description:
+            product_input["seo"]["description"] = seo_description
+
+    mutation = """
+    mutation productCreate($input: ProductInput!) {
+      productCreate(input: $input) {
+        product { id title }
+        userErrors { field message }
+      }
+    }
+    """
+    variables = {"input": product_input}
+
+    async with httpx.AsyncClient(verify=ssl_verify_shopify()) as client:
+        resp = await client.post(
+            graphql_url,
+            headers=headers,
+            json={"query": mutation, "variables": variables},
+        )
+        if resp.status_code != 200:
+            raise Exception(f"productCreate failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+        if "errors" in data:
+            raise Exception(f"productCreate GraphQL error: {data['errors'][0].get('message')}")
+
+        user_errors = data.get("data", {}).get("productCreate", {}).get("userErrors", [])
+        if user_errors:
+            raise Exception(f"productCreate user error: {user_errors[0].get('message')}")
+
+        product = data.get("data", {}).get("productCreate", {}).get("product", {})
+        product_gid = product.get("id", "")
+        logger.info(
+            "Product created (DRAFT) id=%s title=%s (%s)",
+            product_gid, product.get("title", "")[:60], shop_domain,
+        )
+
+    # Attach image if provided
+    image_url = product_data.get("image_url")
+    if image_url and product_gid:
+        try:
+            alt_text = product_data.get("seo_alt_text", "")
+            await add_product_image(
+                shop_domain=shop_domain,
+                access_token=access_token,
+                product_id=product_gid,
+                image_url=image_url,
+                alt_text=alt_text,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to attach image to new product %s: %s",
+                product_gid, str(e)[:200],
+            )
+
+    return product_gid
+
+
 def get_shop_credentials(db, shop_domain: str) -> dict:
     """
     Retrieve shop credentials needed for autonomous publishing.

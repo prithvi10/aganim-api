@@ -108,6 +108,18 @@ class MissionRequest(BaseModel):
     extra_context: dict[str, Any] | None = None
 
 
+class BulkMissionPreferences(BaseModel):
+    tone_profile: Literal["professional", "luxury", "minimalist", "playful"] = "professional"
+    brand_soul_enabled: bool = False
+    us_units_conversion: bool = True
+    target_market: str = "en"
+
+
+class BulkMissionRequest(BaseModel):
+    mission_type: Literal["text_only", "full_launch"]
+    preferences: BulkMissionPreferences
+
+
 class CorrectionRequest(BaseModel):
     """
     Request to submit a user correction for agent learning.
