@@ -166,8 +166,8 @@ def test_list_missions_respects_limit_parameter(client, sample_mission):
     response = client.get("/api/missions?limit=5")
     
     assert response.status_code == 200
-    # Verify limit was called with limit*2 (to account for ad-hoc filtering)
-    mock_query.filter.return_value.order_by.return_value.limit.assert_called_with(10)
+    # Verify limit was called with limit*3 (over-fetch to account for ad-hoc + bulk filtering)
+    mock_query.filter.return_value.order_by.return_value.limit.assert_called_with(15)
     
     app.dependency_overrides.clear()
 
