@@ -136,6 +136,25 @@ class TestPerceiveDomain:
         assert ctx.external_data["context_data"]["subject"] == "Elevate Your Space"
 
     @pytest.mark.asyncio
+    async def test_extracts_short_description_for_landing_hero(self, agent):
+        state = MissionState(
+            product_id="p1",
+            shop_id="s1",
+            plan_tier="Pro",
+            raw_input={"subject_text": "Spring Flowers", "short_description": "Fresh seasonal blooms"},
+        )
+        state.agent_outputs = {
+            "RewriterAgent_0": {
+                "template_id": "product/landing-hero",
+                "draft_title": "Spring Flowers",
+            }
+        }
+        ctx = AgentContext(raw_input=state.raw_input)
+        ctx = await agent._perceive_domain(state, ctx)
+
+        assert ctx.external_data["context_data"]["short_description"] == "Fresh seasonal blooms"
+
+    @pytest.mark.asyncio
     async def test_no_preceding_content(self, agent):
         state = MissionState(
             product_id="p1",
@@ -410,7 +429,7 @@ class TestActDomainHappyPath:
             raw_input=state.raw_input,
             external_data={
                 "template_id": "product/landing-hero",
-                "context_data": {"subject": "Spring Flowers", "overlay_text": ""},
+                "context_data": {"subject": "Spring Flowers", "short_description": ""},
                 "brand_soul": "",
                 "image_style": "attractive",
                 "image_url": "https://cdn.shopify.com/product.jpg",
@@ -495,7 +514,7 @@ class TestActDomainHappyPath:
             raw_input=state.raw_input,
             external_data={
                 "template_id": "product/landing-hero",
-                "context_data": {"subject": "Premium Matcha", "overlay_text": ""},
+                "context_data": {"subject": "Premium Matcha", "short_description": ""},
                 "brand_soul": "",
                 "image_style": "informative",
                 "image_url": "",
@@ -524,6 +543,105 @@ class TestActDomainHappyPath:
         assert call_kwargs["style"] == "informative"
         assert call_kwargs["brand_name"] == "Kyoto Brews"
         assert actions[0].success is True
+
+
+class TestImageCreditDeduction:
+    """Verify image credit usage tracking fires after successful hero generation."""
+
+    @pytest.mark.asyncio
+    async def test_image_credit_recorded_on_success(self, agent, default_plan):
+        mock_db = MagicMock()
+        mock_shop_record = MagicMock()
+        mock_shop_record.monthly_image_generations_used = 5
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_shop_record
+
+        state = MissionState(
+            product_id="p1",
+            shop_id="test-shop.myshopify.com",
+            plan_tier="Pro",
+            raw_input={"topic": "Japanese ceramics"},
+        )
+        state.db = mock_db
+
+        context = AgentContext(
+            raw_input=state.raw_input,
+            external_data={
+                "template_id": "product/blog-post",
+                "context_data": {"subject": "Ceramics", "category": "Artisan", "context": ""},
+                "brand_soul": "",
+                "image_style": "attractive",
+                "image_url": "",
+                "brand_name": "",
+                "product_name": "Ceramics",
+                "product_category": "Artisan",
+            },
+        )
+
+        mock_hero_gen = MagicMock()
+        mock_hero_gen.generate = AsyncMock(return_value=FAKE_IMAGE_BYTES)
+        mock_r2_svc = MagicMock()
+        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://hero.png")
+
+        with patch(_ART_DIRECTOR, new=AsyncMock(return_value=MOCK_BRIEF)), \
+             patch(_HERO_GEN, return_value=mock_hero_gen), \
+             patch(_R2_SVC) as mock_r2_cls, \
+             patch("src.ecommerce.db.transactions.record_feature_usage") as mock_record, \
+             patch("src.ecommerce.db.transactions.log_usage_event") as mock_log, \
+             patch("src.ecommerce.plans.entitlements.get_entitlements", return_value={"image_limit_type": "monthly"}):
+            mock_r2_cls.return_value = mock_r2_svc
+            mock_r2_cls.build_key = MagicMock(return_value="test-key")
+            actions, new_state = await agent._act_domain(state, context, default_plan)
+
+        assert actions[0].success is True
+        mock_record.assert_called_once_with(mock_db, "test-shop.myshopify.com", "image_generation", 1)
+        mock_log.assert_called_once()
+        log_kwargs = mock_log.call_args
+        assert log_kwargs[1]["event_type"] == "content_hero"
+        assert log_kwargs[1]["feature"] == "image_generation"
+        assert log_kwargs[1]["agent_name"] == "ContentHeroAgent"
+
+    @pytest.mark.asyncio
+    async def test_credit_deduction_failure_does_not_break_generation(self, agent, default_plan):
+        """If credit tracking throws, the hero image should still succeed."""
+        mock_db = MagicMock()
+        mock_db.query.side_effect = Exception("DB error")
+
+        state = MissionState(
+            product_id="p1",
+            shop_id="test-shop.myshopify.com",
+            plan_tier="Pro",
+            raw_input={},
+        )
+        state.db = mock_db
+
+        context = AgentContext(
+            raw_input=state.raw_input,
+            external_data={
+                "template_id": "product/blog-post",
+                "context_data": {"subject": "Test", "category": "General", "context": ""},
+                "brand_soul": "",
+                "image_style": "attractive",
+                "image_url": "",
+                "brand_name": "",
+                "product_name": "Test",
+                "product_category": "General",
+            },
+        )
+
+        mock_hero_gen = MagicMock()
+        mock_hero_gen.generate = AsyncMock(return_value=FAKE_IMAGE_BYTES)
+        mock_r2_svc = MagicMock()
+        mock_r2_svc.upload_asset = AsyncMock(return_value="r2://hero.png")
+
+        with patch(_ART_DIRECTOR, new=AsyncMock(return_value=MOCK_BRIEF)), \
+             patch(_HERO_GEN, return_value=mock_hero_gen), \
+             patch(_R2_SVC) as mock_r2_cls:
+            mock_r2_cls.return_value = mock_r2_svc
+            mock_r2_cls.build_key = MagicMock(return_value="test-key")
+            actions, new_state = await agent._act_domain(state, context, default_plan)
+
+        assert actions[0].success is True
+        assert new_state.content_hero_assets is not None
 
 
 class TestActDomainSkips:

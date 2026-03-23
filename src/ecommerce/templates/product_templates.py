@@ -94,6 +94,7 @@ Return ONLY valid JSON:
 LANDING_HERO_USER_PROMPT = """Product: {title}
 Category: {category}
 Description: {description}
+Short Description: {short_description}
 Target Locale: {target_locale}
 
 Generate landing page hero section copy.
@@ -151,6 +152,7 @@ Return ONLY valid JSON:
 
 PRODUCT_BLOG_POST_USER_PROMPT = """Subject / Topic: {topic}
 Category: {category}
+Short Description: {short_description}
 Additional Context: {context}
 Target Locale: {target_locale}
 
@@ -208,6 +210,8 @@ def register_product_templates():
             TemplateInput(name="title", label="Product Title", required=True),
             TemplateInput(name="category", label="Category", required=True),
             TemplateInput(name="description", label="Product Description", required=True, input_type="textarea"),
+            TemplateInput(name="short_description", label="Short Description", required=False,
+                          description="Brief description to guide content and image generation"),
             TemplateInput(name="target_locale", label="Target Locale", required=True),
         ],
         output_format="json",
@@ -227,6 +231,8 @@ def register_product_templates():
                           description="e.g. 'Our wood-kiln firing process', 'How we source Shigaraki clay', 'The art of gift wrapping'"),
             TemplateInput(name="category", label="Category", required=True,
                           description="e.g. Manufacturing, Shipping, Artisan Techniques, Sustainability"),
+            TemplateInput(name="short_description", label="Short Description", required=False,
+                          description="Brief description to guide content and image generation"),
             TemplateInput(name="context", label="Additional Context", required=False, input_type="textarea",
                           description="Any extra details, product mentions, or angles to include"),
             TemplateInput(name="target_locale", label="Target Locale", required=True),

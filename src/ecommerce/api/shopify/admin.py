@@ -45,47 +45,40 @@ router = APIRouter()
 # Complete Install — fetch email + send welcome (called by UI after auth settles)
 # =============================================================================
 
-_INSTALL_RETRY_DELAYS = [3.0, 5.0, 8.0]
+_INSTALL_RETRY_DELAYS = [2.0, 3.0]
 
 
-@router.post("/api/admin/complete-install")
-async def complete_install(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    """
-    Called by the UI after OAuth + token sync are fully settled.
-    Fetches the shop owner email from Shopify (if missing) — with retries
-    to handle Shopify's token propagation delay — and sends the welcome
-    email on first install.
+def _complete_install_sync(shop_domain: str) -> None:
+    """Background task: fetch shop email with retries + send welcome email.
+
+    Runs in its own DB session so the request handler can return immediately.
     """
     import asyncio
+    import time
 
-    shop_domain = request.query_params.get("shop", "").strip()
-    if not shop_domain:
-        return {"status": "skipped", "reason": "no_shop"}
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == shop_domain).first()
+        if not user:
+            return
 
-    logger.info("[CompleteInstall] start shop=%s", shop_domain)
-
-    user = db.query(User).filter(User.username == shop_domain).first()
-    if not user:
-        return {"status": "skipped", "reason": "no_user"}
-
-    # Backfill email if still missing — retry with backoff for token propagation
-    if not user.email:
-        access_token = get_shop_access_token(db, shop_domain)
-        if access_token:
-            owner_email = _fetch_shop_owner_email(shop_domain, access_token)
-            if not owner_email:
-                for delay in _INSTALL_RETRY_DELAYS:
-                    logger.info("[CompleteInstall] retry in %.0fs for %s", delay, shop_domain)
-                    await asyncio.sleep(delay)
-                    owner_email = _fetch_shop_owner_email(shop_domain, access_token)
-                    if owner_email:
-                        break
+        if not user.email:
+            access_token = get_shop_access_token(db, shop_domain)
+            owner_email = None
+            if access_token:
+                owner_email = _fetch_shop_owner_email(shop_domain, access_token)
+                if not owner_email:
+                    for delay in _INSTALL_RETRY_DELAYS:
+                        logger.info("[CompleteInstall] retry in %.0fs for %s", delay, shop_domain)
+                        time.sleep(delay)
+                        # Re-read token in case sync-token updated it (multi-instance race)
+                        access_token = get_shop_access_token(db, shop_domain)
+                        if not access_token:
+                            break
+                        owner_email = _fetch_shop_owner_email(shop_domain, access_token)
+                        if owner_email:
+                            break
             if owner_email:
-                # Guard against unique constraint violation: another user may
-                # already have this email (e.g. same owner, multiple shops).
                 existing_user = (
                     db.query(User)
                     .filter(User.email == owner_email, User.id != user.id)
@@ -109,45 +102,65 @@ async def complete_install(
                             owner_email, shop_domain,
                         )
 
-    if not user.email:
-        logger.info("[CompleteInstall] still no email for %s — skipping welcome", shop_domain)
-        return {"status": "skipped", "reason": "no_email"}
+        if not user.email:
+            logger.info("[CompleteInstall] still no email for %s — skipping welcome", shop_domain)
+            return
 
-    # Check if welcome was already sent
-    existing = (
-        db.query(OutreachLog)
-        .filter(OutreachLog.recipient_shop == shop_domain, OutreachLog.subject.ilike("%welcome%"))
-        .first()
-    )
-    if existing:
-        return {"status": "already_sent"}
+        existing = (
+            db.query(OutreachLog)
+            .filter(OutreachLog.recipient_shop == shop_domain, OutreachLog.subject.ilike("%welcome%"))
+            .first()
+        )
+        if existing:
+            return
 
-    # Send welcome email
-    try:
-        subj, html_body, text_body = welcome_email(
-            merchant_name=shop_domain,
-            app_url=SHOPIFY_UI_URL,
-        )
-        await send_email(
-            to=user.email,
-            subject=subj,
-            html_body=html_body,
-            text_body=text_body,
-        )
-        log = OutreachLog(
-            recipient_email=user.email,
-            recipient_shop=shop_domain,
-            subject=subj,
-            body=text_body[:500],
-            status="sent",
-        )
-        db.add(log)
-        db.commit()
-        logger.info("[CompleteInstall] welcome email sent to %s for %s", user.email, shop_domain)
-        return {"status": "sent", "email": user.email}
+        try:
+            subj, html_body, text_body = welcome_email(
+                merchant_name=shop_domain,
+                app_url=SHOPIFY_UI_URL,
+            )
+            asyncio.run(send_email(
+                to=user.email,
+                subject=subj,
+                html_body=html_body,
+                text_body=text_body,
+            ))
+            log = OutreachLog(
+                recipient_email=user.email,
+                recipient_shop=shop_domain,
+                subject=subj,
+                body=text_body[:500],
+                status="sent",
+            )
+            db.add(log)
+            db.commit()
+            logger.info("[CompleteInstall] welcome email sent to %s for %s", user.email, shop_domain)
+        except Exception as e:
+            logger.warning("[CompleteInstall] welcome email failed for %s: %s", shop_domain, e)
     except Exception as e:
-        logger.warning("[CompleteInstall] welcome email failed for %s: %s", shop_domain, e)
-        return {"status": "failed", "error": str(e)}
+        logger.warning("[CompleteInstall] background task failed for %s: %s", shop_domain, e)
+    finally:
+        db.close()
+
+
+@router.post("/api/admin/complete-install", status_code=204)
+async def complete_install(
+    request: Request,
+    bg: BackgroundTasks,
+):
+    """
+    Called by the UI after OAuth + token sync are fully settled.
+    Enqueues a background task that fetches the shop owner email from
+    Shopify (with retries for token propagation delay) and sends a
+    welcome email on first install.  Returns 204 immediately.
+    """
+    shop_domain = request.query_params.get("shop", "").strip()
+    if not shop_domain:
+        return Response(status_code=204)
+
+    logger.info("[CompleteInstall] start shop=%s", shop_domain)
+    bg.add_task(_complete_install_sync, shop_domain)
+    return Response(status_code=204)
 
 
 # =============================================================================
@@ -1103,6 +1116,10 @@ async def generate_content_endpoint(
                             or ""
                         )
 
+                    short_desc = body.get("short_description", "")
+                    if short_desc and product_name:
+                        product_name = f"{product_name} — {short_desc}"
+
                     product_category = body.get("category", "General")
 
                     llm_svc = LLMService(db=db, shop_domain=shop)
@@ -1153,6 +1170,30 @@ async def generate_content_endpoint(
                     "[Generate] Hero banner created template=%s shop=%s style=%s img2img=%s",
                     template_id, shop, image_style, bool(image_url),
                 )
+
+                # Deduct image credit
+                try:
+                    from src.ecommerce.db.transactions import record_feature_usage, log_usage_event
+
+                    _ent = get_entitlements(plan_name)
+                    _shop_rec = db.query(Shop).filter(Shop.domain == shop).first()
+                    if _shop_rec:
+                        if _ent.get("image_limit_type") == "lifetime":
+                            cur = int(getattr(_shop_rec, "lifetime_image_credits_remaining", 0) or 0)
+                            _shop_rec.lifetime_image_credits_remaining = max(0, cur - 1)
+                        else:
+                            cur = int(getattr(_shop_rec, "monthly_image_generations_used", 0) or 0)
+                            _shop_rec.monthly_image_generations_used = cur + 1
+                        db.add(_shop_rec)
+                        db.commit()
+                    record_feature_usage(db, shop, "image_generation", 1)
+                    log_usage_event(
+                        db, shop_domain=shop, plan_name=plan_name,
+                        event_type="content_hero", feature="image_generation",
+                        image_count=1,
+                    )
+                except Exception:
+                    logger.debug("[Generate] image credit tracking failed", exc_info=True)
             except Exception as hero_err:
                 logger.warning(
                     "[Generate] Hero generation failed (non-blocking) template=%s shop=%s err=%s",
