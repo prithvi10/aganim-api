@@ -155,6 +155,24 @@ def _run_tier_tests() -> dict[str, Any]:
     }
 
 
+def _run_ingest_tests() -> dict[str, Any]:
+    """Run brand soul ingestion tests."""
+    from scripts.tests.brand_ingest_tests import BrandIngestTests
+
+    tests = BrandIngestTests()
+    results = tests.run_all()
+    summary = tests.get_summary()
+
+    return {
+        "module": "ingest",
+        "results": [
+            {"name": r.name, "passed": r.passed, "message": r.message, "details": r.details}
+            for r in results
+        ],
+        "summary": summary,
+    }
+
+
 # Module runner mapping
 MODULE_RUNNERS = {
     "agents": _run_agent_tests,
@@ -162,6 +180,7 @@ MODULE_RUNNERS = {
     "tables": _run_table_tests,
     "rag": _run_rag_tests,
     "tiers": _run_tier_tests,
+    "ingest": _run_ingest_tests,
 }
 
 

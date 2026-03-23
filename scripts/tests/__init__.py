@@ -31,6 +31,7 @@ __all__ = [
     "SpecTableTests",
     "RAGBrandSoulTests",
     "TierFeatureTests",
+    "BrandIngestTests",
 ]
 
 
@@ -51,4 +52,7 @@ def __getattr__(name: str):
     elif name == "TierFeatureTests":
         from .tier_feature_tests import TierFeatureTests
         return TierFeatureTests
+    elif name == "BrandIngestTests":
+        from .brand_ingest_tests import BrandIngestTests
+        return BrandIngestTests
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

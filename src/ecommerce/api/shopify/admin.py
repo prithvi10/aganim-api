@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Response, Backgr
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
-from src.ecommerce.api.models import BrandContextIngestRequest, BrandContextFileExtractRequest
+from src.ecommerce.api.models import BrandContextIngestRequest, BrandContextFileExtractRequest, BrandContextUpdateRequest
 from src.shared.db.database import get_db, SessionLocal
 from src.ecommerce.db.models import Shop, StoreContext
 from src.ecommerce.api.validation import validate_shop_and_quota, validate_feature_access
@@ -913,6 +913,65 @@ async def brand_context_status_endpoint(
             if getattr(shop, "brand_context_updated_at", None)
             else None
         ),
+    }
+
+
+@router.put("/api/admin/brand-context/update")
+async def brand_context_update_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """
+    Directly update the stored brand soul clean_text without re-running
+    the ingestion pipeline. Zero LLM cost — pure DB write.
+    """
+    rid = _rid(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    try:
+        payload = BrandContextUpdateRequest(**body)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
+
+    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
+    if not shop_record:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    brand_context = getattr(shop_record, "brand_context", None) or {}
+    if isinstance(brand_context, str):
+        try:
+            brand_context = json.loads(brand_context)
+        except Exception:
+            brand_context = {}
+    if not isinstance(brand_context, dict):
+        brand_context = {}
+
+    en = brand_context.get("en") or {}
+    en["clean_text"] = payload.clean_text_en
+    brand_context["en"] = en
+
+    if payload.clean_text_ja is not None:
+        ja = brand_context.get("ja") or {}
+        ja["clean_text"] = payload.clean_text_ja
+        brand_context["ja"] = ja
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    shop_record.brand_context = brand_context
+    flag_modified(shop_record, "brand_context")
+    shop_record.brand_context_updated_at = datetime.now(timezone.utc)
+    db.add(shop_record)
+    db.commit()
+
+    logger.info("[BrandUpdate] direct_edit rid=%s shop=%s", rid, shop)
+    return {
+        "status": "success",
+        "summary_en": str(en.get("clean_text") or ""),
+        "summary_ja": str((brand_context.get("ja") or {}).get("clean_text") or ""),
     }
 
 
