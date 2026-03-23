@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from datetime import date
 
+from src.shared.utils.llm_parser import parse_llm_json
 from src.ecommerce.config.configs import (
     SYSTEM_PROMPT, 
     OPENAI_MODEL, 
@@ -234,16 +235,20 @@ class OpenAIService:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
 
-        # PDF: extract text locally via PyPDF2 (zero LLM cost).
-        # Falls back to LLM vision only when PyPDF2 yields <50 chars
-        # (likely a scanned/image-only PDF).
+        # PDF: extract text locally via pypdf (zero LLM cost).
+        # Falls back to rendering pages as images for scanned/image-only PDFs.
         if mime_type == "application/pdf":
             local_text = self._extract_pdf_text_local(file_b64)
             if len(local_text.strip()) >= 50:
                 logger.info("[FileExtract] PDF text extracted locally (%d chars)", len(local_text))
                 return json.dumps({"text": local_text})
-            logger.info("[FileExtract] PDF local extraction too short (%d chars), falling back to LLM", len(local_text))
+            logger.info(
+                "[FileExtract] PDF local extraction too short (%d chars), trying page-image fallback",
+                len(local_text),
+            )
+            return self._extract_pdf_via_page_images(file_b64)
 
+        # Non-PDF files (images): send directly to vision API
         data_url = f"data:{mime_type};base64,{file_b64}"
         response = self.client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -263,15 +268,69 @@ class OpenAIService:
         )
         return response.choices[0].message.content or ""
 
+    def _extract_pdf_via_page_images(self, file_b64: str) -> str:
+        """Render PDF pages to PNG and send to vision API (for scanned PDFs)."""
+        import base64
+        import io
+
+        try:
+            import pymupdf
+        except ImportError:
+            raise RuntimeError(
+                "Could not extract text from this PDF. "
+                "It may be a scanned/image-based PDF. "
+                "Install 'pymupdf' for scanned PDF support."
+            )
+
+        pdf_bytes = base64.b64decode(file_b64)
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        page_texts: list[str] = []
+
+        for page_num in range(min(len(doc), 5)):
+            pix = doc[page_num].get_pixmap(dpi=150)
+            img_bytes = pix.tobytes("png")
+            img_b64 = base64.b64encode(img_bytes).decode()
+            data_url = f"data:image/png;base64,{img_b64}"
+
+            response = self.client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": BRAND_CONTEXT_FILE_EXTRACT_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": f"Extract readable text from page {page_num + 1} of this document."},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    },
+                ],
+                temperature=0.2,
+                max_tokens=800,
+                response_format={"type": "json_object"},
+            )
+            raw = response.choices[0].message.content or ""
+            parsed = parse_llm_json(raw)
+            if isinstance(parsed, dict) and parsed.get("text"):
+                page_texts.append(str(parsed["text"]).strip())
+            elif raw.strip():
+                page_texts.append(raw.strip())
+
+        doc.close()
+        combined = "\n\n".join(t for t in page_texts if t)
+        if not combined:
+            raise RuntimeError("Could not extract any text from this PDF.")
+        logger.info("[FileExtract] PDF extracted via page images (%d chars, %d pages)", len(combined), len(page_texts))
+        return json.dumps({"text": combined})
+
     @staticmethod
     def _extract_pdf_text_local(file_b64: str) -> str:
-        """Extract text from a base64-encoded PDF using PyPDF2 (no LLM cost)."""
+        """Extract text from a base64-encoded PDF using pypdf (no LLM cost)."""
         import base64
         import io
         try:
-            from PyPDF2 import PdfReader
+            from pypdf import PdfReader
         except ImportError:
-            logger.warning("[FileExtract] PyPDF2 not installed, cannot extract PDF locally")
+            logger.warning("[FileExtract] pypdf not installed, cannot extract PDF locally")
             return ""
         try:
             pdf_bytes = base64.b64decode(file_b64)
@@ -283,7 +342,7 @@ class OpenAIService:
                     pages.append(text.strip())
             return "\n\n".join(pages)
         except Exception as e:
-            logger.warning("[FileExtract] PyPDF2 extraction failed: %s", e)
+            logger.warning("[FileExtract] pypdf extraction failed: %s", e)
             return ""
 
     def generate_copy_stream(
