@@ -307,7 +307,7 @@ class TestHeroPromptTemplateConstants:
 
     def test_hero_section_template_has_placeholders(self):
         assert "{subject}" in HERO_SECTION_TEMPLATE
-        assert "{overlay_line}" in HERO_SECTION_TEMPLATE
+        assert "{description_line}" in HERO_SECTION_TEMPLATE
         assert "{brand_style}" in HERO_SECTION_TEMPLATE
 
 
@@ -406,10 +406,10 @@ class TestBuildHeroSectionPrompt:
         assert "no text" in prompt.lower()
         assert "hero banner" in prompt.lower()
 
-    def test_with_overlay_text(self):
+    def test_with_short_description(self):
         prompt = build_hero_section_prompt(
             subject="Winter Sale",
-            overlay_text="50% off everything",
+            short_description="50% off everything",
         )
         assert "50% off" in prompt
 
@@ -420,9 +420,9 @@ class TestBuildHeroSectionPrompt:
         )
         assert "Modern coastal lifestyle" in prompt
 
-    def test_without_overlay(self):
+    def test_without_short_description(self):
         prompt = build_hero_section_prompt(subject="Mountains")
-        assert "overlay" not in prompt.lower()
+        assert "description" not in prompt.lower() or "description_line" not in prompt
 
     def test_result_is_stripped(self):
         prompt = build_hero_section_prompt(subject="Test")

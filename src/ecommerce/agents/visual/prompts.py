@@ -458,7 +458,7 @@ NOT illustrated, cartoon, or digitally painted.
 HERO_SECTION_TEMPLATE = """\
 Photorealistic hero banner with a "{subject}" theme.
 High-end commercial photography. Shallow depth of field.
-{overlay_line}\
+{description_line}\
 {brand_style}\
 Background: soft, out-of-focus photographic backdrop that frames the subject -- NOT a busy landscape.
 Lighting: beautiful natural light, organic and high-quality.
@@ -519,7 +519,7 @@ def build_blog_hero_prompt(
 
 def build_hero_section_prompt(
     subject: str,
-    overlay_text: str = "",
+    short_description: str = "",
     brand_soul: str = "",
 ) -> str:
     """Build a hero banner prompt for a landing page hero section."""
@@ -529,11 +529,11 @@ def build_hero_section_prompt(
         if aesthetic:
             brand_style = f"{aesthetic} aesthetic. "
 
-    overlay_line = f"Visual theme inspired by: {overlay_text}. " if overlay_text else ""
+    description_line = f"{short_description}. " if short_description else ""
 
     return HERO_SECTION_TEMPLATE.format(
         subject=subject,
-        overlay_line=overlay_line,
+        description_line=description_line,
         brand_style=brand_style,
     ).strip()
 

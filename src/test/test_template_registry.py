@@ -218,6 +218,28 @@ class TestPromptContent:
         assert "Category" in t.system_prompt
         assert "Additional Context" in t.system_prompt
 
+    def test_landing_hero_has_short_description_input(self):
+        t = get_template("product/landing-hero")
+        assert t is not None
+        input_names = [inp.name for inp in t.inputs]
+        assert "short_description" in input_names
+
+    def test_landing_hero_user_prompt_has_short_description(self):
+        t = get_template("product/landing-hero")
+        assert t is not None
+        assert "short_description" in t.user_prompt_template or "Short Description" in t.user_prompt_template
+
+    def test_blog_post_has_short_description_input(self):
+        t = get_template("product/blog-post")
+        assert t is not None
+        input_names = [inp.name for inp in t.inputs]
+        assert "short_description" in input_names
+
+    def test_blog_post_user_prompt_has_short_description(self):
+        t = get_template("product/blog-post")
+        assert t is not None
+        assert "short_description" in t.user_prompt_template or "Short Description" in t.user_prompt_template
+
     def test_all_marketing_templates_return_json(self):
         """Marketing templates should request JSON output."""
         import src.ecommerce.templates  # noqa: F401
