@@ -76,6 +76,11 @@ class BrandContextFileExtractRequest(BaseModel):
     mime_type: str
 
 
+class BrandContextUpdateRequest(BaseModel):
+    clean_text_en: str
+    clean_text_ja: str | None = None
+
+
 # ==============================================================================
 # Agentic Architecture API Models
 # ==============================================================================

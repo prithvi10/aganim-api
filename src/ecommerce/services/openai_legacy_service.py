@@ -233,6 +233,17 @@ class OpenAIService:
     def extract_text_from_file(self, *, file_b64: str, mime_type: str) -> str:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
+
+        # PDF: extract text locally via PyPDF2 (zero LLM cost).
+        # Falls back to LLM vision only when PyPDF2 yields <50 chars
+        # (likely a scanned/image-only PDF).
+        if mime_type == "application/pdf":
+            local_text = self._extract_pdf_text_local(file_b64)
+            if len(local_text.strip()) >= 50:
+                logger.info("[FileExtract] PDF text extracted locally (%d chars)", len(local_text))
+                return json.dumps({"text": local_text})
+            logger.info("[FileExtract] PDF local extraction too short (%d chars), falling back to LLM", len(local_text))
+
         data_url = f"data:{mime_type};base64,{file_b64}"
         response = self.client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -251,6 +262,29 @@ class OpenAIService:
             response_format={"type": "json_object"},
         )
         return response.choices[0].message.content or ""
+
+    @staticmethod
+    def _extract_pdf_text_local(file_b64: str) -> str:
+        """Extract text from a base64-encoded PDF using PyPDF2 (no LLM cost)."""
+        import base64
+        import io
+        try:
+            from PyPDF2 import PdfReader
+        except ImportError:
+            logger.warning("[FileExtract] PyPDF2 not installed, cannot extract PDF locally")
+            return ""
+        try:
+            pdf_bytes = base64.b64decode(file_b64)
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            pages = []
+            for page in reader.pages:
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages.append(text.strip())
+            return "\n\n".join(pages)
+        except Exception as e:
+            logger.warning("[FileExtract] PyPDF2 extraction failed: %s", e)
+            return ""
 
     def generate_copy_stream(
         self,
