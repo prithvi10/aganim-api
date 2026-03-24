@@ -28,6 +28,7 @@ from .prompts import (
     LOCALE_PERSONA_TEMPLATE,
     COMPLIANCE_FEEDBACK_TEMPLATE,
     REWRITER_REFINE_PROMPT,
+    JA_DOMESTIC_TEMPLATE_ADDENDUM,
     REFINE_USER_PROMPT,
 )
 from src.ecommerce.config.shopify_config import LOCALE_PERSONA_MAP
@@ -439,6 +440,8 @@ class RewriterAgent(BaseAgent):
             template = get_template(template_id)
             if template and template.system_prompt:
                 prompt_parts.append(template.system_prompt)
+                if ja_domestic:
+                    prompt_parts.append(JA_DOMESTIC_TEMPLATE_ADDENDUM)
             else:
                 prompt_parts.append(REWRITER_SYSTEM_PROMPT_JA_DOMESTIC if ja_domestic else REWRITER_SYSTEM_PROMPT)
         else:

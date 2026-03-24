@@ -1091,8 +1091,9 @@ async def generate_content_endpoint(
         plan_tier=plan_name,
         raw_input={
             "template_id": template_id,
-            **body,  # Include all template inputs
+            **body,
         },
+        target_locale=body.get("target_locale") or "en",
         db=db,
     )
     
