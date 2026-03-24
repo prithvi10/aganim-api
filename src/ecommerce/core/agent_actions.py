@@ -404,6 +404,7 @@ def seo_optimize_action(
                     location=serp_params.get("location"),
                     gl=serp_params.get("gl"),
                     hl=serp_params.get("hl"),
+                    google_domain=serp_params.get("google_domain"),
                 )
                 serp_results = [
                     {
@@ -552,6 +553,7 @@ def price_scout_action(
                 location=serp_params.get("location"),
                 gl=serp_params.get("gl"),
                 hl=serp_params.get("hl"),
+                google_domain=serp_params.get("google_domain"),
             )
             logger.info("[AgentAction] rid=%s Fetched %d shopping results", rid, len(raw_competitors))
         except Exception as e:

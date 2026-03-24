@@ -6,6 +6,7 @@ Provides structured SERP data for agents like PriceScoutAgent.
 from __future__ import annotations
 
 import os
+import re as _re
 from typing import Optional, List, Dict
 from dataclasses import dataclass
 import httpx
@@ -13,6 +14,26 @@ import httpx
 from src.shared.logging.logger import get_logger
 from src.shared.config.configs import SERP_API_KEY, SERP_API_URL
 from src.shared.utils.httpx_verify import ssl_verify_serp
+
+
+_QUERY_NOISE_RE = _re.compile(
+    r"[【】\[\]（）\(\)★☆♪※◎●○■□▲△▼▽♦◆〇×＊\u2600-\u26FF\u2700-\u27BF]"
+)
+_MULTI_SPACE_RE = _re.compile(r"\s{2,}")
+_TRAILING_PUNCT_RE = _re.compile(r"[！!？?、。,.\-–—:：;；\s]+$")
+
+
+def _sanitize_serp_query(raw: str) -> str:
+    """Strip marketing noise from product titles before sending to SERP API.
+
+    Japanese product names from Shopify/Rakuten often contain brackets,
+    decorative symbols, and trailing punctuation that cause Google Shopping
+    to return zero results.
+    """
+    q = _QUERY_NOISE_RE.sub(" ", raw)
+    q = _MULTI_SPACE_RE.sub(" ", q)
+    q = _TRAILING_PUNCT_RE.sub("", q)
+    return q.strip()
 
 logger = get_logger(__name__)
 
@@ -69,6 +90,7 @@ class SerpService:
         location: Optional[str] = None,
         gl: Optional[str] = None,
         hl: Optional[str] = None,
+        google_domain: Optional[str] = None,
     ) -> List[SerpResult]:
         """
         Fetch top organic SERP results for a query.
@@ -80,11 +102,12 @@ class SerpService:
             location: Optional location for localized results
             gl: Google country code (e.g. "us", "de", "fr")
             hl: Google language code (e.g. "en", "de", "fr")
+            google_domain: Google domain to use (e.g. "google.co.jp")
 
         Returns:
             List of SerpResult objects, empty list on failure
         """
-        q = (query or "").strip()
+        q = _sanitize_serp_query(query or "")
         if not q:
             return []
 
@@ -104,6 +127,8 @@ class SerpService:
             params["gl"] = gl
         if hl:
             params["hl"] = hl
+        if google_domain:
+            params["google_domain"] = google_domain
 
         for attempt in range(3):
             try:
@@ -172,6 +197,7 @@ class SerpService:
         location: Optional[str] = "United States",
         gl: Optional[str] = None,
         hl: Optional[str] = None,
+        google_domain: Optional[str] = None,
     ) -> List[ShoppingResult]:
         """
         Fetch Google Shopping results for a product query.
@@ -180,7 +206,7 @@ class SerpService:
         results after 3 attempts, falls back to the full ``google_shopping``
         engine which has better international coverage.
         """
-        q = (query or "").strip()
+        q = _sanitize_serp_query(query or "")
         if not q:
             return []
 
@@ -199,6 +225,8 @@ class SerpService:
             base_params["gl"] = gl
         if hl:
             base_params["hl"] = hl
+        if google_domain:
+            base_params["google_domain"] = google_domain
 
         shopping_timeout = httpx.Timeout(30.0)
 
@@ -307,8 +335,9 @@ class SerpService:
         location: Optional[str] = None,
         gl: Optional[str] = None,
         hl: Optional[str] = None,
+        google_domain: Optional[str] = None,
     ) -> List[Dict]:
-        """Fetch competitor prices using Google Shopping Light API."""
+        """Fetch competitor prices using Google Shopping API."""
         query = f"{product_name} {category}"
         results = await self.search_shopping(
             query,
@@ -316,6 +345,7 @@ class SerpService:
             location=location or "United States",
             gl=gl,
             hl=hl,
+            google_domain=google_domain,
         )
         return [
             {
@@ -337,11 +367,12 @@ class SerpService:
         gl: Optional[str] = None,
         hl: Optional[str] = None,
         location: Optional[str] = None,
+        google_domain: Optional[str] = None,
     ) -> List[SerpResult]:
         """Search for competitor products in a specific market."""
         query = f"{product_name} buy online"
         loc = location or ("United States" if market == "US" else None)
-        return await self.search(query, num_results=5, location=loc, gl=gl, hl=hl)
+        return await self.search(query, num_results=5, location=loc, gl=gl, hl=hl, google_domain=google_domain)
 
 
 # ==============================================================================

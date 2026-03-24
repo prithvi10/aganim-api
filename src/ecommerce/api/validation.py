@@ -133,7 +133,7 @@ def validate_image_credits(context: dict) -> None:
         required = get_required_tier("image_refinement_adhoc") or "Pro"
         raise HTTPException(
             status_code=403,
-            detail=f"Image generation requires the {required} plan.",
+            detail=f"Image generation requires the {required} plan. Please upgrade to continue.",
         )
 
     limit_type = ent.get("image_limit_type", "monthly")
@@ -141,7 +141,7 @@ def validate_image_credits(context: dict) -> None:
     if limit == -1:
         return
     if limit == 0:
-        raise HTTPException(status_code=403, detail="Your plan has no image credits.")
+        raise HTTPException(status_code=403, detail="Your plan has no image credits. Please upgrade to access image generation.")
 
     if limit_type == "lifetime":
         remaining = int(getattr(shop, "lifetime_image_credits_remaining", 0) or 0)
@@ -149,9 +149,10 @@ def validate_image_credits(context: dict) -> None:
         remaining = max(0, limit - int(getattr(shop, "monthly_image_generations_used", 0) or 0))
 
     if remaining <= 0:
+        kind = "lifetime" if limit_type == "lifetime" else "this month"
         raise HTTPException(
             status_code=403,
-            detail="You've used all your image credits for this period.",
+            detail=f"You've used all {limit} image credits for {kind}. Please upgrade your plan for more.",
         )
 
 
@@ -166,13 +167,13 @@ def validate_mission_access(context: dict) -> None:
     ent = get_entitlements(plan_name)
 
     if not ent.get("missions", False):
-        raise HTTPException(status_code=403, detail="Missions are not available on your plan.")
+        raise HTTPException(status_code=403, detail="Missions are not available on your plan. Please upgrade to access missions.")
 
     limit = int(ent.get("mission_limit", 0))
     if limit == -1:
         return
     if limit == 0:
-        raise HTTPException(status_code=403, detail="Missions are not available on your plan.")
+        raise HTTPException(status_code=403, detail="Missions are not available on your plan. Please upgrade to access missions.")
 
     limit_type = ent.get("mission_limit_type", "monthly")
     if limit_type == "lifetime":
@@ -184,7 +185,7 @@ def validate_mission_access(context: dict) -> None:
         kind = "lifetime" if limit_type == "lifetime" else "monthly"
         raise HTTPException(
             status_code=403,
-            detail=f"You've reached your {kind} mission limit ({limit}). Upgrade for more.",
+            detail=f"You've used all {limit} {kind} mission credits. Please upgrade your plan for more.",
         )
 
 

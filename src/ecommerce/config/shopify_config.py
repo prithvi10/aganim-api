@@ -85,18 +85,18 @@ LOCALE_PERSONA_MAP = {
 
 # Maps target locale to SerpAPI parameters for geo-accurate results
 LOCALE_TO_SERP_PARAMS: dict[str, dict[str, str]] = {
-    "ja":    {"gl": "jp", "hl": "ja", "location": "Japan"},
-    "en":    {"gl": "us", "hl": "en", "location": "United States"},
-    "zh-TW": {"gl": "tw", "hl": "zh-TW", "location": "Taiwan"},
-    "ko":    {"gl": "kr", "hl": "ko", "location": "South Korea"},
-    "de":    {"gl": "de", "hl": "de", "location": "Germany"},
-    "fr":    {"gl": "fr", "hl": "fr", "location": "France"},
-    "es":    {"gl": "es", "hl": "es", "location": "Spain"},
-    "it":    {"gl": "it", "hl": "it", "location": "Italy"},
-    "pt":    {"gl": "br", "hl": "pt", "location": "Brazil"},
-    "th":    {"gl": "th", "hl": "th", "location": "Thailand"},
-    "vi":    {"gl": "vn", "hl": "vi", "location": "Vietnam"},
-    "zh-CN": {"gl": "cn", "hl": "zh-CN", "location": "China"},
+    "ja":    {"gl": "jp", "hl": "ja", "location": "Japan", "google_domain": "google.co.jp"},
+    "en":    {"gl": "us", "hl": "en", "location": "United States", "google_domain": "google.com"},
+    "zh-TW": {"gl": "tw", "hl": "zh-TW", "location": "Taiwan", "google_domain": "google.com.tw"},
+    "ko":    {"gl": "kr", "hl": "ko", "location": "South Korea", "google_domain": "google.co.kr"},
+    "de":    {"gl": "de", "hl": "de", "location": "Germany", "google_domain": "google.de"},
+    "fr":    {"gl": "fr", "hl": "fr", "location": "France", "google_domain": "google.fr"},
+    "es":    {"gl": "es", "hl": "es", "location": "Spain", "google_domain": "google.es"},
+    "it":    {"gl": "it", "hl": "it", "location": "Italy", "google_domain": "google.it"},
+    "pt":    {"gl": "br", "hl": "pt", "location": "Brazil", "google_domain": "google.com.br"},
+    "th":    {"gl": "th", "hl": "th", "location": "Thailand", "google_domain": "google.co.th"},
+    "vi":    {"gl": "vn", "hl": "vi", "location": "Vietnam", "google_domain": "google.com.vn"},
+    "zh-CN": {"gl": "cn", "hl": "zh-CN", "location": "China", "google_domain": "google.com.hk"},
 }
 
 # key -> { "match": regex alternation, "hint": short factual guidance }
