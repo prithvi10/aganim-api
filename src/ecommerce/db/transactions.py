@@ -455,6 +455,43 @@ def _cycle_start_for_shop(shop: Shop) -> datetime:
     return datetime.now(timezone.utc)
 
 
+class ImageQuotaExceeded(Exception):
+    """Raised when a shop has exhausted its image generation quota."""
+    pass
+
+
+def check_image_quota(db: Session, shop_domain: str, plan_name: str) -> None:
+    """Raise ``ImageQuotaExceeded`` if the shop has no remaining image credits.
+
+    Call this **before** generating an image so we never exceed the plan limit.
+    """
+    from src.ecommerce.plans.entitlements import get_entitlements
+
+    ent = get_entitlements(plan_name)
+    limit = int(ent.get("image_generation_limit", 0))
+    if limit <= 0:
+        raise ImageQuotaExceeded(
+            f"Image generation is not available on {plan_name} plan."
+        )
+
+    shop = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop:
+        return
+
+    if ent.get("image_limit_type") == "lifetime":
+        remaining = int(getattr(shop, "lifetime_image_credits_remaining", 0) or 0)
+        if remaining <= 0:
+            raise ImageQuotaExceeded(
+                f"Image quota exhausted (0/{limit} lifetime credits remaining)."
+            )
+    else:
+        used = int(getattr(shop, "monthly_image_generations_used", 0) or 0)
+        if used >= limit:
+            raise ImageQuotaExceeded(
+                f"Monthly image quota reached ({used}/{limit})."
+            )
+
+
 def record_feature_usage(db: Session, shop_domain: str, feature: str, amount: int = 1) -> int:
     """Increment the aggregate FeatureUsage counter for *feature* in the current billing cycle."""
     shop = db.query(Shop).filter(Shop.domain == shop_domain).first()

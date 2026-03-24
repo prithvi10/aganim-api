@@ -1120,6 +1120,26 @@ async def generate_content_endpoint(
 
         if template_id in hero_eligible:
             try:
+                from src.ecommerce.db.transactions import check_image_quota, ImageQuotaExceeded
+                try:
+                    check_image_quota(db, shop, plan_name)
+                except ImageQuotaExceeded as quota_err:
+                    logger.info(
+                        "[Generate] Hero skipped — image quota exceeded shop=%s plan=%s err=%s",
+                        shop, plan_name, quota_err,
+                    )
+                    hero_url = None
+                    return {
+                        "status": "success",
+                        "template_id": template_id,
+                        "content": new_state.draft_content,
+                        "title": new_state.draft_title,
+                        "hero_url": None,
+                        "hero_skipped_reason": str(quota_err),
+                    }
+                except Exception:
+                    pass
+
                 import json as _json
                 import uuid as _uuid
                 from src.ecommerce.services.hero_image_generator import HeroImageGenerator
