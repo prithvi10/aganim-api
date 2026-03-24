@@ -175,107 +175,128 @@ class SerpService:
     ) -> List[ShoppingResult]:
         """
         Fetch Google Shopping results for a product query.
+
+        Tries ``google_shopping_light`` first (cheaper).  If that returns no
+        results after 3 attempts, falls back to the full ``google_shopping``
+        engine which has better international coverage.
         """
         q = (query or "").strip()
         if not q:
             return []
 
         if not self.api_key:
-            logger.warning("[SERP] API key not configured; skipping shopping_light search")
+            logger.warning("[SERP] API key not configured; skipping shopping search")
             return []
 
-        params = {
-            "engine": "google_shopping_light",
+        base_params: dict = {
             "q": q,
             "num": num_results,
             "api_key": self.api_key,
         }
         if location:
-            params["location"] = location
+            base_params["location"] = location
         if gl:
-            params["gl"] = gl
+            base_params["gl"] = gl
         if hl:
-            params["hl"] = hl
+            base_params["hl"] = hl
 
-        shopping_timeout = httpx.Timeout(20.0)
+        shopping_timeout = httpx.Timeout(30.0)
 
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(
-                    timeout=shopping_timeout,
-                    verify=ssl_verify_serp(),
-                ) as client:
-                    resp = await client.get(self.api_url, params=params)
+        engines = [
+            ("google_shopping_light", 3),
+            ("google_shopping", 1),
+        ]
 
-                    if resp.status_code != 200:
-                        logger.warning(
-                            "[SERP] shopping_light non_200 status=%s attempt=%s q=%s body=%s",
-                            resp.status_code,
-                            attempt + 1,
-                            q[:30],
-                            resp.text[:200],
-                        )
-                        continue
+        for engine, max_attempts in engines:
+            params = {**base_params, "engine": engine}
+            for attempt in range(max_attempts):
+                try:
+                    async with httpx.AsyncClient(
+                        timeout=shopping_timeout,
+                        verify=ssl_verify_serp(),
+                    ) as client:
+                        resp = await client.get(self.api_url, params=params)
 
-                    data = resp.json() or {}
-                    shopping_results = data.get("shopping_results") or []
-
-                    results: List[ShoppingResult] = []
-                    for i, item in enumerate(shopping_results[:num_results]):
-                        title = str(item.get("title") or "").strip()
-
-                        extracted_price = item.get("extracted_price")
-                        if extracted_price is None:
-                            price_str = str(item.get("price") or "")
-                            try:
-                                cleaned = price_str.replace("$", "").replace(",", "").strip()
-                                extracted_price = float(cleaned) if cleaned else None
-                            except (ValueError, TypeError):
-                                extracted_price = None
-
-                        if extracted_price is None or extracted_price <= 0:
-                            continue
-
-                        price = str(item.get("price") or f"${extracted_price:.2f}")
-                        source = str(item.get("source") or item.get("merchant") or "Unknown").strip()
-                        link = str(item.get("link") or item.get("product_link") or "").strip()
-                        thumbnail = item.get("thumbnail")
-                        shipping = item.get("shipping") or item.get("delivery")
-
-                        if not title:
-                            continue
-
-                        results.append(
-                            ShoppingResult(
-                                title=title,
-                                price=price,
-                                extracted_price=float(extracted_price),
-                                source=source,
-                                link=link,
-                                thumbnail=thumbnail,
-                                shipping=str(shipping) if shipping else None,
-                                position=i + 1,
+                        if resp.status_code != 200:
+                            logger.warning(
+                                "[SERP] %s non_200 status=%s attempt=%s q=%s body=%s",
+                                engine,
+                                resp.status_code,
+                                attempt + 1,
+                                q[:30],
+                                resp.text[:200],
                             )
-                        )
+                            continue
 
-                    if results:
-                        logger.info(
-                            "[SERP] shopping_light query=%s results=%s (filtered from %s)",
-                            q[:30],
-                            len(results),
-                            len(shopping_results),
-                        )
-                        return results
+                        data = resp.json() or {}
+                        shopping_results = data.get("shopping_results") or []
 
-            except Exception as e:
-                logger.warning(
-                    "[SERP] shopping_light fetch_failed attempt=%s q=%s err=%s",
-                    attempt + 1,
-                    q[:30],
-                    e,
-                )
+                        results: List[ShoppingResult] = []
+                        for i, item in enumerate(shopping_results[:num_results]):
+                            title = str(item.get("title") or "").strip()
 
-        logger.warning("[SERP] shopping_light giving up after retries q=%s", q[:30])
+                            extracted_price = item.get("extracted_price")
+                            if extracted_price is None:
+                                price_str = str(item.get("price") or "")
+                                try:
+                                    cleaned = (
+                                        price_str
+                                        .replace("$", "")
+                                        .replace("¥", "")
+                                        .replace("￥", "")
+                                        .replace("円", "")
+                                        .replace(",", "")
+                                        .strip()
+                                    )
+                                    extracted_price = float(cleaned) if cleaned else None
+                                except (ValueError, TypeError):
+                                    extracted_price = None
+
+                            if extracted_price is None or extracted_price <= 0:
+                                continue
+
+                            price = str(item.get("price") or f"${extracted_price:.2f}")
+                            source = str(item.get("source") or item.get("merchant") or "Unknown").strip()
+                            link = str(item.get("link") or item.get("product_link") or "").strip()
+                            thumbnail = item.get("thumbnail")
+                            shipping = item.get("shipping") or item.get("delivery")
+
+                            if not title:
+                                continue
+
+                            results.append(
+                                ShoppingResult(
+                                    title=title,
+                                    price=price,
+                                    extracted_price=float(extracted_price),
+                                    source=source,
+                                    link=link,
+                                    thumbnail=thumbnail,
+                                    shipping=str(shipping) if shipping else None,
+                                    position=i + 1,
+                                )
+                            )
+
+                        if results:
+                            logger.info(
+                                "[SERP] %s query=%s results=%s (filtered from %s)",
+                                engine,
+                                q[:30],
+                                len(results),
+                                len(shopping_results),
+                            )
+                            return results
+
+                except Exception as e:
+                    logger.warning(
+                        "[SERP] %s fetch_failed attempt=%s q=%s err=%s",
+                        engine,
+                        attempt + 1,
+                        q[:30],
+                        e,
+                    )
+
+        logger.warning("[SERP] shopping giving up after all engines q=%s", q[:30])
         return []
 
     async def get_competitor_prices(

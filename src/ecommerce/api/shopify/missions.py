@@ -27,6 +27,7 @@ from src.ecommerce.api.validation import (
     validate_shop_and_quota,
     validate_mission_access,
     validate_feature_access,
+    validate_image_credits,
 )
 from src.ecommerce.plans.entitlements import get_entitlements
 from src.shared.logging.logger import get_logger
@@ -127,20 +128,35 @@ async def create_mission(
         raise HTTPException(status_code=422, detail=e.errors())
     
     auth_context = validate_shop_and_quota(db, shop, enforce_limit=True)
-    validate_mission_access(auth_context)
+
+    _IMAGE_ONLY_AGENTS = {"VisualMarketingAgent", "ImageRefinementAgent"}
+    workflow_agents = set()
+    if mission_req.workflow_config:
+        for step in mission_req.workflow_config:
+            name = step.get("agent_name") if isinstance(step, dict) else getattr(step, "agent_name", None)
+            if name:
+                workflow_agents.add(name)
+
+    is_image_only_adhoc = bool(workflow_agents) and workflow_agents.issubset(_IMAGE_ONLY_AGENTS)
+
+    if is_image_only_adhoc:
+        validate_image_credits(auth_context)
+    else:
+        validate_mission_access(auth_context)
+
     plan = auth_context["plan"]
     plan_tier = getattr(plan, "name", "Basic")
     shop_obj = auth_context["shop"]
 
-    # Decrement / increment mission counters
-    ent = get_entitlements(plan_tier)
-    if ent.get("mission_limit_type") == "lifetime":
-        shop_obj.lifetime_missions_remaining = max(0, int(getattr(shop_obj, "lifetime_missions_remaining", 0) or 0) - 1)
-    else:
-        shop_obj.monthly_missions_used = int(getattr(shop_obj, "monthly_missions_used", 0) or 0) + 1
-    db.add(shop_obj)
-    db.commit()
-    db.refresh(shop_obj)
+    if not is_image_only_adhoc:
+        ent = get_entitlements(plan_tier)
+        if ent.get("mission_limit_type") == "lifetime":
+            shop_obj.lifetime_missions_remaining = max(0, int(getattr(shop_obj, "lifetime_missions_remaining", 0) or 0) - 1)
+        else:
+            shop_obj.monthly_missions_used = int(getattr(shop_obj, "monthly_missions_used", 0) or 0) + 1
+        db.add(shop_obj)
+        db.commit()
+        db.refresh(shop_obj)
 
     import uuid
     from datetime import datetime, timezone
@@ -1127,6 +1143,17 @@ async def continue_step(
                     "[MissionStep] saved_to_shopify rid=%s shop=%s product_id=%s",
                     rid, shop, product_id
                 )
+                try:
+                    from src.ecommerce.db.transactions import record_successful_rewrite, record_feature_usage, log_usage_event
+                    record_successful_rewrite(db, shop, amount=1)
+                    record_feature_usage(db, shop, "rewriter", 1)
+                    log_usage_event(
+                        db, shop_domain=shop, plan_name=mission.plan_tier or "Basic",
+                        event_type="mission_rewrite", feature="rewriter",
+                        product_id=product_id, mission_id=mission.id,
+                    )
+                except Exception:
+                    logger.debug("[MissionStep] rewriter credit tracking failed", exc_info=True)
             except Exception as e:
                 logger.error(
                     "[MissionStep] shopify_save_failed rid=%s shop=%s err=%s",
@@ -1728,6 +1755,17 @@ async def skip_step(
                     "[MissionStep] saved_to_shopify rid=%s shop=%s product_id=%s (via skip)",
                     rid, shop, product_id
                 )
+                try:
+                    from src.ecommerce.db.transactions import record_successful_rewrite, record_feature_usage, log_usage_event
+                    record_successful_rewrite(db, shop, amount=1)
+                    record_feature_usage(db, shop, "rewriter", 1)
+                    log_usage_event(
+                        db, shop_domain=shop, plan_name=mission.plan_tier or "Basic",
+                        event_type="mission_rewrite", feature="rewriter",
+                        product_id=product_id, mission_id=mission.id,
+                    )
+                except Exception:
+                    logger.debug("[MissionStep] rewriter credit tracking failed (via skip)", exc_info=True)
             except Exception as e:
                 logger.error(
                     "[MissionStep] shopify_save_failed rid=%s shop=%s err=%s (via skip)",
