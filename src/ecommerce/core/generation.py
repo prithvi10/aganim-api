@@ -18,8 +18,11 @@ from src.ecommerce.config.configs import (
 )
 from src.shared.config.prompts import (
     SYSTEM_PROMPT,
+    SYSTEM_PROMPT_JA_DOMESTIC,
     TONE_PROMPTS,
+    TONE_PROMPTS_JA_DOMESTIC,
     VALUE_DISCOVERY_PROMPT,
+    VALUE_DISCOVERY_PROMPT_JA_DOMESTIC,
     UNIFIED_STANDARD_PRO_PASS_SYSTEM_TEMPLATE,
     SEO_RECOMMENDATIONS_TECH_PASS_SYSTEM_TEMPLATE,
     BRAND_CONTEXT_INJECTION_TEMPLATE,
@@ -382,6 +385,14 @@ def _augment_seo_and_discoveries_if_missing(
             len(discovered_values or []),
         )
 
+        ja_domestic = _is_ja_domestic(target_locale)
+        if ja_domestic:
+            explanation_lang = "professional Japanese explaining why this matters to domestic Japanese customers"
+            footer_lang = "A professional Japanese paragraph to add to the description"
+        else:
+            explanation_lang = "professional English explaining why this matters to Western customers"
+            footer_lang = "A professional English paragraph to add to the description"
+
         system = f"""You are a Senior E-commerce Growth Copywriter.
 
 Return ONLY valid JSON with this exact shape:
@@ -392,9 +403,9 @@ Return ONLY valid JSON with this exact shape:
   "discovered_values": [
     {{
       "category": "Regional Pedigree | Tactile & Sensory | Time-as-Luxury | Artisan Master",
-      "evidence": "Japanese snippet proving the value",
-      "explanation": "One sentence in professional English explaining why this matters to Western customers.",
-      "suggested_footer": "A professional English paragraph to add to the description."
+      "evidence": "Short snippet from the source proving the value",
+      "explanation": "One sentence in {explanation_lang}.",
+      "suggested_footer": "{footer_lang}."
     }}
   ]
 }}
@@ -402,7 +413,7 @@ Return ONLY valid JSON with this exact shape:
 Rules:
 - Output language for seo_title/seo_description must match TARGET LANGUAGE: {target_locale}
 - Output language for seo_alt_text must match TARGET LANGUAGE: {target_locale}
-- Evidence must quote a short Japanese snippet from the source.
+- Evidence must quote a short snippet from the source.
 - Categories MUST be one of: Regional Pedigree, Tactile & Sensory, Time-as-Luxury, Artisan Master.
 - If there is no clear evidence, return discovered_values: [].
 """.strip()
@@ -470,6 +481,12 @@ def _is_english_locale(locale: str | None) -> bool:
         return False
     return str(locale).strip().lower().startswith("en")
 
+
+def _is_ja_domestic(locale: str | None) -> bool:
+    if not locale:
+        return False
+    return str(locale).strip().lower() == "ja"
+
 def _effective_tone(plan_name: str | None, requested: str | None) -> str:
     """
     Basic plan: force professional.
@@ -524,16 +541,20 @@ def _normalize_brand_context_blob(raw: object) -> dict:
 def _render_brand_context_block_from_blob(brand_context: dict, target_locale: str) -> str:
     if not brand_context:
         return ""
-    # Inject EN clean text for all targets (including JP).
-    lang = "en"
+
+    ja_domestic = _is_ja_domestic(target_locale)
+    lang = "ja" if ja_domestic else "en"
     
     # Retrieve clean_text/pillars from nested shape
     # Structure: { "en": {"clean_text": "...", "pillars": [...]}, "ja": {...} }
-    # Also support legacy flat structure for backward compat if needed, though we just migrated.
-    
     node = brand_context.get(lang) or {}
     clean_text = str(node.get("clean_text") or brand_context.get(f"summary_{lang}") or "").strip()
     
+    # Fallback: if JA domestic but no JA brand context, try EN
+    if not clean_text and ja_domestic:
+        node = brand_context.get("en") or {}
+        clean_text = str(node.get("clean_text") or brand_context.get("summary_en") or "").strip()
+
     pillars_raw = node.get("pillars") or brand_context.get(f"key_facts_{lang}")
     pillars = []
     if isinstance(pillars_raw, list):
@@ -546,8 +567,12 @@ def _render_brand_context_block_from_blob(brand_context: dict, target_locale: st
     if clean_text:
         parts.append(clean_text)
     if pillars:
-        parts.append("Core Pillars: " + "; ".join(pillars))
-        
+        pillars_label = "ブランドの柱: " if ja_domestic else "Core Pillars: "
+        parts.append(pillars_label + "; ".join(pillars))
+
+    if ja_domestic:
+        from src.shared.config.prompts import BRAND_CONTEXT_INJECTION_TEMPLATE_JA_DOMESTIC
+        return BRAND_CONTEXT_INJECTION_TEMPLATE_JA_DOMESTIC.format(context="\n\n".join(parts))
     return BRAND_CONTEXT_INJECTION_TEMPLATE.format(context="\n\n".join(parts))
 
 
@@ -568,18 +593,26 @@ def _build_brand_context_block(
         return brand_context_block
 
     # Fallback to chunks only if no clean-text blob exists (legacy/partial ingestion).
-    # Filter to English chunks to avoid injecting JP content.
     chunks = get_brand_context(db, shop_id=shop, product_text=query_text, limit=6)
     if not chunks:
         return ""
-    en_chunks = []
+
+    preferred_lang = "ja" if _is_ja_domestic(target_locale) else "en"
+    filtered_chunks = []
     for item in chunks:
         meta = item.get("metadata") or {}
-        if str(meta.get("lang") or "").lower() == "en":
-            en_chunks.append(item)
-    if not en_chunks:
+        if str(meta.get("lang") or "").lower() == preferred_lang:
+            filtered_chunks.append(item)
+    # Fallback to other language if preferred yields nothing
+    if not filtered_chunks:
+        fallback_lang = "en" if preferred_lang == "ja" else "ja"
+        for item in chunks:
+            meta = item.get("metadata") or {}
+            if str(meta.get("lang") or "").lower() == fallback_lang:
+                filtered_chunks.append(item)
+    if not filtered_chunks:
         return ""
-    return _render_brand_context_block(en_chunks)
+    return _render_brand_context_block(filtered_chunks)
 
 
 def _build_dynamic_prompt(
@@ -591,11 +624,12 @@ def _build_dynamic_prompt(
     brand_name: str | None = None,
     remove_irrelevant_content: bool = True,
 ) -> str:
+    ja_domestic = _is_ja_domestic(target_locale)
     market_persona = LOCALE_PERSONA_MAP.get(target_locale, "Global English Market")
     pname = str(plan_name or "").strip().lower()
     brand = str(brand_name or "").strip()
     unit_conversion_block = ""
-    if auto_convert_units and _is_english_locale(target_locale):
+    if auto_convert_units and _is_english_locale(target_locale) and not ja_domestic:
         unit_conversion_block = """
 
 UNIT CONVERSION (STRICT, ENGLISH ONLY):
@@ -604,18 +638,20 @@ UNIT CONVERSION (STRICT, ENGLISH ONLY):
 - Never remove or replace the metric value. Japanese brands often require original specs for accuracy.
 - Use "approx." and sensible rounding (typically 0–1 decimals). Choose the most natural US unit (in/ft/oz/lb/fl oz) per context.
 """
+    tone_source = TONE_PROMPTS_JA_DOMESTIC if ja_domestic else TONE_PROMPTS
     tone_block = f"""
 
 TONE INSTRUCTION (DYNAMIC):
-{TONE_PROMPTS.get(tone_profile, TONE_PROMPTS.get("professional", ""))}
+{tone_source.get(tone_profile, tone_source.get("professional", ""))}
 
 FACT ACCURACY (STRICT):
 - Regardless of tone, keep core product facts 100% accurate (dimensions, materials, capacities, provenance).
 - Do NOT invent measurements, materials, certifications, or historical claims not present in the source text.
 """.rstrip()
+    vd_prompt = VALUE_DISCOVERY_PROMPT_JA_DOMESTIC if ja_domestic else VALUE_DISCOVERY_PROMPT
     value_discovery_block = f"""
 
-{VALUE_DISCOVERY_PROMPT}
+{vd_prompt}
 """.rstrip()
     seo_block = f"""
 
@@ -702,12 +738,19 @@ CTR / PST GUARDRAIL (ALL TIERS):
 - If misc content (SEO/meta/multilingual notes/hashtags/logistics) appears in source, handle it according to the MISC block above.
 """.rstrip()
 
-    return f"""{SYSTEM_PROMPT}
+    base_system = SYSTEM_PROMPT_JA_DOMESTIC if ja_domestic else SYSTEM_PROMPT
 
-TARGET LANGUAGE: {target_locale}
-MARKET PERSONA: {market_persona}
-BRAND NAME: {brand or "N/A"}
-
+    if ja_domestic:
+        localization_rules = f"""
+ADDITIONAL LOCALIZATION RULES:
+- タイトルと商品説明は自然で洗練された日本語で記述すること。
+- 日本国内ECの慣習に沿った表現、適切な敬語、国内市場向けのトリガーを使用すること。
+- 職人技や産地の用語はそのまま自然に使用（海外向けの説明的注釈は不要）。
+- Keep JSON shape exactly:
+  {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "seo_alt_text": "...", "misc_information": "...", "seo_insights": {{"lsi_keywords_used": [...], "search_intent": "...", "competitive_edge": "..."}}, "discovered_values": [...]}}.
+- Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned."""
+    else:
+        localization_rules = f"""
 ADDITIONAL LOCALIZATION RULES:
 - Write both "title" and "description" in the TARGET LANGUAGE ({target_locale}) only.
 - Use local idioms and market-specific triggers for {market_persona}. Avoid literal English/Japanese if not the target.
@@ -715,7 +758,14 @@ ADDITIONAL LOCALIZATION RULES:
 - For ko: keep tone natural for Korean shoppers.
 - Keep JSON shape exactly:
   {{"title": "...", "description": "...", "seo_title": "...", "seo_description": "...", "seo_alt_text": "...", "misc_information": "...", "seo_insights": {{"lsi_keywords_used": [...], "search_intent": "...", "competitive_edge": "..."}}, "discovered_values": [...]}}.
-- Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned.
+- Only extract values for which there is clear evidence in the text. Do not hallucinate or add history for crafts not mentioned."""
+
+    return f"""{base_system}
+
+TARGET LANGUAGE: {target_locale}
+MARKET PERSONA: {market_persona}
+BRAND NAME: {brand or "N/A"}
+{localization_rules}
 {seo_block}
 {serp_insights_block}
 {spec_tables_handoff_block}
@@ -1134,6 +1184,7 @@ async def _generate_and_save_for_locale(
         system_prompt=dynamic_prompt,
         model=model_override,
         competitor_context=competitor_context,
+        target_locale=target_locale,
     )
 
     # Internal-only cost accounting + fair-use monitoring (never blocks)

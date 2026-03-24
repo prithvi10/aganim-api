@@ -9,13 +9,18 @@ for easy iteration and maintenance.
 # These are the "legacy" prompts that are shared/general purpose
 from src.shared.config.prompts import (
     SYSTEM_PROMPT as BASE_SYSTEM_PROMPT,
+    SYSTEM_PROMPT_JA_DOMESTIC as BASE_SYSTEM_PROMPT_JA_DOMESTIC,
     TONE_PROMPTS,
+    TONE_PROMPTS_JA_DOMESTIC,
     VALUE_DISCOVERY_PROMPT,
+    VALUE_DISCOVERY_PROMPT_JA_DOMESTIC,
     BRAND_CONTEXT_INJECTION_TEMPLATE,
+    BRAND_CONTEXT_INJECTION_TEMPLATE_JA_DOMESTIC,
 )
 
 # Export for use by agent
 REWRITER_SYSTEM_PROMPT = BASE_SYSTEM_PROMPT
+REWRITER_SYSTEM_PROMPT_JA_DOMESTIC = BASE_SYSTEM_PROMPT_JA_DOMESTIC
 
 # User prompt template for product copy generation
 USER_PROMPT_TEMPLATE = """
@@ -24,6 +29,17 @@ Category: {category}
 Target Locale: {target_locale}
 
 The following Japanese text is pre-labeled with [Section] tags. Translate and beautify EACH section individually, preserving order and structure. Use the Architectural Rules from the system prompt.
+
+Pre-labeled Japanese Text:
+{description}
+""".strip()
+
+USER_PROMPT_TEMPLATE_JA_DOMESTIC = """
+Product Name: {title}
+Category: {category}
+Target Locale: {target_locale}
+
+以下の日本語テキストには[Section]タグが付与されています。各セクションを個別に最適化・洗練し、順序と構造を維持してください。システムプロンプトのArchitectural Rulesに従ってください。
 
 Pre-labeled Japanese Text:
 {description}

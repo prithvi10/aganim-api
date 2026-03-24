@@ -74,16 +74,23 @@ class OpenAIService:
         system_prompt: str | None = None,
         model: str | None = None,
         competitor_context: list[dict] | None = None,
+        target_locale: str | None = None,
     ) -> object:
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not configured")
         if not self.client:
             raise RuntimeError("OpenAI client not initialized")
 
+        ja_domestic = str(target_locale or "").strip().lower() == "ja"
+        if ja_domestic:
+            task_instruction = "Optimize and refine EACH section individually for the Japanese domestic market, preserving order and structure. Use the Architectural Rules from the system prompt."
+        else:
+            task_instruction = "Translate and beautify EACH section individually, preserving order and structure. Use the Architectural Rules from the system prompt."
+
         user_content = f"""
         Product Name: {product_name}
         Category: {category}
-        The following Japanese text is pre-labeled with [Section] tags. Translate and beautify EACH section individually, preserving order and structure. Use the Architectural Rules from the system prompt.
+        The following Japanese text is pre-labeled with [Section] tags. {task_instruction}
         Pre-labeled Japanese Text:
         {japanese_description}
         """

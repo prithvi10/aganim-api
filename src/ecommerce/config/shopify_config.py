@@ -65,6 +65,8 @@ SHOPIFY_UI_URL = os.getenv("SHOPIFY_UI_URL", "https://shopify-translator-ui.onre
 # Localization persona + premium branding glossary
 # ==============================================================================
 LOCALE_PERSONA_MAP = {
+    # Domestic market
+    "ja": "Japanese Domestic Market (use natural, polished Japanese for domestic e-commerce shoppers; emphasize craftsmanship, regional heritage, and shokunin quality in native context)",
     # Core markets
     "en": "US Amazon Market",
     "zh-TW": "Taiwan Shopee Market (use Taiwanese Mandarin and emphasize CP値/CP ratio)",
@@ -83,6 +85,7 @@ LOCALE_PERSONA_MAP = {
 
 # Maps target locale to SerpAPI parameters for geo-accurate results
 LOCALE_TO_SERP_PARAMS: dict[str, dict[str, str]] = {
+    "ja":    {"gl": "jp", "hl": "ja", "location": "Japan"},
     "en":    {"gl": "us", "hl": "en", "location": "United States"},
     "zh-TW": {"gl": "tw", "hl": "zh-TW", "location": "Taiwan"},
     "ko":    {"gl": "kr", "hl": "ko", "location": "South Korea"},
