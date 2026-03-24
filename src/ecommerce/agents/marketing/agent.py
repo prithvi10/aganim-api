@@ -16,8 +16,10 @@ from src.ecommerce.state import ShopifyMissionState as MissionState
 from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 from .prompts import (
     SOCIAL_HOOKS_SYSTEM_PROMPT,
+    SOCIAL_HOOKS_SYSTEM_PROMPT_JA_DOMESTIC,
     SOCIAL_HOOKS_USER_PROMPT_TEMPLATE,
     SEASONAL_CAPTION_SYSTEM_PROMPT,
+    SEASONAL_CAPTION_SYSTEM_PROMPT_JA_DOMESTIC,
     SEASONAL_CAPTION_USER_PROMPT_TEMPLATE,
 )
 from src.shared.config.prompts import JA_DOMESTIC_TEMPLATE_ADDENDUM
@@ -235,9 +237,12 @@ class MarketingAgent(BaseAgent):
             target_locale=target_locale,
         )
         
+        ja_domestic = str(target_locale or "").strip().lower() == "ja"
+        system_prompt = SOCIAL_HOOKS_SYSTEM_PROMPT_JA_DOMESTIC if ja_domestic else SOCIAL_HOOKS_SYSTEM_PROMPT
+
         result = await self.services.llm.generate_text(
             prompt=user_prompt,
-            system_prompt=SOCIAL_HOOKS_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             model="gpt-4o-mini",
             temperature=0.8,  # More creative for social content
         )
@@ -325,7 +330,7 @@ class MarketingAgent(BaseAgent):
         
         result = await self.services.llm.generate_text(
             prompt=user_prompt,
-            system_prompt=SEASONAL_CAPTION_SYSTEM_PROMPT,
+            system_prompt=SEASONAL_CAPTION_SYSTEM_PROMPT_JA_DOMESTIC if str(target_locale or "").strip().lower() == "ja" else SEASONAL_CAPTION_SYSTEM_PROMPT,
             model="gpt-4o-mini",
             temperature=0.8,
         )
