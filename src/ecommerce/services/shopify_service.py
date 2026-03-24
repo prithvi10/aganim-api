@@ -243,14 +243,35 @@ async def save_product_content_with_locale(
     
     # IF SECONDARY: Use GraphQL Translation mutation (Prevents "Master" overwrite)
     else:
-        await create_shopify_translation(
-            shop_domain=shop_domain,
-            access_token=access_token,
-            product_id=product_id,
-            title=title,
-            description=description,
-            target_locale=target_locale
-        )
+        try:
+            await create_shopify_translation(
+                shop_domain=shop_domain,
+                access_token=access_token,
+                product_id=product_id,
+                title=title,
+                description=description,
+                target_locale=target_locale
+            )
+        except Exception as translation_err:
+            err_msg = str(translation_err)
+            if "Locale is not a valid locale" in err_msg:
+                logger.warning(
+                    "[Save] Translation API rejected locale=%s for shop=%s — "
+                    "falling back to primary productUpdate (overwrite).",
+                    target_locale,
+                    shop_domain,
+                )
+                await save_product_content_with_locale(
+                    shop_domain=shop_domain,
+                    access_token=access_token,
+                    product_id=product_id,
+                    title=title,
+                    description=description,
+                    target_locale=shop_primary_locale,
+                    shop_primary_locale=shop_primary_locale,
+                )
+            else:
+                raise
 
 
 async def save_product_metafields(
