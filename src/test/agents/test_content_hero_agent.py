@@ -587,6 +587,7 @@ class TestImageCreditDeduction:
              patch(_R2_SVC) as mock_r2_cls, \
              patch("src.ecommerce.db.transactions.record_feature_usage") as mock_record, \
              patch("src.ecommerce.db.transactions.log_usage_event") as mock_log, \
+             patch("src.ecommerce.db.transactions.check_image_quota"), \
              patch("src.ecommerce.plans.entitlements.get_entitlements", return_value={"image_limit_type": "monthly"}):
             mock_r2_cls.return_value = mock_r2_svc
             mock_r2_cls.build_key = MagicMock(return_value="test-key")

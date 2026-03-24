@@ -170,6 +170,26 @@ class ContentHeroAgent(BaseAgent):
             ))
             return actions, state
 
+        _db = getattr(state, "db", None)
+        if _db:
+            try:
+                from src.ecommerce.db.transactions import check_image_quota, ImageQuotaExceeded
+                check_image_quota(_db, state.shop_id, getattr(state, "plan_tier", "Free"))
+            except ImageQuotaExceeded as quota_err:
+                msg = f"Image quota exceeded: {quota_err}"
+                logger.info("[ContentHeroAgent] %s shop=%s", msg, state.shop_id)
+                state.add_log(f"ContentHero: {msg}")
+                actions.append(AgentAction(
+                    tool_name="content_hero.generate",
+                    input_params={"reason": "quota_exceeded"},
+                    output={},
+                    success=False,
+                    error=msg,
+                ))
+                return actions, state
+            except Exception:
+                pass
+
         hero_gen = HeroImageGenerator()
         r2_svc = R2StorageService()
         mission_id = state.mission_id or "unknown"

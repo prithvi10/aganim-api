@@ -117,6 +117,26 @@ class VisualMarketingAgent(BaseAgent):
             ))
             return actions, state
 
+        _db = getattr(state, "db", None)
+        if _db:
+            try:
+                from src.ecommerce.db.transactions import check_image_quota, ImageQuotaExceeded
+                check_image_quota(_db, state.shop_id, getattr(state, "plan_tier", "Free"))
+            except ImageQuotaExceeded as quota_err:
+                msg = f"Image quota exceeded: {quota_err}"
+                logger.info("[VisualMarketingAgent] %s shop=%s", msg, state.shop_id)
+                state.add_log(f"VisualMarketing: {msg}")
+                actions.append(AgentAction(
+                    tool_name="visual_marketing.generate",
+                    input_params={"reason": "quota_exceeded"},
+                    output={},
+                    success=False,
+                    error=msg,
+                ))
+                return actions, state
+            except Exception:
+                pass
+
         try:
             image_url = validate_image_url(image_url, allow_r2=True)
         except ImageURLValidationError as e:

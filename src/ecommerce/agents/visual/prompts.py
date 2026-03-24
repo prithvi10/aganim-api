@@ -348,12 +348,13 @@ def build_styled_background_prompt(
 # ---------------------------------------------------------------------------
 
 NANO_BANANA_MARKETING_TEMPLATE = """\
+CRITICAL: Always faithfully reproduce the EXACT product shown in the reference image. The reference image is the single source of truth for the product's appearance.
 Professional marketing product photo for Instagram.
 Place the exact product from the reference image in a beautiful, well-lit setting with complementary styling and props.
-Preserve the product faithfully -- same shape, colors, labels, and packaging.
+Preserve the product with 100% fidelity -- same shape, colors, labels, packaging, material, and every physical detail. Do NOT replace, alter, or reinterpret the product based on its name or any text description.
 {brand_style}High-quality e-commerce photography. Eye-catching composition.
 No text, words, letters, logos, or watermarks.
-"""
+{product_context}"""
 
 
 def build_nano_banana_prompt(
@@ -363,6 +364,8 @@ def build_nano_banana_prompt(
     """Build a fidelity-first prompt for Nano Banana /edit.
 
     The prompt prioritises faithful reproduction of the reference product.
+    The product name is appended at the end as a weak context hint for
+    scene/prop selection only — it must never override the visual reference.
     ``brand_soul`` is supported but the caller should only pass a non-empty
     value when brand styling is explicitly enabled (``use_brand_style=True``
     on ProductAdGenerator); by default it is empty so the model focuses
@@ -374,16 +377,17 @@ def build_nano_banana_prompt(
         if aesthetic:
             brand_style = f"{aesthetic} aesthetic. "
 
-    product_name_line = ""
+    product_context = ""
     if product_name:
-        product_name_line = f"Product: {product_name}. "
+        product_context = (
+            f"For scene and prop context only (do NOT change the product): "
+            f"the product is called \"{product_name}\"."
+        )
 
     prompt = NANO_BANANA_MARKETING_TEMPLATE.format(
         brand_style=brand_style,
+        product_context=product_context,
     ).strip()
-
-    if product_name_line:
-        prompt = product_name_line + prompt
 
     return prompt
 
