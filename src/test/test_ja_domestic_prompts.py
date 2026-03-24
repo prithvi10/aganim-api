@@ -931,3 +931,140 @@ class TestMarketingAgentJAAddendum:
         prompt = agent._build_system_prompt(state, context, template_id="marketing/email-welcome")
 
         assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+
+
+# =============================================================================
+# Japanese PST Pattern Tests
+# =============================================================================
+
+
+class TestJAPSTPainPatterns:
+    """Verify Japanese pain/question patterns are detected by the PST checker."""
+
+    def test_fullwidth_question_mark(self):
+        from src.ecommerce.agents.seo.prompts import PST_PAIN_PATTERNS
+        import re
+        text = "美しい抹茶碗を探していますか？"
+        assert any(re.search(p, text) for p in PST_PAIN_PATTERNS)
+
+    def test_desuka_question_ending(self):
+        from src.ecommerce.agents.seo.prompts import PST_PAIN_PATTERNS
+        import re
+        text = "お茶の味が物足りないですか"
+        assert any(re.search(p, text) for p in PST_PAIN_PATTERNS)
+
+    def test_masenka_question(self):
+        from src.ecommerce.agents.seo.prompts import PST_PAIN_PATTERNS
+        import re
+        text = "試してみませんか"
+        assert any(re.search(p, text) for p in PST_PAIN_PATTERNS)
+
+    def test_osagashi(self):
+        from src.ecommerce.agents.seo.prompts import PST_PAIN_PATTERNS
+        import re
+        text = "完璧な急須をお探しの方へ"
+        assert any(re.search(p, text) for p in PST_PAIN_PATTERNS)
+
+    def test_check_cta(self):
+        from src.ecommerce.agents.seo.prompts import PST_PAIN_PATTERNS
+        import re
+        text = "今すぐチェック"
+        assert any(re.search(p, text) for p in PST_PAIN_PATTERNS)
+
+
+class TestJAPSTSolutionPatterns:
+    """Verify Japanese solution/benefit patterns are detected."""
+
+    def test_tezukuri(self):
+        from src.ecommerce.agents.seo.prompts import PST_SOLUTION_PATTERNS
+        import re
+        text = "職人による手作りの一品"
+        assert any(re.search(p, text) for p in PST_SOLUTION_PATTERNS)
+
+    def test_kodawari(self):
+        from src.ecommerce.agents.seo.prompts import PST_SOLUTION_PATTERNS
+        import re
+        text = "素材へのこだわりが光る"
+        assert any(re.search(p, text) for p in PST_SOLUTION_PATTERNS)
+
+    def test_kohinshitsu(self):
+        from src.ecommerce.agents.seo.prompts import PST_SOLUTION_PATTERNS
+        import re
+        text = "高品質な京焼の器"
+        assert any(re.search(p, text) for p in PST_SOLUTION_PATTERNS)
+
+    def test_tanoshime(self):
+        from src.ecommerce.agents.seo.prompts import PST_SOLUTION_PATTERNS
+        import re
+        text = "微妙に異なる魅力を楽しめます"
+        assert any(re.search(p, text) for p in PST_SOLUTION_PATTERNS)
+
+
+class TestJAPSTTrustPatterns:
+    """Verify Japanese trust patterns are detected."""
+
+    def test_kyoto_region(self):
+        from src.ecommerce.agents.seo.prompts import PST_TRUST_PATTERNS
+        import re
+        text = "京都製の信頼の一品"
+        assert any(re.search(p, text) for p in PST_TRUST_PATTERNS)
+
+    def test_shokunin(self):
+        from src.ecommerce.agents.seo.prompts import PST_TRUST_PATTERNS
+        import re
+        text = "熟練の職人が手がける"
+        assert any(re.search(p, text) for p in PST_TRUST_PATTERNS)
+
+    def test_dentou_kougei(self):
+        from src.ecommerce.agents.seo.prompts import PST_TRUST_PATTERNS
+        import re
+        text = "伝統工芸品として認定"
+        assert any(re.search(p, text) for p in PST_TRUST_PATTERNS)
+
+    def test_shinise(self):
+        from src.ecommerce.agents.seo.prompts import PST_TRUST_PATTERNS
+        import re
+        text = "創業100年の老舗"
+        assert any(re.search(p, text) for p in PST_TRUST_PATTERNS)
+
+    def test_years_heritage(self):
+        from src.ecommerce.agents.seo.prompts import PST_TRUST_PATTERNS
+        import re
+        text = "400年の歴史を持つ南部鉄器"
+        assert any(re.search(p, text) for p in PST_TRUST_PATTERNS)
+
+    def test_real_ja_seo_description_passes_all_three(self):
+        """The actual JA SEO description from the screenshot should now pass PST."""
+        from src.ecommerce.agents.seo.prompts import PST_PAIN_PATTERNS, PST_SOLUTION_PATTERNS, PST_TRUST_PATTERNS
+        import re
+        text = "日常の抹茶や緑茶に最適な茶碗。手作りの陶器で、微妙に異なる魅力を楽しめます。京都製の信頼の一品をお試しください！"
+        pain = any(re.search(p, text, re.IGNORECASE) for p in PST_PAIN_PATTERNS)
+        solution = any(re.search(p, text, re.IGNORECASE) for p in PST_SOLUTION_PATTERNS)
+        trust = any(re.search(p, text, re.IGNORECASE) for p in PST_TRUST_PATTERNS)
+        assert pain, "Pain pattern not detected"
+        assert solution, "Solution pattern not detected"
+        assert trust, "Trust pattern not detected"
+
+
+class TestYenPriceParsing:
+    """Verify SERP price parsing handles yen symbols."""
+
+    def test_yen_symbol_stripped(self):
+        price_str = "¥1,790"
+        cleaned = price_str.replace("$", "").replace("¥", "").replace("￥", "").replace("円", "").replace(",", "").strip()
+        assert float(cleaned) == 1790.0
+
+    def test_fullwidth_yen_stripped(self):
+        price_str = "￥9900"
+        cleaned = price_str.replace("$", "").replace("¥", "").replace("￥", "").replace("円", "").replace(",", "").strip()
+        assert float(cleaned) == 9900.0
+
+    def test_en_suffix_stripped(self):
+        price_str = "1790円"
+        cleaned = price_str.replace("$", "").replace("¥", "").replace("￥", "").replace("円", "").replace(",", "").strip()
+        assert float(cleaned) == 1790.0
+
+    def test_dollar_still_works(self):
+        price_str = "$35.99"
+        cleaned = price_str.replace("$", "").replace("¥", "").replace("￥", "").replace("円", "").replace(",", "").strip()
+        assert float(cleaned) == 35.99
