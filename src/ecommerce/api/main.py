@@ -60,6 +60,7 @@ def _ensure_shop_columns_exist():
             add("brand_context_job_id TEXT", "brand_context_job_id")
             add("ui_language TEXT DEFAULT 'en'", "ui_language")
             add("default_target_locale TEXT DEFAULT 'en'", "default_target_locale")
+            add("free_trial_expires_at TEXT", "free_trial_expires_at")
         return
 
     with engine.begin() as conn:
@@ -89,6 +90,15 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_context_job_id VARCHAR"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS ui_language VARCHAR(5) DEFAULT 'en'"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS default_target_locale VARCHAR(10) NOT NULL DEFAULT 'en'"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS free_trial_expires_at TIMESTAMPTZ"))
+        # Backfill: set free_trial_expires_at for existing Free-plan shops that don't have it yet
+        conn.execute(text("""
+            UPDATE shops
+            SET free_trial_expires_at = created_at + INTERVAL '7 days'
+            WHERE free_trial_expires_at IS NULL
+              AND (current_plan_name IS NULL OR current_plan_name = 'Free')
+              AND created_at IS NOT NULL
+        """))
 
 
 def _ensure_pgvector_extension_and_indexes():

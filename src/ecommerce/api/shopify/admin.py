@@ -297,6 +297,9 @@ async def get_usage(
         "feature_usage": feature_usage,
         "ui_language": getattr(shop, "ui_language", "en") or "en",
         "default_target_locale": getattr(shop, "default_target_locale", "en") or "en",
+        # Free trial
+        "free_trial_expires_at": (auth_context.get("free_trial_expires_at").isoformat() if auth_context.get("free_trial_expires_at") else None),
+        "free_trial_expired": bool(auth_context.get("free_trial_expired")),
     }
 
 
@@ -443,8 +446,9 @@ async def sync_plan(
     shop_rec.reset_anchor_date = now
     from datetime import timedelta
     shop_rec.next_reset_date = now + timedelta(days=30)
-    # Extend access window
+    # Extend access window; clear free trial since they've upgraded
     shop_rec.access_expires_at = now + timedelta(days=30)
+    shop_rec.free_trial_expires_at = None
     db.add(shop_rec)
 
     # Update User.plan_id to match

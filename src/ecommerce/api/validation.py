@@ -58,6 +58,13 @@ def validate_shop_and_quota(db: Session, shop_domain: str, *, enforce_limit: boo
             detail="Your pre-paid period has ended. Please select a plan to continue.",
         )
 
+    # Free trial time-gate: block access once the 7-day window has elapsed.
+    if enforce_limit and bool(context.get("free_trial_expired")):
+        raise HTTPException(
+            status_code=403,
+            detail="Your 7-day free trial has ended. Upgrade to a paid plan to continue using Cross-Border AI.",
+        )
+
     # 2. Check Quota Logic
     if enforce_limit and rewrite_limit is not None and int(rewrite_limit) != -1:
         if billing_cycle_type == "lifetime":

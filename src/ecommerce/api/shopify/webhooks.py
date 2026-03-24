@@ -146,10 +146,12 @@ async def handle_subscription_activated(
                         shop_rec.pending_plan_effective_at = None
                         # Manual plan change/activation means it's NOT a reinstall grace display state.
                         shop_rec.last_uninstalled_at = None
-                        # For paid plans, set a hard expiry window (30 days from activation).
+                        # For paid plans, set a hard expiry window (30 days from activation)
+                        # and clear the free trial (they've upgraded).
                         # For Free, clear any paid expiry.
                         if str(plan.name or "").strip().lower() in ("basic", "standard", "pro"):
                             shop_rec.access_expires_at = now + timedelta(days=30)
+                            shop_rec.free_trial_expires_at = None
                         else:
                             shop_rec.access_expires_at = None
                 db.add(shop_rec)
@@ -411,7 +413,9 @@ async def handle_app_install(
             db.commit()
             db.refresh(shop_rec)
         else:
-            # New shop: create a row with 10 lifetime credits.
+            # New shop: create a row with 10 lifetime credits + 7-day trial window.
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(timezone.utc)
             shop_rec = Shop(
                 domain=shop_domain,
                 access_token="",
@@ -419,6 +423,7 @@ async def handle_app_install(
                 lifetime_rewrites_remaining=10,
                 is_active=True,
                 welcome_back_pending=False,
+                free_trial_expires_at=now + timedelta(days=7),
             )
             db.add(shop_rec)
             db.commit()
