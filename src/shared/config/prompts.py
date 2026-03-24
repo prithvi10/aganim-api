@@ -468,3 +468,22 @@ Constraints:
 - Output language must match TARGET LANGUAGE: {target_locale}
 - If you cannot confidently generate a field without making up facts, return an empty string/list for that part.
 """.strip()
+
+
+# ------------------------------------------------------------------------------
+# JA Domestic cultural addendum for content & marketing templates
+# Appended to any template system prompt when target_locale == "ja"
+# ------------------------------------------------------------------------------
+JA_DOMESTIC_TEMPLATE_ADDENDUM = """
+[JAPANESE DOMESTIC MARKET GUIDELINES]
+The target audience is Japanese domestic e-commerce shoppers — NOT overseas buyers.
+Follow these cultural and stylistic rules:
+
+1. LANGUAGE: Write in natural, polished Japanese. Do NOT translate from English — compose natively.
+2. TONE: Use polite-form (です/ます) as the baseline. Avoid overly casual speech unless the brand voice explicitly requires it.
+3. CULTURAL CONTEXT: Emphasize craftsmanship (ものづくり), regional heritage (産地), seasonal relevance (旬・季節感), and shokunin quality (職人の技) where applicable.
+4. TRUST SIGNALS: Japanese shoppers value specificity — include concrete details (材質, 産地, 製法, サイズ) rather than vague superlatives.
+5. FORMATTING: Use Japanese punctuation (「」for quotes, 、for commas, 。for periods). Keep sentences concise — avoid long compound sentences.
+6. CRAFT TERMS: Preserve Japanese craft terminology naturally (e.g., 焼き締め, 釉薬, 手びねり). Do NOT add Western-facing explanations or romaji glosses.
+7. CALL-TO-ACTION: Use natural Japanese CTAs (e.g., 「詳しく見る」「今すぐチェック」「ご購入はこちら」) rather than translated English phrases.
+""".strip()

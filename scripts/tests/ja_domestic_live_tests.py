@@ -475,6 +475,305 @@ async def test_price_scout_ja_domestic() -> TestResult:
 
 
 # ---------------------------------------------------------------------------
+# Writing Content Template Tests (FAQ, Blog Post)
+# ---------------------------------------------------------------------------
+
+def _has_japanese(text: str) -> bool:
+    """Check if text contains Japanese characters, decoding JSON if needed."""
+    if any("\u3040" <= c <= "\u9FFF" for c in text):
+        return True
+    try:
+        decoded = json.loads(text) if text.strip().startswith("{") else text
+        flat = json.dumps(decoded, ensure_ascii=False) if isinstance(decoded, (dict, list)) else str(decoded)
+        return any("\u3040" <= c <= "\u9FFF" for c in flat)
+    except Exception:
+        return False
+
+
+async def test_writing_template_faq_ja() -> TestResult:
+    """RewriterAgent generates FAQ content with template_id=product/faq for JA domestic."""
+    from src.ecommerce.agents.rewriter import RewriterAgent
+    from src.ecommerce.state import MissionState
+    from unittest.mock import MagicMock, AsyncMock
+
+    name = "writing_template/faq_ja"
+    t0 = time.monotonic()
+
+    try:
+        from src.agentic_core.llm.llm_service import LLMService
+        llm = LLMService()
+
+        services = MagicMock()
+        services.llm = llm
+        services.serp.search = AsyncMock(return_value=[])
+        services.rag.get_brand_context = AsyncMock(return_value=[])
+
+        product = SAMPLE_PRODUCTS[0]
+        state = MissionState(
+            product_id="test-ja-faq-template",
+            shop_id="test-ja-shop.myshopify.com",
+            plan_tier="Standard",
+            raw_input={
+                "title": product["title"],
+                "description": product["description"],
+                "category": product["category"],
+                "template_id": "product/faq",
+            },
+            target_locale="ja",
+        )
+
+        agent = RewriterAgent("test-ja-shop.myshopify.com", services)
+        result = await agent.run(state)
+
+        elapsed = (time.monotonic() - t0) * 1000
+
+        content = result.draft_content or ""
+        has_ja = _has_japanese(content)
+
+        errors: list[str] = []
+        if not content:
+            errors.append("draft_content is empty")
+        if not has_ja:
+            errors.append("No Japanese characters in FAQ output")
+
+        decoded_preview = content
+        try:
+            decoded_preview = json.dumps(json.loads(content), ensure_ascii=False)[:300]
+        except Exception:
+            decoded_preview = content[:300]
+
+        return TestResult(
+            name=name,
+            status="FAIL" if errors else "PASS",
+            duration_ms=elapsed,
+            details={
+                "content_length": len(content),
+                "content_preview": decoded_preview,
+                "has_japanese": has_ja,
+                "status": result.status,
+                "template_id": "product/faq",
+            },
+            error="; ".join(errors) if errors else None,
+        )
+    except Exception as e:
+        return TestResult(name=name, status="FAIL", duration_ms=(time.monotonic() - t0) * 1000, error=f"{e}\n{traceback.format_exc()}")
+
+
+async def test_writing_template_blog_post_ja() -> TestResult:
+    """RewriterAgent generates blog post content with template_id=product/blog-post for JA domestic."""
+    from src.ecommerce.agents.rewriter import RewriterAgent
+    from src.ecommerce.state import MissionState
+    from unittest.mock import MagicMock, AsyncMock
+
+    name = "writing_template/blog_post_ja"
+    t0 = time.monotonic()
+
+    try:
+        from src.agentic_core.llm.llm_service import LLMService
+        llm = LLMService()
+
+        services = MagicMock()
+        services.llm = llm
+        services.serp.search = AsyncMock(return_value=[])
+        services.rag.get_brand_context = AsyncMock(return_value=[])
+
+        product = SAMPLE_PRODUCTS[1]
+        state = MissionState(
+            product_id="test-ja-blog-template",
+            shop_id="test-ja-shop.myshopify.com",
+            plan_tier="Standard",
+            raw_input={
+                "title": product["title"],
+                "description": product["description"],
+                "category": product["category"],
+                "template_id": "product/blog-post",
+                "topic": "南部鉄器の魅力と選び方",
+            },
+            target_locale="ja",
+        )
+
+        agent = RewriterAgent("test-ja-shop.myshopify.com", services)
+        result = await agent.run(state)
+
+        elapsed = (time.monotonic() - t0) * 1000
+
+        content = result.draft_content or ""
+        has_ja = _has_japanese(content)
+
+        errors: list[str] = []
+        if not content:
+            errors.append("draft_content is empty")
+        if not has_ja:
+            errors.append("No Japanese characters in blog post output")
+
+        decoded_preview = content
+        try:
+            decoded_preview = json.dumps(json.loads(content), ensure_ascii=False)[:300]
+        except Exception:
+            decoded_preview = content[:300]
+
+        return TestResult(
+            name=name,
+            status="FAIL" if errors else "PASS",
+            duration_ms=elapsed,
+            details={
+                "content_length": len(content),
+                "content_preview": decoded_preview,
+                "has_japanese": has_ja,
+                "status": result.status,
+                "template_id": "product/blog-post",
+            },
+            error="; ".join(errors) if errors else None,
+        )
+    except Exception as e:
+        return TestResult(name=name, status="FAIL", duration_ms=(time.monotonic() - t0) * 1000, error=f"{e}\n{traceback.format_exc()}")
+
+
+# ---------------------------------------------------------------------------
+# Marketing Template Tests (email-launch, ad-facebook)
+# ---------------------------------------------------------------------------
+
+async def test_marketing_template_email_ja() -> TestResult:
+    """MarketingAgent generates email content with template_id=marketing/email-launch for JA domestic."""
+    from src.ecommerce.agents.marketing import MarketingAgent
+    from src.ecommerce.state import MissionState
+    from unittest.mock import MagicMock, AsyncMock
+
+    name = "marketing_template/email_launch_ja"
+    t0 = time.monotonic()
+
+    try:
+        from src.agentic_core.llm.llm_service import LLMService
+        llm = LLMService()
+
+        services = MagicMock()
+        services.llm = llm
+        services.serp.search = AsyncMock(return_value=[])
+        services.rag.get_brand_context = AsyncMock(return_value=[])
+
+        product = SAMPLE_PRODUCTS[0]
+        state = MissionState(
+            product_id="test-ja-email-template",
+            shop_id="test-ja-marketing-shop.myshopify.com",
+            plan_tier="Standard",
+            raw_input={
+                "title": product["title"],
+                "description": product["description"],
+                "category": product["category"],
+                "template_id": "marketing/email-launch",
+                "tags": product["tags"],
+            },
+            target_locale="ja",
+        )
+
+        agent = MarketingAgent("test-ja-marketing-shop.myshopify.com", services)
+        result = await agent.run(state)
+
+        elapsed = (time.monotonic() - t0) * 1000
+
+        content = result.draft_content or ""
+        has_ja = _has_japanese(content)
+
+        errors: list[str] = []
+        if not content:
+            errors.append("draft_content is empty")
+        if not has_ja:
+            errors.append("No Japanese characters in email output")
+
+        decoded_preview = content
+        try:
+            decoded_preview = json.dumps(json.loads(content), ensure_ascii=False)[:300]
+        except Exception:
+            decoded_preview = content[:300]
+
+        return TestResult(
+            name=name,
+            status="FAIL" if errors else "PASS",
+            duration_ms=elapsed,
+            details={
+                "content_length": len(content),
+                "content_preview": decoded_preview,
+                "has_japanese": has_ja,
+                "status": result.status,
+                "template_id": "marketing/email-launch",
+            },
+            error="; ".join(errors) if errors else None,
+        )
+    except Exception as e:
+        return TestResult(name=name, status="FAIL", duration_ms=(time.monotonic() - t0) * 1000, error=f"{e}\n{traceback.format_exc()}")
+
+
+async def test_marketing_template_ad_ja() -> TestResult:
+    """MarketingAgent generates ad copy with template_id=marketing/ad-facebook for JA domestic."""
+    from src.ecommerce.agents.marketing import MarketingAgent
+    from src.ecommerce.state import MissionState
+    from unittest.mock import MagicMock, AsyncMock
+
+    name = "marketing_template/ad_facebook_ja"
+    t0 = time.monotonic()
+
+    try:
+        from src.agentic_core.llm.llm_service import LLMService
+        llm = LLMService()
+
+        services = MagicMock()
+        services.llm = llm
+        services.serp.search = AsyncMock(return_value=[])
+        services.rag.get_brand_context = AsyncMock(return_value=[])
+
+        product = SAMPLE_PRODUCTS[1]
+        state = MissionState(
+            product_id="test-ja-ad-template",
+            shop_id="test-ja-marketing-shop.myshopify.com",
+            plan_tier="Standard",
+            raw_input={
+                "title": product["title"],
+                "description": product["description"],
+                "category": product["category"],
+                "template_id": "marketing/ad-facebook",
+                "tags": product["tags"],
+            },
+            target_locale="ja",
+        )
+
+        agent = MarketingAgent("test-ja-marketing-shop.myshopify.com", services)
+        result = await agent.run(state)
+
+        elapsed = (time.monotonic() - t0) * 1000
+
+        content = result.draft_content or ""
+        has_ja = _has_japanese(content)
+
+        errors: list[str] = []
+        if not content:
+            errors.append("draft_content is empty")
+        if not has_ja:
+            errors.append("No Japanese characters in ad copy output")
+
+        decoded_preview = content
+        try:
+            decoded_preview = json.dumps(json.loads(content), ensure_ascii=False)[:300]
+        except Exception:
+            decoded_preview = content[:300]
+
+        return TestResult(
+            name=name,
+            status="FAIL" if errors else "PASS",
+            duration_ms=elapsed,
+            details={
+                "content_length": len(content),
+                "content_preview": decoded_preview,
+                "has_japanese": has_ja,
+                "status": result.status,
+                "template_id": "marketing/ad-facebook",
+            },
+            error="; ".join(errors) if errors else None,
+        )
+    except Exception as e:
+        return TestResult(name=name, status="FAIL", duration_ms=(time.monotonic() - t0) * 1000, error=f"{e}\n{traceback.format_exc()}")
+
+
+# ---------------------------------------------------------------------------
 # Full Mission Pipeline Test
 # ---------------------------------------------------------------------------
 
@@ -667,6 +966,10 @@ OPENAI_TESTS = [
     ("rewriter_p2", test_rewriter_ja_domestic_product2),
     ("seo", test_seo_ja_domestic),
     ("marketing", test_marketing_ja_domestic),
+    ("writing_faq", test_writing_template_faq_ja),
+    ("writing_blog", test_writing_template_blog_post_ja),
+    ("marketing_email", test_marketing_template_email_ja),
+    ("marketing_ad", test_marketing_template_ad_ja),
     ("mission", test_mission_pipeline_ja_domestic),
 ]
 

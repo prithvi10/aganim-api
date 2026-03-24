@@ -391,11 +391,20 @@ def seo_optimize_action(
         services = ServiceRegistry.create_default(db=db, shop_domain=shop_domain)
         
         # Step 1: Fetch SERP results for competitor insights
+        from src.ecommerce.config.shopify_config import LOCALE_TO_SERP_PARAMS
+        serp_params = LOCALE_TO_SERP_PARAMS.get(target_locale, {})
+        
         serp_results = []
         search_query = f"{product_title} {category}".strip()
         if search_query:
             try:
-                results = await services.serp.search(query=search_query, num_results=3)
+                results = await services.serp.search(
+                    query=search_query,
+                    num_results=3,
+                    location=serp_params.get("location"),
+                    gl=serp_params.get("gl"),
+                    hl=serp_params.get("hl"),
+                )
                 serp_results = [
                     {
                         "title": r.title,
@@ -522,6 +531,7 @@ def price_scout_action(
     product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
     description = str(product_data.get("description") or product_data.get("japanese_description") or "").strip()
     category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
+    target_locale = str(context.get("target_locale") or "en").strip()
     
     logger.info("[AgentAction] rid=%s action=price_scout product=%s", rid, product_title[:50])
     
@@ -529,13 +539,19 @@ def price_scout_action(
         # Create services with db/shop for usage tracking
         services = ServiceRegistry.create_default(db=db, shop_domain=shop_domain)
         
+        from src.ecommerce.config.shopify_config import LOCALE_TO_SERP_PARAMS
+        serp_params = LOCALE_TO_SERP_PARAMS.get(target_locale, {})
+        
         # === STEP 1: Fetch competitors from Google Shopping API ===
         raw_competitors = []
         try:
             raw_competitors = await services.serp.get_competitor_prices(
                 product_name=product_title,
                 category=category,
-                num_results=20,  # Request 20 for good sample pool
+                num_results=20,
+                location=serp_params.get("location"),
+                gl=serp_params.get("gl"),
+                hl=serp_params.get("hl"),
             )
             logger.info("[AgentAction] rid=%s Fetched %d shopping results", rid, len(raw_competitors))
         except Exception as e:

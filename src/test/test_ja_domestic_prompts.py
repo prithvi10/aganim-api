@@ -610,3 +610,324 @@ class TestJADomesticPromptConstants:
 
     def test_ja_brand_template_has_context_placeholder(self):
         assert "{context}" in BRAND_CONTEXT_INJECTION_TEMPLATE_JA_DOMESTIC
+
+
+# =============================================================================
+# JA Domestic Template Addendum
+# =============================================================================
+
+class TestJADomesticTemplateAddendum:
+
+    def test_addendum_constant_exists(self):
+        from src.shared.config.prompts import JA_DOMESTIC_TEMPLATE_ADDENDUM
+        assert len(JA_DOMESTIC_TEMPLATE_ADDENDUM) > 100
+
+    def test_addendum_has_cultural_guidance(self):
+        from src.shared.config.prompts import JA_DOMESTIC_TEMPLATE_ADDENDUM
+        assert "です/ます" in JA_DOMESTIC_TEMPLATE_ADDENDUM
+        assert "ものづくり" in JA_DOMESTIC_TEMPLATE_ADDENDUM
+        assert "職人の技" in JA_DOMESTIC_TEMPLATE_ADDENDUM
+
+    def test_addendum_is_reexported_from_rewriter_prompts(self):
+        from src.ecommerce.agents.rewriter.prompts import JA_DOMESTIC_TEMPLATE_ADDENDUM
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in JA_DOMESTIC_TEMPLATE_ADDENDUM
+
+
+# =============================================================================
+# SERP locale params in standalone agent actions
+# =============================================================================
+
+class TestSerpLocaleInAgentActions:
+
+    @pytest.fixture
+    def mock_services(self):
+        services = MagicMock()
+        services.serp.search = AsyncMock(return_value=[])
+        services.serp.get_competitor_prices = AsyncMock(return_value=[])
+        services.llm.generate_text = AsyncMock(return_value='{}')
+        return services
+
+    def test_seo_action_passes_ja_serp_params(self, mock_services):
+        """seo_optimize_action should pass gl/hl/location for JA locale."""
+        from src.ecommerce.core.agent_actions import seo_optimize_action
+
+        with patch(
+            "src.ecommerce.core.agent_actions.ServiceRegistry.create_default",
+            return_value=mock_services,
+        ):
+            seo_optimize_action(
+                product_data={"title": "抹茶碗", "category": "食器"},
+                context={"target_locale": "ja"},
+            )
+
+        mock_services.serp.search.assert_called_once()
+        call_kwargs = mock_services.serp.search.call_args
+        assert call_kwargs.kwargs.get("gl") == "jp" or call_kwargs[1].get("gl") == "jp"
+        assert call_kwargs.kwargs.get("hl") == "ja" or call_kwargs[1].get("hl") == "ja"
+        assert "Japan" in (call_kwargs.kwargs.get("location") or call_kwargs[1].get("location", ""))
+
+    def test_seo_action_passes_en_serp_params(self, mock_services):
+        """seo_optimize_action should pass gl/hl/location for EN locale."""
+        from src.ecommerce.core.agent_actions import seo_optimize_action
+
+        with patch(
+            "src.ecommerce.core.agent_actions.ServiceRegistry.create_default",
+            return_value=mock_services,
+        ):
+            seo_optimize_action(
+                product_data={"title": "Matcha Bowl", "category": "Tableware"},
+                context={"target_locale": "en"},
+            )
+
+        mock_services.serp.search.assert_called_once()
+        call_kwargs = mock_services.serp.search.call_args
+        assert call_kwargs.kwargs.get("gl") == "us" or call_kwargs[1].get("gl") == "us"
+        assert call_kwargs.kwargs.get("hl") == "en" or call_kwargs[1].get("hl") == "en"
+
+    def test_price_scout_action_passes_ja_serp_params(self, mock_services):
+        """price_scout_action should pass gl/hl/location for JA locale."""
+        from src.ecommerce.core.agent_actions import price_scout_action
+
+        with patch(
+            "src.ecommerce.core.agent_actions.ServiceRegistry.create_default",
+            return_value=mock_services,
+        ):
+            price_scout_action(
+                product_data={"title": "南部鉄器 急須", "category": "キッチン用品"},
+                context={"target_locale": "ja"},
+            )
+
+        mock_services.serp.get_competitor_prices.assert_called_once()
+        call_kwargs = mock_services.serp.get_competitor_prices.call_args
+        assert call_kwargs.kwargs.get("gl") == "jp" or call_kwargs[1].get("gl") == "jp"
+        assert call_kwargs.kwargs.get("hl") == "ja" or call_kwargs[1].get("hl") == "ja"
+        assert "Japan" in (call_kwargs.kwargs.get("location") or call_kwargs[1].get("location", ""))
+
+    def test_price_scout_action_passes_en_serp_params(self, mock_services):
+        """price_scout_action should pass gl/hl/location for EN locale."""
+        from src.ecommerce.core.agent_actions import price_scout_action
+
+        with patch(
+            "src.ecommerce.core.agent_actions.ServiceRegistry.create_default",
+            return_value=mock_services,
+        ):
+            price_scout_action(
+                product_data={"title": "Matcha Bowl", "category": "Tableware"},
+                context={"target_locale": "en"},
+            )
+
+        mock_services.serp.get_competitor_prices.assert_called_once()
+        call_kwargs = mock_services.serp.get_competitor_prices.call_args
+        assert call_kwargs.kwargs.get("gl") == "us" or call_kwargs[1].get("gl") == "us"
+
+    def test_seo_action_no_locale_defaults_gracefully(self, mock_services):
+        """seo_optimize_action with no locale should not crash."""
+        from src.ecommerce.core.agent_actions import seo_optimize_action
+
+        with patch(
+            "src.ecommerce.core.agent_actions.ServiceRegistry.create_default",
+            return_value=mock_services,
+        ):
+            seo_optimize_action(
+                product_data={"title": "Test"},
+                context={},
+            )
+
+        mock_services.serp.search.assert_called_once()
+
+
+# =============================================================================
+# Rewriter agent: JA addendum for non-description templates
+# =============================================================================
+
+class TestRewriterTemplateJAAddendum:
+
+    @pytest.fixture
+    def mock_services(self):
+        services = MagicMock()
+        services.llm.generate_text = AsyncMock(return_value='{}')
+        services.serp.search = AsyncMock(return_value=[])
+        services.rag.get_brand_context = AsyncMock(return_value=[])
+        return services
+
+    def _make_state(self, locale: str, template_id: str = "product/faq"):
+        from src.ecommerce.state import ShopifyMissionState as MissionState
+        return MissionState(
+            product_id="test-template-ja",
+            shop_id="test-shop.myshopify.com",
+            plan_tier="Standard",
+            raw_input={
+                "template_id": template_id,
+                "title": "京都抹茶碗",
+                "description": "手作り抹茶碗",
+                "category": "食器",
+                "target_locale": locale,
+            },
+            target_locale=locale,
+        )
+
+    @pytest.mark.asyncio
+    async def test_faq_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja", "product/faq")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="product/faq")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+        assert "です/ます" in prompt
+
+    @pytest.mark.asyncio
+    async def test_collection_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja", "product/collection")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="product/collection")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+
+    @pytest.mark.asyncio
+    async def test_landing_hero_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja", "product/landing-hero")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="product/landing-hero")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+
+    @pytest.mark.asyncio
+    async def test_blog_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja", "product/blog-post")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="product/blog-post")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+
+    @pytest.mark.asyncio
+    async def test_faq_en_no_addendum(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("en", "product/faq")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="product/faq")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_description_ja_uses_dedicated_prompt_not_addendum(self, mock_services):
+        """product/description path uses REWRITER_SYSTEM_PROMPT_JA_DOMESTIC directly."""
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja", "product/description")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="product/description")
+
+        assert "Japanese domestic" in prompt or "日本国内" in prompt
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" not in prompt
+
+
+# =============================================================================
+# Marketing agent: JA addendum for all template types
+# =============================================================================
+
+class TestMarketingAgentJAAddendum:
+
+    @pytest.fixture
+    def mock_services(self):
+        services = MagicMock()
+        services.llm.generate_text = AsyncMock(return_value='{}')
+        services.serp.search = AsyncMock(return_value=[])
+        services.rag.get_brand_context = AsyncMock(return_value=[])
+        return services
+
+    def _make_state(self, locale: str, template_id: str):
+        from src.ecommerce.state import ShopifyMissionState as MissionState
+        return MissionState(
+            product_id="test-marketing-ja",
+            shop_id="test-shop.myshopify.com",
+            plan_tier="Standard",
+            raw_input={
+                "template_id": template_id,
+                "title": "京都抹茶碗",
+                "description": "手作り抹茶碗",
+                "category": "食器",
+                "target_locale": locale,
+            },
+            target_locale=locale,
+        )
+
+    @pytest.mark.asyncio
+    async def test_email_launch_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.marketing import MarketingAgent
+
+        state = self._make_state("ja", "marketing/email-launch")
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="marketing/email-launch")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+
+    @pytest.mark.asyncio
+    async def test_ad_facebook_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.marketing import MarketingAgent
+
+        state = self._make_state("ja", "marketing/ad-facebook")
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="marketing/ad-facebook")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+
+    @pytest.mark.asyncio
+    async def test_social_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.marketing import MarketingAgent
+
+        state = self._make_state("ja", "marketing/social-tiktok")
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="marketing/social-tiktok")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+
+    @pytest.mark.asyncio
+    async def test_email_en_no_addendum(self, mock_services):
+        from src.ecommerce.agents.marketing import MarketingAgent
+
+        state = self._make_state("en", "marketing/email-launch")
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="marketing/email-launch")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_ad_google_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.marketing import MarketingAgent
+
+        state = self._make_state("ja", "marketing/ad-google")
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="marketing/ad-google")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt
+
+    @pytest.mark.asyncio
+    async def test_email_welcome_ja_includes_addendum(self, mock_services):
+        from src.ecommerce.agents.marketing import MarketingAgent
+
+        state = self._make_state("ja", "marketing/email-welcome")
+        agent = MarketingAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        prompt = agent._build_system_prompt(state, context, template_id="marketing/email-welcome")
+
+        assert "JAPANESE DOMESTIC MARKET GUIDELINES" in prompt

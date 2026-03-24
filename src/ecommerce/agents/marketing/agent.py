@@ -20,6 +20,7 @@ from .prompts import (
     SEASONAL_CAPTION_SYSTEM_PROMPT,
     SEASONAL_CAPTION_USER_PROMPT_TEMPLATE,
 )
+from src.shared.config.prompts import JA_DOMESTIC_TEMPLATE_ADDENDUM
 from .schemas import (
     SocialHook,
     SeasonalCampaign,
@@ -387,6 +388,11 @@ class MarketingAgent(BaseAgent):
             # Fallback to social hooks prompt for social templates
             if template_id.startswith("marketing/social"):
                 prompt_parts.append(SOCIAL_HOOKS_SYSTEM_PROMPT)
+        
+        # JA domestic cultural overlay for all marketing templates
+        target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+        if str(target_locale).strip().lower() == "ja":
+            prompt_parts.append(JA_DOMESTIC_TEMPLATE_ADDENDUM)
         
         return "\n\n".join(prompt_parts)
     
