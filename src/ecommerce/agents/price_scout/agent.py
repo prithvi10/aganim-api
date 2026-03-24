@@ -156,6 +156,7 @@ class PriceScoutAgent(BaseAgent):
                 location=serp_params.get("location"),
                 gl=serp_params.get("gl"),
                 hl=serp_params.get("hl"),
+                google_domain=serp_params.get("google_domain"),
             )
             
             context.external_data["raw_competitors"] = competitors

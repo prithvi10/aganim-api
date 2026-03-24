@@ -1068,3 +1068,54 @@ class TestYenPriceParsing:
         price_str = "$35.99"
         cleaned = price_str.replace("$", "").replace("¥", "").replace("￥", "").replace("円", "").replace(",", "").strip()
         assert float(cleaned) == 35.99
+
+
+class TestSerpQuerySanitizer:
+    """Verify the SERP query sanitizer strips marketing noise."""
+
+    def test_strips_brackets(self):
+        from src.agentic_core.tools.serp_service import _sanitize_serp_query
+        result = _sanitize_serp_query("【ふるさと納税】大ボリューム！ 鮭 切身")
+        assert "【" not in result
+        assert "】" not in result
+        assert "鮭" in result
+
+    def test_strips_stars_and_symbols(self):
+        from src.agentic_core.tools.serp_service import _sanitize_serp_query
+        result = _sanitize_serp_query("★★★ 最高品質 ♪ 抹茶碗 ※注意")
+        assert "★" not in result
+        assert "♪" not in result
+        assert "※" not in result
+        assert "抹茶碗" in result
+
+    def test_strips_trailing_punctuation(self):
+        from src.agentic_core.tools.serp_service import _sanitize_serp_query
+        result = _sanitize_serp_query("南部鉄器 急須！！！")
+        assert not result.endswith("！")
+        assert "南部鉄器" in result
+
+    def test_strips_unclosed_parens(self):
+        from src.agentic_core.tools.serp_service import _sanitize_serp_query
+        result = _sanitize_serp_query("鮭 切身 (")
+        assert not result.endswith("(")
+        assert "鮭" in result
+
+    def test_collapses_multi_spaces(self):
+        from src.agentic_core.tools.serp_service import _sanitize_serp_query
+        result = _sanitize_serp_query("抹茶碗     天目釉")
+        assert "  " not in result
+
+    def test_clean_query_unchanged(self):
+        from src.agentic_core.tools.serp_service import _sanitize_serp_query
+        result = _sanitize_serp_query("南部鉄器 急須 丸型 0.9L")
+        assert result == "南部鉄器 急須 丸型 0.9L"
+
+    def test_google_domain_in_locale_params(self):
+        from src.ecommerce.config.shopify_config import LOCALE_TO_SERP_PARAMS
+        assert LOCALE_TO_SERP_PARAMS["ja"]["google_domain"] == "google.co.jp"
+        assert LOCALE_TO_SERP_PARAMS["en"]["google_domain"] == "google.com"
+        assert LOCALE_TO_SERP_PARAMS["zh-TW"]["google_domain"] == "google.com.tw"
+        assert LOCALE_TO_SERP_PARAMS["de"]["google_domain"] == "google.de"
+        assert LOCALE_TO_SERP_PARAMS["fr"]["google_domain"] == "google.fr"
+        for locale, params in LOCALE_TO_SERP_PARAMS.items():
+            assert "google_domain" in params, f"Missing google_domain for locale {locale}"
