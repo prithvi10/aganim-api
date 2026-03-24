@@ -15,10 +15,15 @@ from src.ecommerce.state import ShopifyMissionState as MissionState
 from src.agentic_core.agents.context import AgentContext, AgentPlan, AgentAction
 from .prompts import (
     REWRITER_SYSTEM_PROMPT,
+    REWRITER_SYSTEM_PROMPT_JA_DOMESTIC,
     USER_PROMPT_TEMPLATE,
+    USER_PROMPT_TEMPLATE_JA_DOMESTIC,
     TONE_PROMPTS,
+    TONE_PROMPTS_JA_DOMESTIC,
     VALUE_DISCOVERY_PROMPT,
+    VALUE_DISCOVERY_PROMPT_JA_DOMESTIC,
     BRAND_CONTEXT_INJECTION_TEMPLATE,
+    BRAND_CONTEXT_INJECTION_TEMPLATE_JA_DOMESTIC,
     LEARNED_PREFERENCES_TEMPLATE,
     LOCALE_PERSONA_TEMPLATE,
     COMPLIANCE_FEEDBACK_TEMPLATE,
@@ -425,6 +430,9 @@ class RewriterAgent(BaseAgent):
         if operational_rules:
             prompt_parts.append(operational_rules)
         
+        target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+        ja_domestic = str(target_locale).strip().lower() == "ja"
+
         # Get template-specific system prompt if available
         if template_id and template_id != "product/description":
             from src.ecommerce.templates import get_template
@@ -432,22 +440,20 @@ class RewriterAgent(BaseAgent):
             if template and template.system_prompt:
                 prompt_parts.append(template.system_prompt)
             else:
-                # Fallback to base prompt
-                prompt_parts.append(REWRITER_SYSTEM_PROMPT)
+                prompt_parts.append(REWRITER_SYSTEM_PROMPT_JA_DOMESTIC if ja_domestic else REWRITER_SYSTEM_PROMPT)
         else:
-            # Start with base system prompt
-            prompt_parts.append(REWRITER_SYSTEM_PROMPT)
+            prompt_parts.append(REWRITER_SYSTEM_PROMPT_JA_DOMESTIC if ja_domestic else REWRITER_SYSTEM_PROMPT)
         
         # Add value discovery prompt
-        prompt_parts.append(VALUE_DISCOVERY_PROMPT)
+        prompt_parts.append(VALUE_DISCOVERY_PROMPT_JA_DOMESTIC if ja_domestic else VALUE_DISCOVERY_PROMPT)
         
         # Add tone (default to professional)
         tone = state.raw_input.get("tone", "professional")
-        if tone in TONE_PROMPTS:
-            prompt_parts.append(TONE_PROMPTS[tone])
+        tone_source = TONE_PROMPTS_JA_DOMESTIC if ja_domestic else TONE_PROMPTS
+        if tone in tone_source:
+            prompt_parts.append(tone_source[tone])
         
         # Add locale persona if available
-        target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
         if target_locale in LOCALE_PERSONA_MAP:
             prompt_parts.append(
                 LOCALE_PERSONA_TEMPLATE.format(persona=LOCALE_PERSONA_MAP[target_locale])
@@ -456,9 +462,8 @@ class RewriterAgent(BaseAgent):
         # Add brand context if available
         brand_text = context.get_brand_context_text()
         if brand_text:
-            brand_injection = BRAND_CONTEXT_INJECTION_TEMPLATE.format(
-                context=brand_text
-            )
+            brand_tmpl = BRAND_CONTEXT_INJECTION_TEMPLATE_JA_DOMESTIC if ja_domestic else BRAND_CONTEXT_INJECTION_TEMPLATE
+            brand_injection = brand_tmpl.format(context=brand_text)
             prompt_parts.append(brand_injection)
         
         # Add learned preferences if available
@@ -533,8 +538,10 @@ class RewriterAgent(BaseAgent):
         description = context.get_product_description()
         category = context.get_category()
         target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+        ja_domestic = str(target_locale).strip().lower() == "ja"
         
-        return USER_PROMPT_TEMPLATE.format(
+        tmpl = USER_PROMPT_TEMPLATE_JA_DOMESTIC if ja_domestic else USER_PROMPT_TEMPLATE
+        return tmpl.format(
             title=title,
             category=category,
             target_locale=target_locale,

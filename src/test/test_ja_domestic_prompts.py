@@ -1,0 +1,612 @@
+"""
+JA Domestic Market (Japanese-to-Japanese) prompt selection tests.
+
+Validates that when target_locale == "ja", the pipeline selects
+JA-domestic-specific prompts, tones, brand context, and user messages
+instead of the cross-border (translation-oriented) defaults.
+"""
+
+import pytest
+from unittest.mock import patch, MagicMock, AsyncMock
+from sqlalchemy.orm import Session
+
+from src.ecommerce.core.generation import (
+    _is_ja_domestic,
+    _build_dynamic_prompt,
+    _render_brand_context_block_from_blob,
+    _augment_seo_and_discoveries_if_missing,
+    process_generation_request,
+)
+from src.ecommerce.api.models import RewriteRequest
+from src.ecommerce.db.models import User, Plan
+from src.shared.config.prompts import (
+    SYSTEM_PROMPT,
+    SYSTEM_PROMPT_JA_DOMESTIC,
+    VALUE_DISCOVERY_PROMPT,
+    VALUE_DISCOVERY_PROMPT_JA_DOMESTIC,
+    TONE_PROMPTS,
+    TONE_PROMPTS_JA_DOMESTIC,
+    BRAND_CONTEXT_INJECTION_TEMPLATE,
+    BRAND_CONTEXT_INJECTION_TEMPLATE_JA_DOMESTIC,
+)
+from src.ecommerce.config.shopify_config import (
+    LOCALE_PERSONA_MAP,
+    LOCALE_TO_SERP_PARAMS,
+)
+
+
+# =============================================================================
+# Config: "ja" is in both locale maps
+# =============================================================================
+
+class TestJALocaleConfig:
+
+    def test_ja_in_persona_map(self):
+        assert "ja" in LOCALE_PERSONA_MAP
+
+    def test_ja_in_serp_params(self):
+        assert "ja" in LOCALE_TO_SERP_PARAMS
+
+    def test_ja_serp_params_target_japan(self):
+        params = LOCALE_TO_SERP_PARAMS["ja"]
+        assert params["gl"] == "jp"
+        assert params["hl"] == "ja"
+        assert params["location"] == "Japan"
+
+
+# =============================================================================
+# _is_ja_domestic helper
+# =============================================================================
+
+class TestIsJaDomestic:
+
+    def test_ja_returns_true(self):
+        assert _is_ja_domestic("ja") is True
+
+    def test_ja_case_insensitive(self):
+        assert _is_ja_domestic("JA") is True
+        assert _is_ja_domestic("Ja") is True
+
+    def test_ja_with_whitespace(self):
+        assert _is_ja_domestic(" ja ") is True
+
+    def test_en_returns_false(self):
+        assert _is_ja_domestic("en") is False
+
+    def test_none_returns_false(self):
+        assert _is_ja_domestic(None) is False
+
+    def test_empty_returns_false(self):
+        assert _is_ja_domestic("") is False
+
+    def test_ja_jp_returns_false(self):
+        """Only exact 'ja' is domestic, not sub-locales like 'ja-JP'."""
+        assert _is_ja_domestic("ja-JP") is False
+
+
+# =============================================================================
+# _build_dynamic_prompt: JA domestic vs cross-border
+# =============================================================================
+
+class TestBuildDynamicPromptJA:
+
+    def test_ja_uses_domestic_system_prompt(self):
+        prompt = _build_dynamic_prompt("ja")
+        assert "Japanese domestic" in prompt or "日本国内" in prompt
+        assert "Transform a factual Japanese product description into localized" not in prompt
+
+    def test_ja_uses_domestic_value_discovery(self):
+        prompt = _build_dynamic_prompt("ja")
+        assert "国内の日本人消費者" in prompt or "domestic Japanese shoppers" in prompt
+        assert "Western customers" not in prompt
+
+    def test_ja_uses_domestic_tone_professional(self):
+        prompt = _build_dynamic_prompt("ja", tone_profile="professional")
+        assert "プロフェッショナル" in prompt or "です・ます調" in prompt
+
+    def test_ja_uses_domestic_tone_luxury(self):
+        prompt = _build_dynamic_prompt("ja", tone_profile="luxury")
+        assert "ラグジュアリー" in prompt or "逸品" in prompt or "匠の技" in prompt
+        assert "US English vocabulary" not in prompt
+
+    def test_ja_uses_domestic_tone_playful(self):
+        prompt = _build_dynamic_prompt("ja", tone_profile="playful")
+        assert "プレイフル" in prompt or "親しみやすい" in prompt
+        assert "friendly American personality" not in prompt
+
+    def test_ja_skips_unit_conversion(self):
+        prompt = _build_dynamic_prompt("ja", auto_convert_units=True)
+        assert "UNIT CONVERSION" not in prompt
+
+    def test_ja_localization_rules_in_japanese(self):
+        prompt = _build_dynamic_prompt("ja")
+        assert "洗練された日本語" in prompt or "日本国内EC" in prompt
+
+    def test_en_still_uses_cross_border_prompt(self):
+        prompt = _build_dynamic_prompt("en")
+        assert "Transform a factual Japanese product description into localized" in prompt
+
+    def test_en_uses_standard_value_discovery(self):
+        prompt = _build_dynamic_prompt("en")
+        assert "Western customers" in prompt
+
+    def test_en_uses_standard_tone_luxury(self):
+        prompt = _build_dynamic_prompt("en", tone_profile="luxury")
+        assert "US English vocabulary" in prompt
+
+    @pytest.mark.parametrize("locale", ["ko", "de", "fr", "zh-TW", "zh-CN"])
+    def test_non_ja_locales_use_cross_border_prompt(self, locale):
+        prompt = _build_dynamic_prompt(locale)
+        assert "Transform a factual Japanese product description into localized" in prompt
+
+
+# =============================================================================
+# _render_brand_context_block_from_blob: JA brand context preference
+# =============================================================================
+
+class TestBrandContextBlobJA:
+
+    _BILINGUAL_BLOB = {
+        "en": {
+            "clean_text": "We are a Kyoto artisan workshop.",
+            "pillars": ["Heritage", "Craftsmanship"],
+        },
+        "ja": {
+            "clean_text": "京都の伝統工房として活動しています。",
+            "pillars": ["伝統", "匠の技"],
+        },
+    }
+
+    def test_ja_prefers_japanese_brand_context(self):
+        block = _render_brand_context_block_from_blob(self._BILINGUAL_BLOB, "ja")
+        assert "京都の伝統工房" in block
+        assert "ブランドの柱" in block
+
+    def test_ja_uses_ja_domestic_template(self):
+        block = _render_brand_context_block_from_blob(self._BILINGUAL_BLOB, "ja")
+        assert "ブランドストーリー" in block or "ブランド統合" in block
+
+    def test_en_uses_english_brand_context(self):
+        block = _render_brand_context_block_from_blob(self._BILINGUAL_BLOB, "en")
+        assert "Kyoto artisan workshop" in block
+        assert "Core Pillars" in block
+
+    def test_en_uses_standard_template(self):
+        block = _render_brand_context_block_from_blob(self._BILINGUAL_BLOB, "en")
+        assert "BRAND SOUL" in block
+
+    def test_ja_falls_back_to_en_when_ja_missing(self):
+        en_only_blob = {
+            "en": {
+                "clean_text": "English-only brand story.",
+                "pillars": ["Quality"],
+            },
+        }
+        block = _render_brand_context_block_from_blob(en_only_blob, "ja")
+        assert "English-only brand story" in block
+
+    def test_empty_blob_returns_empty(self):
+        assert _render_brand_context_block_from_blob({}, "ja") == ""
+        assert _render_brand_context_block_from_blob(None, "ja") == ""
+
+
+# =============================================================================
+# _augment_seo_and_discoveries_if_missing: JA language instructions
+# =============================================================================
+
+class TestAugmentSeoJA:
+
+    @pytest.fixture
+    def mock_db(self):
+        return MagicMock(spec=Session)
+
+    def test_ja_self_heal_prompt_uses_japanese_instructions(self, mock_db):
+        """When target_locale is 'ja', the self-heal prompt should instruct
+        explanation/suggested_footer in Japanese, not English."""
+        captured_prompts: list[str] = []
+
+        def _capture_generate_json(*, system_prompt, **kw):
+            captured_prompts.append(system_prompt)
+            return {
+                "seo_title": "テスト",
+                "seo_description": "テスト説明",
+                "seo_alt_text": "テスト画像",
+                "discovered_values": [],
+            }
+
+        with patch(
+            "src.ecommerce.core.generation.openai_service.generate_json",
+            side_effect=_capture_generate_json,
+        ), patch(
+            "src.ecommerce.core.generation._should_log_llm_full",
+            return_value=False,
+        ):
+            _augment_seo_and_discoveries_if_missing(
+                db=mock_db,
+                shop="test-shop.myshopify.com",
+                target_locale="ja",
+                product_name="Test",
+                category="General",
+                processed_description="テスト商品説明",
+                parsed={"title": "T", "description": "D"},
+                discovered_values=[],
+                model_used="gpt-4o-mini",
+                parse_meta={"parse_mode": "recover_title_desc"},
+            )
+
+        assert len(captured_prompts) == 1
+        prompt = captured_prompts[0]
+        assert "professional Japanese" in prompt
+        assert "domestic Japanese customers" in prompt
+        assert "Western customers" not in prompt
+
+
+# =============================================================================
+# process_generation_request: full pipeline JA domestic prompt capture
+# =============================================================================
+
+class TestProcessGenerationJA:
+
+    @pytest.fixture
+    def mock_db(self):
+        return MagicMock(spec=Session)
+
+    @pytest.fixture
+    def mock_user(self):
+        u = MagicMock(spec=User)
+        u.username = "test-shop.myshopify.com"
+        return u
+
+    def _fake_openai_response(self):
+        resp = MagicMock()
+        resp.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"title":"テスト","description":"<p>日本語</p>","discovered_values":[]}'
+                )
+            )
+        ]
+        resp.usage = MagicMock()
+        resp.usage.total_tokens = 10
+        return resp
+
+    @pytest.mark.asyncio
+    async def test_ja_generation_uses_domestic_prompt(self, mock_db, mock_user):
+        plan = MagicMock(spec=Plan)
+        plan.name = "Basic"
+        plan.can_stream_responses = False
+
+        req = RewriteRequest(
+            product_name="抹茶碗",
+            japanese_description="京都の職人が手作り",
+            product_id=None,
+            target_locale="ja",
+        )
+
+        seen_system: list[str] = []
+
+        def _capture(*, system_prompt, **kwargs):
+            seen_system.append(system_prompt)
+            return self._fake_openai_response()
+
+        with patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True), \
+             patch("src.ecommerce.core.generation.openai_service.generate_copy", side_effect=_capture):
+            out = await process_generation_request(mock_db, req, mock_user, plan)
+
+        assert out["status"] == "success"
+        assert len(seen_system) == 1
+
+        prompt = seen_system[0]
+        assert "Japanese domestic" in prompt or "日本国内" in prompt
+        assert "Transform a factual Japanese product description into localized" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_ja_generation_passes_target_locale_to_generate_copy(self, mock_db, mock_user):
+        plan = MagicMock(spec=Plan)
+        plan.name = "Basic"
+        plan.can_stream_responses = False
+
+        req = RewriteRequest(
+            product_name="抹茶碗",
+            japanese_description="京都の職人が手作り",
+            product_id=None,
+            target_locale="ja",
+        )
+
+        seen_locale: list[str] = []
+
+        def _capture(*, target_locale=None, **kwargs):
+            seen_locale.append(target_locale)
+            return self._fake_openai_response()
+
+        with patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True), \
+             patch("src.ecommerce.core.generation.openai_service.generate_copy", side_effect=_capture):
+            await process_generation_request(mock_db, req, mock_user, plan)
+
+        assert len(seen_locale) == 1
+        assert seen_locale[0] == "ja"
+
+    @pytest.mark.asyncio
+    async def test_en_generation_uses_cross_border_prompt(self, mock_db, mock_user):
+        plan = MagicMock(spec=Plan)
+        plan.name = "Basic"
+        plan.can_stream_responses = False
+
+        req = RewriteRequest(
+            product_name="Matcha Bowl",
+            japanese_description="京都の職人が手作り",
+            product_id=None,
+            target_locale="en",
+        )
+
+        seen_system: list[str] = []
+
+        def _capture(*, system_prompt, **kwargs):
+            seen_system.append(system_prompt)
+            return self._fake_openai_response()
+
+        with patch("src.ecommerce.core.generation.limiter.is_allowed", return_value=True), \
+             patch("src.ecommerce.core.generation.openai_service.generate_copy", side_effect=_capture):
+            out = await process_generation_request(mock_db, req, mock_user, plan)
+
+        assert out["status"] == "success"
+        prompt = seen_system[0]
+        assert "Transform a factual Japanese product description into localized" in prompt
+
+
+# =============================================================================
+# OpenAI legacy service: user message wording
+# =============================================================================
+
+class TestOpenAIServiceJAUserMessage:
+
+    def test_ja_user_content_says_optimize(self):
+        from src.ecommerce.services.openai_legacy_service import OpenAIService
+
+        captured_messages: list[str] = []
+
+        def _fake_create(**kwargs):
+            messages = kwargs.get("messages", [])
+            for m in messages:
+                if m.get("role") == "user":
+                    captured_messages.append(m["content"])
+            resp = MagicMock()
+            resp.choices = [MagicMock(message=MagicMock(content='{"title":"T","description":"D","discovered_values":[]}'))]
+            resp.usage = MagicMock(total_tokens=5)
+            return resp
+
+        svc = OpenAIService()
+        svc.client = MagicMock()
+        svc.client.chat.completions.create = _fake_create
+
+        svc.generate_copy(
+            product_name="Test",
+            category="General",
+            japanese_description="テスト説明",
+            target_locale="ja",
+        )
+
+        assert len(captured_messages) == 1
+        assert "Optimize and refine" in captured_messages[0]
+        assert "Translate and beautify" not in captured_messages[0]
+
+    def test_en_user_content_says_translate(self):
+        from src.ecommerce.services.openai_legacy_service import OpenAIService
+
+        captured_messages: list[str] = []
+
+        def _fake_create(**kwargs):
+            messages = kwargs.get("messages", [])
+            for m in messages:
+                if m.get("role") == "user":
+                    captured_messages.append(m["content"])
+            resp = MagicMock()
+            resp.choices = [MagicMock(message=MagicMock(content='{"title":"T","description":"D","discovered_values":[]}'))]
+            resp.usage = MagicMock(total_tokens=5)
+            return resp
+
+        svc = OpenAIService()
+        svc.client = MagicMock()
+        svc.client.chat.completions.create = _fake_create
+
+        svc.generate_copy(
+            product_name="Test",
+            category="General",
+            japanese_description="テスト説明",
+            target_locale="en",
+        )
+
+        assert len(captured_messages) == 1
+        assert "Translate and beautify" in captured_messages[0]
+
+    def test_none_locale_defaults_to_translate(self):
+        from src.ecommerce.services.openai_legacy_service import OpenAIService
+
+        captured_messages: list[str] = []
+
+        def _fake_create(**kwargs):
+            messages = kwargs.get("messages", [])
+            for m in messages:
+                if m.get("role") == "user":
+                    captured_messages.append(m["content"])
+            resp = MagicMock()
+            resp.choices = [MagicMock(message=MagicMock(content='{"title":"T","description":"D","discovered_values":[]}'))]
+            resp.usage = MagicMock(total_tokens=5)
+            return resp
+
+        svc = OpenAIService()
+        svc.client = MagicMock()
+        svc.client.chat.completions.create = _fake_create
+
+        svc.generate_copy(
+            product_name="Test",
+            category="General",
+            japanese_description="テスト説明",
+        )
+
+        assert len(captured_messages) == 1
+        assert "Translate and beautify" in captured_messages[0]
+
+
+# =============================================================================
+# RewriterAgent: JA domestic prompt selection
+# =============================================================================
+
+class TestRewriterAgentJADomestic:
+
+    @pytest.fixture
+    def mock_services(self):
+        services = MagicMock()
+        services.llm.generate_text = AsyncMock(
+            return_value='{"title": "テスト", "description": "<p>国内向け</p>", "discovered_values": []}'
+        )
+        services.llm.generate_structured = AsyncMock()
+        services.serp.search = AsyncMock(return_value=[])
+        services.serp.get_competitor_prices = AsyncMock(return_value=[])
+        services.rag.get_brand_context = AsyncMock(return_value=[])
+        return services
+
+    def _make_state(self, locale: str):
+        from src.ecommerce.state import ShopifyMissionState as MissionState
+        return MissionState(
+            product_id="test-ja-domestic",
+            shop_id="test-shop.myshopify.com",
+            plan_tier="Standard",
+            raw_input={
+                "title": "京都抹茶碗",
+                "description": "京都の職人が手作りで作る抹茶碗。天然素材。",
+                "category": "キッチン用品",
+            },
+            target_locale=locale,
+        )
+
+    @pytest.mark.asyncio
+    async def test_ja_system_prompt_is_domestic(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        system_prompt = agent._build_system_prompt(state, context)
+
+        assert "Japanese domestic" in system_prompt or "日本国内" in system_prompt
+        assert "Transform a factual Japanese product description into localized" not in system_prompt
+
+    @pytest.mark.asyncio
+    async def test_ja_system_prompt_has_domestic_value_discovery(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        system_prompt = agent._build_system_prompt(state, context)
+
+        assert "国内の日本人消費者" in system_prompt or "domestic Japanese" in system_prompt
+        assert "Western customers" not in system_prompt
+
+    @pytest.mark.asyncio
+    async def test_ja_system_prompt_has_domestic_tone(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja")
+        state.raw_input["tone"] = "luxury"
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        system_prompt = agent._build_system_prompt(state, context)
+
+        assert "ラグジュアリー" in system_prompt or "逸品" in system_prompt
+        assert "US English vocabulary" not in system_prompt
+
+    @pytest.mark.asyncio
+    async def test_ja_user_prompt_is_domestic(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        user_prompt = agent._build_user_prompt(state, context)
+
+        assert "Target Locale: ja" in user_prompt
+        assert "最適化・洗練" in user_prompt or "Optimize and refine" in user_prompt
+        assert "Translate and beautify" not in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_ja_persona_injected(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        system_prompt = agent._build_system_prompt(state, context)
+
+        assert LOCALE_PERSONA_MAP["ja"] in system_prompt
+
+    @pytest.mark.asyncio
+    async def test_ja_full_pipeline_produces_draft(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("ja")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        result = await agent.run(state)
+
+        assert result.draft_content is not None
+        assert result.status == "DRAFT_READY"
+
+    @pytest.mark.asyncio
+    async def test_en_still_uses_cross_border_prompts(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        state = self._make_state("en")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+        system_prompt = agent._build_system_prompt(state, context)
+        user_prompt = agent._build_user_prompt(state, context)
+
+        assert "Transform a factual Japanese product description into localized" in system_prompt
+        assert "Translate and beautify" in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_ja_brand_context_uses_domestic_template(self, mock_services):
+        from src.ecommerce.agents.rewriter import RewriterAgent
+
+        mock_services.rag.get_brand_context = AsyncMock(return_value=[
+            {"content": "京都の伝統工房", "metadata": {"lang": "ja"}},
+        ])
+
+        state = self._make_state("ja")
+        agent = RewriterAgent("test-shop.myshopify.com", mock_services)
+        context = await agent.perceive(state)
+
+        brand_text = context.get_brand_context_text()
+        if brand_text:
+            system_prompt = agent._build_system_prompt(state, context)
+            assert "ブランドストーリー" in system_prompt or "ブランド統合" in system_prompt
+
+
+# =============================================================================
+# Prompt constant integrity
+# =============================================================================
+
+class TestJADomesticPromptConstants:
+
+    def test_ja_system_prompt_has_json_structure(self):
+        assert '"title"' in SYSTEM_PROMPT_JA_DOMESTIC
+        assert '"description"' in SYSTEM_PROMPT_JA_DOMESTIC
+        assert '"discovered_values"' in SYSTEM_PROMPT_JA_DOMESTIC
+
+    def test_ja_system_prompt_preserves_architectural_rules(self):
+        assert "ARCHITECTURAL RULES" in SYSTEM_PROMPT_JA_DOMESTIC
+        assert "<h3>" in SYSTEM_PROMPT_JA_DOMESTIC
+        assert "<table>" in SYSTEM_PROMPT_JA_DOMESTIC
+
+    def test_ja_value_discovery_has_categories(self):
+        for cat in ["Regional Pedigree", "Tactile & Sensory", "Time-as-Luxury", "Artisan Master"]:
+            assert cat in VALUE_DISCOVERY_PROMPT or cat in SYSTEM_PROMPT
+
+    def test_ja_tone_prompts_cover_all_keys(self):
+        assert set(TONE_PROMPTS.keys()) == set(TONE_PROMPTS_JA_DOMESTIC.keys()), (
+            "JA domestic tone prompts must cover the same keys as the standard set"
+        )
+
+    def test_ja_brand_template_has_context_placeholder(self):
+        assert "{context}" in BRAND_CONTEXT_INJECTION_TEMPLATE_JA_DOMESTIC
