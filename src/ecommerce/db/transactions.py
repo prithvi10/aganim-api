@@ -221,6 +221,14 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         rewrite_limit = 0
         next_reset = None
 
+    # Free trial enforcement: check if the 7-day window has elapsed.
+    free_trial_expires_at = _parse_dt(getattr(shop, "free_trial_expires_at", None))
+    free_trial_expired = (
+        billing_cycle_type == "lifetime"
+        and isinstance(free_trial_expires_at, datetime)
+        and free_trial_expires_at <= now
+    )
+
     return {
         "user": user,
         "plan": plan,
@@ -241,6 +249,9 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         "grace_mode": bool(grace_mode),
         "last_uninstalled_at": last_uninstalled_at,
         "expired_paid": bool(expired_paid),
+        # Free trial
+        "free_trial_expires_at": free_trial_expires_at,
+        "free_trial_expired": bool(free_trial_expired),
     }
 
 def record_successful_rewrite(db: Session, shop_domain: str, amount: int = 1) -> Shop | None:
@@ -389,6 +400,7 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
                 last_plan_name="Free",
                 reset_anchor_date=now,
                 next_reset_date=now + timedelta(days=30),
+                free_trial_expires_at=now + timedelta(days=7),
             )
             db.add(new_shop)
             shop_record = new_shop

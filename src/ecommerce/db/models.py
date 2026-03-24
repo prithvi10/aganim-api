@@ -69,6 +69,8 @@ class Shop(Base):
     ui_language = Column(String(5), nullable=False, default="en", server_default="en")
     default_target_locale = Column(String(10), nullable=False, default="en", server_default="en")
 
+    free_trial_expires_at = Column(DateTime(timezone=True), nullable=True)
+
     # --- Plan-gating usage counters (added for plan overhaul) ---
     lifetime_missions_remaining = Column(Integer, nullable=False, default=3, server_default="3")
     lifetime_image_credits_remaining = Column(Integer, nullable=False, default=5, server_default="5")
