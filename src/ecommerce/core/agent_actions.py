@@ -382,9 +382,19 @@ def seo_optimize_action(
     product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
     description = str(product_data.get("description") or product_data.get("japanese_description") or "").strip()
     category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
-    target_locale = str(context.get("target_locale") or "en").strip()
+    target_locale = str(context.get("target_locale") or "").strip()
+    if not target_locale and db and shop_domain:
+        try:
+            from src.ecommerce.db.models import Shop
+            shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+            if shop_rec:
+                target_locale = str(getattr(shop_rec, "default_target_locale", "") or "").strip()
+        except Exception:
+            pass
+    if not target_locale:
+        target_locale = "en"
     
-    logger.info("[AgentAction] rid=%s action=seo_optimize product=%s", rid, product_title[:50])
+    logger.info("[AgentAction] rid=%s action=seo_optimize product=%s target_locale=%s", rid, product_title[:50], target_locale)
     
     async def _run_seo():
         # Create services with db/shop for usage tracking
@@ -532,9 +542,19 @@ def price_scout_action(
     product_title = str(product_data.get("title") or product_data.get("product_name") or "").strip()
     description = str(product_data.get("description") or product_data.get("japanese_description") or "").strip()
     category = str(product_data.get("category") or product_data.get("productType") or "General").strip()
-    target_locale = str(context.get("target_locale") or "en").strip()
+    target_locale = str(context.get("target_locale") or "").strip()
+    if not target_locale and db and shop_domain:
+        try:
+            from src.ecommerce.db.models import Shop
+            shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+            if shop_rec:
+                target_locale = str(getattr(shop_rec, "default_target_locale", "") or "").strip()
+        except Exception:
+            pass
+    if not target_locale:
+        target_locale = "en"
     
-    logger.info("[AgentAction] rid=%s action=price_scout product=%s", rid, product_title[:50])
+    logger.info("[AgentAction] rid=%s action=price_scout product=%s target_locale=%s", rid, product_title[:50], target_locale)
     
     async def _run_price_scout():
         # Create services with db/shop for usage tracking
