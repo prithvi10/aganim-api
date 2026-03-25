@@ -104,12 +104,8 @@ class SerpService:
         self.timeout = httpx.Timeout(15.0)
 
     @staticmethod
-    def _safe_params_for_log(params: dict) -> dict:
-        """Return params dict with api_key redacted for safe logging."""
-        out = dict(params)
-        if "api_key" in out:
-            out["api_key"] = out["api_key"][:6] + "..." if out["api_key"] else "(empty)"
-        return out
+    def _currency_symbol(gl: Optional[str]) -> str:
+        return {"jp": "¥", "kr": "₩", "tw": "NT$", "cn": "¥", "th": "฿"}.get(gl or "", "$")
 
     async def search(
         self,
@@ -144,13 +140,6 @@ class SerpService:
             logger.warning("[SERP] API key not configured; skipping search")
             return []
 
-        logger.debug(
-            "[SERP][DEBUG] search raw_query=%s sanitized_query=%s gl=%s hl=%s google_domain=%s location=%s engine=%s",
-            repr((query or "")[:80]),
-            repr(q[:80]),
-            gl, hl, google_domain, location, engine,
-        )
-
         params = {
             "engine": engine,
             "q": q,
@@ -166,11 +155,6 @@ class SerpService:
         if google_domain:
             params["google_domain"] = google_domain
 
-        logger.info(
-            "[SERP] organic request params=%s",
-            self._safe_params_for_log(params),
-        )
-
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(
@@ -178,13 +162,6 @@ class SerpService:
                     verify=ssl_verify_serp(),
                 ) as client:
                     resp = await client.get(self.api_url, params=params)
-
-                    logger.debug(
-                        "[SERP][DEBUG] organic response status=%s attempt=%s q=%s body_len=%s body_preview=%s",
-                        resp.status_code, attempt + 1, q[:30],
-                        len(resp.text),
-                        resp.text[:500],
-                    )
 
                     if resp.status_code != 200:
                         logger.warning(
@@ -262,12 +239,7 @@ class SerpService:
             logger.warning("[SERP] API key not configured; skipping shopping search")
             return []
 
-        logger.debug(
-            "[SERP][DEBUG] shopping raw_query=%s sanitized_query=%s gl=%s hl=%s google_domain=%s location=%s",
-            repr((query or "")[:100]),
-            repr(q[:100]),
-            gl, hl, google_domain, location,
-        )
+        currency = self._currency_symbol(gl)
 
         base_params: dict = {
             "q": q,
@@ -292,10 +264,6 @@ class SerpService:
 
         for engine, max_attempts in engines:
             params = {**base_params, "engine": engine}
-            logger.info(
-                "[SERP] shopping request engine=%s params=%s",
-                engine, self._safe_params_for_log(params),
-            )
             for attempt in range(max_attempts):
                 try:
                     async with httpx.AsyncClient(
@@ -303,13 +271,6 @@ class SerpService:
                         verify=ssl_verify_serp(),
                     ) as client:
                         resp = await client.get(self.api_url, params=params)
-
-                        logger.debug(
-                            "[SERP][DEBUG] shopping response engine=%s status=%s attempt=%s q=%s body_len=%s body_preview=%s",
-                            engine, resp.status_code, attempt + 1, q[:30],
-                            len(resp.text),
-                            resp.text[:500],
-                        )
 
                         if resp.status_code != 200:
                             logger.warning(
@@ -324,13 +285,6 @@ class SerpService:
 
                         data = resp.json() or {}
                         shopping_results = data.get("shopping_results") or []
-
-                        logger.debug(
-                            "[SERP][DEBUG] shopping parsed engine=%s raw_shopping_count=%s search_info=%s",
-                            engine,
-                            len(shopping_results),
-                            {k: v for k, v in data.get("search_information", {}).items() if k != "organic_results_state"},
-                        )
 
                         results: List[ShoppingResult] = []
                         for i, item in enumerate(shopping_results[:num_results]):
@@ -356,7 +310,7 @@ class SerpService:
                             if extracted_price is None or extracted_price <= 0:
                                 continue
 
-                            price = str(item.get("price") or f"${extracted_price:.2f}")
+                            price = str(item.get("price") or f"{currency}{extracted_price:,.0f}" if extracted_price >= 1000 else item.get("price") or f"{currency}{extracted_price:.2f}")
                             source = str(item.get("source") or item.get("merchant") or "Unknown").strip()
                             link = str(item.get("link") or item.get("product_link") or "").strip()
                             thumbnail = item.get("thumbnail")
@@ -387,18 +341,6 @@ class SerpService:
                                 len(shopping_results),
                             )
                             return results
-                        else:
-                            logger.debug(
-                                "[SERP][DEBUG] shopping 0 results after filter engine=%s raw_count=%s q=%s "
-                                "first_3_raw=%s",
-                                engine,
-                                len(shopping_results),
-                                q[:30],
-                                [
-                                    {"title": (it.get("title") or "")[:40], "price": it.get("price"), "extracted_price": it.get("extracted_price")}
-                                    for it in shopping_results[:3]
-                                ],
-                            )
 
                 except Exception as e:
                     logger.warning(
@@ -424,10 +366,6 @@ class SerpService:
     ) -> List[Dict]:
         """Fetch competitor prices using Google Shopping API."""
         query = f"{product_name} {category}"
-        logger.info(
-            "[SERP] get_competitor_prices product_name=%s category=%s gl=%s hl=%s google_domain=%s location=%s",
-            repr(product_name[:60]), category, gl, hl, google_domain, location,
-        )
         results = await self.search_shopping(
             query,
             num_results=num_results,

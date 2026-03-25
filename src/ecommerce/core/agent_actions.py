@@ -556,6 +556,9 @@ def price_scout_action(
     
     logger.info("[AgentAction] rid=%s action=price_scout product=%s target_locale=%s", rid, product_title[:50], target_locale)
     
+    _LOCALE_CURRENCY = {"ja": "¥", "ko": "₩", "zh-TW": "NT$", "zh-CN": "¥", "th": "฿", "pt": "R$"}
+    currency_symbol = _LOCALE_CURRENCY.get(target_locale, "$")
+    
     async def _run_price_scout():
         # Create services with db/shop for usage tracking
         services = ServiceRegistry.create_default(db=db, shop_domain=shop_domain)
@@ -749,9 +752,9 @@ def price_scout_action(
     )
     
     return {
-        "text": f"Recommended price: ${result.get('recommended_price', 0):.2f}" if result.get('recommended_price') else "",
+        "text": f"Recommended price: {currency_symbol}{result.get('recommended_price', 0):,.0f}" if result.get('recommended_price') else "",
         "metadata": {
-            "pricing_analysis": result,
+            "pricing_analysis": {**result, "currency": currency_symbol},
         },
     }
 
