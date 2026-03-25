@@ -17,23 +17,44 @@ from src.shared.utils.httpx_verify import ssl_verify_serp
 
 
 _QUERY_NOISE_RE = _re.compile(
-    r"[【】\[\]（）\(\)★☆♪※◎●○■□▲△▼▽♦◆〇×＊\u2600-\u26FF\u2700-\u27BF]"
+    r"[【】\[\]（）\(\)★☆♪※◎●○■□▲△▼▽♦◆〇×＊／/\u2600-\u26FF\u2700-\u27BF]"
 )
 _MULTI_SPACE_RE = _re.compile(r"\s{2,}")
 _TRAILING_PUNCT_RE = _re.compile(r"[！!？?、。,.\-–—:：;；\s]+$")
+_LEADING_PUNCT_RE = _re.compile(r"^[！!？?、。,.\-–—:：;；/\s]+")
+
+_JA_NOISE_PHRASES_RE = _re.compile(
+    r"ふるさと納税|大ボリューム|送料無料|送料込み?|ポイント\d+倍"
+    r"|離島.{0,6}配送不可|沖縄.{0,6}配送不可|北海道.{0,6}配送不可"
+    r"|あす楽|即日発送|翌日配送|ネコポス|メール便"
+    r"|画像はイメージ|お早めに|賞味期限|消費期限|保存方法"
+    r"|寄附申込み.{0,10}キャンセル|返礼品の変更|よくある質問"
+    r"|共通返礼品|配送方法|製造者|提供元|配送不可地域"
+    r"|お選びください|こちらの.{0,10}返礼品"
+    r"|General$",
+    _re.IGNORECASE,
+)
+
+_MAX_SERP_QUERY_LEN = 80
 
 
 def _sanitize_serp_query(raw: str) -> str:
-    """Strip marketing noise from product titles before sending to SERP API.
+    """Strip marketing / logistics noise from product titles for SERP API.
 
     Japanese product names from Shopify/Rakuten often contain brackets,
-    decorative symbols, and trailing punctuation that cause Google Shopping
-    to return zero results.
+    decorative symbols, logistics disclaimers, and ふるさと納税 boilerplate
+    that cause Google Shopping to return zero results.
     """
     q = _QUERY_NOISE_RE.sub(" ", raw)
+    q = _JA_NOISE_PHRASES_RE.sub(" ", q)
     q = _MULTI_SPACE_RE.sub(" ", q)
+    q = _LEADING_PUNCT_RE.sub("", q)
     q = _TRAILING_PUNCT_RE.sub("", q)
-    return q.strip()
+    q = q.strip()
+    if len(q) > _MAX_SERP_QUERY_LEN:
+        q = q[:_MAX_SERP_QUERY_LEN].rsplit(" ", 1)[0].strip()
+        q = _TRAILING_PUNCT_RE.sub("", q)
+    return q
 
 logger = get_logger(__name__)
 
