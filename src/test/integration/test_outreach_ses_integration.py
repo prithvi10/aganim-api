@@ -285,7 +285,7 @@ class TestSendTemplateOutreach:
                 "merchant_domain": "welcome-shop.myshopify.com",
                 "extra_params": {
                     "merchant_name": "Welcome Store",
-                    "app_url": "https://app.crossborderagent.com",
+                    "app_url": "https://app.aganim.com",
                 },
             },
             headers=_auth(token),
@@ -312,7 +312,7 @@ class TestSendTemplateOutreach:
                 "extra_params": {
                     "merchant_name": "Upgrade Store",
                     "plan_name": "Pro",
-                    "app_url": "https://app.crossborderagent.com",
+                    "app_url": "https://app.aganim.com",
                 },
             },
             headers=_auth(token),
@@ -336,7 +336,7 @@ class TestSendTemplateOutreach:
                 "merchant_domain": "limit-shop.myshopify.com",
                 "extra_params": {
                     "plan_name": "Basic",
-                    "upgrade_url": "https://app.crossborderagent.com/upgrade",
+                    "upgrade_url": "https://app.aganim.com/upgrade",
                 },
             },
             headers=_auth(token),
@@ -435,7 +435,7 @@ class TestSendTemplateOutreach:
                 "merchant_domain": "custom-email-shop.myshopify.com",
                 "extra_params": {
                     "email": "owner@customdomain.com",
-                    "app_url": "https://app.crossborderagent.com",
+                    "app_url": "https://app.aganim.com",
                 },
             },
             headers=_auth(token),
@@ -489,7 +489,7 @@ class TestOutreachLifecycleSES:
                 "merchant_domain": "lifecycle-shop.myshopify.com",
                 "extra_params": {
                     "plan_name": "Pro",
-                    "app_url": "https://app.crossborderagent.com",
+                    "app_url": "https://app.aganim.com",
                 },
             },
             headers=_auth(token),
@@ -809,7 +809,7 @@ class TestAdminEmailEndpoints:
                 "merchant_domain": "tmpl-email.myshopify.com",
                 "extra_params": {
                     "merchant_name": "Template Shop",
-                    "app_url": "https://app.crossborderagent.com",
+                    "app_url": "https://app.aganim.com",
                 },
             },
             headers=_auth(token),

@@ -128,11 +128,11 @@ class TestSendEmail:
             subject="Re: inquiry",
             html_body="<p>reply</p>",
             text_body="reply",
-            reply_to="support@crossborderagent.com",
+            reply_to="support@aganim.com",
         )
 
         call_kwargs = ses.send_email.call_args[1]
-        assert call_kwargs["ReplyToAddresses"] == ["support@crossborderagent.com"]
+        assert call_kwargs["ReplyToAddresses"] == ["support@aganim.com"]
 
     @pytest.mark.asyncio
     @patch("src.ecommerce.services.email_service._get_ses_client")

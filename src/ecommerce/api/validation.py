@@ -62,7 +62,7 @@ def validate_shop_and_quota(db: Session, shop_domain: str, *, enforce_limit: boo
     if enforce_limit and bool(context.get("free_trial_expired")):
         raise HTTPException(
             status_code=403,
-            detail="Your 7-day free trial has ended. Upgrade to a paid plan to continue using Cross-Border AI.",
+            detail="Your 7-day free trial has ended. Upgrade to a paid plan to continue using Aganim AI.",
         )
 
     # 2. Check Quota Logic

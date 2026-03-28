@@ -1,5 +1,5 @@
 """
-HTML email templates for CrossBorderAgent merchant communications.
+HTML email templates for Aganim merchant communications.
 
 Each public function returns a ``(subject, html_body, text_body)`` tuple
 ready to pass into ``email_service.send_email``.
@@ -16,8 +16,8 @@ from src.ecommerce.plans.entitlements import PLAN_ENTITLEMENTS
 _LOGO_URL = "https://pub-2d05fd38ba8549c0811a1e0bc9426e81.r2.dev/logo/Icon-final.png"
 _BRAND_COLOR = "#2563EB"
 _BRAND_DARK = "#1E40AF"
-_UNSUBSCRIBE_EMAIL = "unsubscribe@crossborderagent.com"
-_SUPPORT_EMAIL = "support@crossborderagent.com"
+_UNSUBSCRIBE_EMAIL = "unsubscribe@aganim.com"
+_SUPPORT_EMAIL = "support@aganim.com"
 
 _UI_BASE_URL = os.getenv("SHOPIFY_UI_URL", "https://shopify-translator-ui.onrender.com")
 _LANDING_URL = _UI_BASE_URL
@@ -61,8 +61,8 @@ def generate_base_email_template(content_html: str) -> str:
 
 <!-- Header -->
 <tr><td style="background-color:{_BRAND_COLOR};padding:28px 40px;text-align:center;">
-  <img src="{_LOGO_URL}" alt="CrossBorderAgent" width="48" height="48" style="display:inline-block;vertical-align:middle;border-radius:8px;">
-  <span style="color:#ffffff;font-size:22px;font-weight:700;margin-left:12px;vertical-align:middle;">CrossBorderAgent</span>
+  <img src="{_LOGO_URL}" alt="Aganim" width="48" height="48" style="display:inline-block;vertical-align:middle;border-radius:8px;">
+  <span style="color:#ffffff;font-size:22px;font-weight:700;margin-left:12px;vertical-align:middle;">Aganim</span>
 </td></tr>
 
 <!-- Body -->
@@ -73,8 +73,8 @@ def generate_base_email_template(content_html: str) -> str:
 <!-- Footer -->
 <tr><td style="background-color:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;">
   <p style="margin:0 0 8px;font-size:12px;color:#6b7280;text-align:center;">
-    &copy; CrossBorderAgent &middot;
-    <a href="{_LANDING_URL}" style="color:#6b7280;text-decoration:underline;">CrossBorderAgent</a> &middot;
+    &copy; Aganim &middot;
+    <a href="{_LANDING_URL}" style="color:#6b7280;text-decoration:underline;">Aganim</a> &middot;
     <a href="{_SUPPORT_URL}" style="color:#6b7280;text-decoration:underline;">Support</a> &middot;
     <a href="mailto:{_UNSUBSCRIBE_EMAIL}?subject=Unsubscribe" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a>
   </p>
@@ -132,21 +132,21 @@ def _feature_list_text(features: dict[str, bool], *, only_true: bool = True) -> 
 
 def welcome_email(merchant_name: str, app_url: str = "") -> tuple[str, str, str]:
     """Welcome email sent when a merchant first installs the app."""
-    subject = "Welcome to CrossBorderAgent!"
+    subject = "Welcome to Aganim!"
 
     free_features = PLAN_ENTITLEMENTS["Free"]
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Welcome, {merchant_name}!</h1>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  Thanks for installing CrossBorderAgent. Your Free plan includes everything
+  Thanks for installing Aganim. Your Free plan includes everything
   you need to get started:
 </p>
 {_feature_list_html(free_features)}
 <p style="margin:16px 0 0;font-size:16px;color:#374151;line-height:1.6;">
   Jump in and start optimising your products for global markets.
 </p>
-{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+{_cta_button("Visit Aganim", _LANDING_URL)}
 <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
   Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
 </p>"""
@@ -155,9 +155,9 @@ def welcome_email(merchant_name: str, app_url: str = "") -> tuple[str, str, str]
 
     text_body = (
         f"Welcome, {merchant_name}!\n\n"
-        f"Thanks for installing CrossBorderAgent. Your Free plan includes:\n"
+        f"Thanks for installing Aganim. Your Free plan includes:\n"
         f"{_feature_list_text(free_features)}\n\n"
-        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Visit Aganim: {_LANDING_URL}\n"
         f"Support: {_SUPPORT_URL}\n"
     )
 
@@ -189,7 +189,7 @@ def plan_upgrade_email(
 <p style="margin:16px 0 0;font-size:16px;color:#374151;line-height:1.6;">
   All your new features are ready to use right now.
 </p>
-{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+{_cta_button("Visit Aganim", _LANDING_URL)}
 <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
   Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
 </p>"""
@@ -200,7 +200,7 @@ def plan_upgrade_email(
         f"You're on {plan_name} now, {merchant_name}!\n\n"
         f"Here's what you've just unlocked:\n"
         f"{_feature_list_text(unlocked)}\n\n"
-        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Visit Aganim: {_LANDING_URL}\n"
         f"Support: {_SUPPORT_URL}\n"
     )
 
@@ -219,14 +219,14 @@ def credit_limit_reached_email(
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">You're on a roll, {merchant_name}!</h1>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
   You've used all the credits available on your {plan_name} plan — that means
-  you're getting real value from CrossBorderAgent.
+  you're getting real value from Aganim.
 </p>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
   Upgrade to keep the momentum going and unlock higher limits, more
-  missions, and premium features. Open CrossBorderAgent from your Shopify
+  missions, and premium features. Open Aganim from your Shopify
   admin panel to manage your plan.
 </p>
-{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+{_cta_button("Visit Aganim", _LANDING_URL)}
 <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
   Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
 </p>"""
@@ -237,7 +237,7 @@ def credit_limit_reached_email(
         f"You're on a roll, {merchant_name}!\n\n"
         f"You've used all the credits available on your {plan_name} plan.\n"
         f"Upgrade to keep the momentum going.\n\n"
-        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Visit Aganim: {_LANDING_URL}\n"
         f"Support: {_SUPPORT_URL}\n"
     )
 
@@ -264,7 +264,7 @@ def enterprise_invite_email(merchant_name: str) -> tuple[str, str, str]:
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;font-weight:600;">
   Simply reply to this email and we'll set up a quick call.
 </p>
-{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+{_cta_button("Visit Aganim", _LANDING_URL)}
 <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
   Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
 </p>"""
@@ -278,7 +278,7 @@ def enterprise_invite_email(merchant_name: str) -> tuple[str, str, str]:
         f"We'd love to put together a custom Enterprise package tailored to "
         f"your volume and workflow.\n\n"
         f"Simply reply to this email and we'll set up a quick call.\n\n"
-        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Visit Aganim: {_LANDING_URL}\n"
         f"Support: {_SUPPORT_URL}\n"
     )
 
@@ -289,12 +289,12 @@ def enterprise_invite_email(merchant_name: str) -> tuple[str, str, str]:
 
 def feedback_email(merchant_name: str, feedback_link: str = "") -> tuple[str, str, str]:
     """Ask a merchant to share their experience via the support page."""
-    subject = "We'd love your feedback on CrossBorderAgent"
+    subject = "We'd love your feedback on Aganim"
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  You've been using CrossBorderAgent and we'd love to hear what you think.
+  You've been using Aganim and we'd love to hear what you think.
   Your feedback helps us build the features that matter most to merchants
   like you.
 </p>
@@ -305,19 +305,19 @@ def feedback_email(merchant_name: str, feedback_link: str = "") -> tuple[str, st
 {_cta_button("Share Your Feedback", _SUPPORT_URL)}
 <p style="margin:16px 0 0;font-size:14px;color:#6b7280;">
   Thank you for helping us improve! &middot;
-  <a href="{_LANDING_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">CrossBorderAgent</a>
+  <a href="{_LANDING_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Aganim</a>
 </p>"""
 
     html_body = _base_layout(content)
 
     text_body = (
         f"Hi {merchant_name},\n\n"
-        f"You've been using CrossBorderAgent and we'd love to hear what "
+        f"You've been using Aganim and we'd love to hear what "
         f"you think. Your feedback helps us build the features that matter "
         f"most.\n\n"
         f"Share your feedback: {_SUPPORT_URL}\n\n"
         f"Thank you for helping us improve!\n"
-        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Visit Aganim: {_LANDING_URL}\n"
     )
 
     return subject, html_body, text_body
@@ -327,12 +327,12 @@ def feedback_email(merchant_name: str, feedback_link: str = "") -> tuple[str, st
 
 def rating_email(merchant_name: str, app_store_review_link: str = "") -> tuple[str, str, str]:
     """Ask a merchant to leave a review on the Shopify App Store."""
-    subject = "Enjoying CrossBorderAgent? We'd love to hear from you!"
+    subject = "Enjoying Aganim? We'd love to hear from you!"
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  We hope CrossBorderAgent has been helping your store reach new markets.
+  We hope Aganim has been helping your store reach new markets.
   If you've had a positive experience, we'd really appreciate hearing
   about it.
 </p>
@@ -340,7 +340,7 @@ def rating_email(merchant_name: str, app_store_review_link: str = "") -> tuple[s
   Visit our support page to share your thoughts, or simply reply to this
   email — it means the world to us.
 </p>
-{_cta_button("Visit CrossBorderAgent", _LANDING_URL)}
+{_cta_button("Visit Aganim", _LANDING_URL)}
 <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
   Need help? Visit our <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;">Support page</a>.
 </p>"""
@@ -349,10 +349,10 @@ def rating_email(merchant_name: str, app_store_review_link: str = "") -> tuple[s
 
     text_body = (
         f"Hi {merchant_name},\n\n"
-        f"We hope CrossBorderAgent has been helping your store reach new "
+        f"We hope Aganim has been helping your store reach new "
         f"markets. If you've had a positive experience, we'd really "
         f"appreciate hearing about it.\n\n"
-        f"Visit CrossBorderAgent: {_LANDING_URL}\n"
+        f"Visit Aganim: {_LANDING_URL}\n"
         f"Support: {_SUPPORT_URL}\n"
     )
 

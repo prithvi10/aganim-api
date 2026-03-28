@@ -46,7 +46,7 @@ def _assert_html_structure(html: str):
     """Common HTML structure checks."""
     assert "<!DOCTYPE html>" in html
     assert _LOGO_URL in html
-    assert "CrossBorderAgent" in html
+    assert "Aganim" in html
     assert _UNSUBSCRIBE_EMAIL in html
     assert "Unsubscribe" in html
 
@@ -78,7 +78,7 @@ class TestWelcomeEmail:
 
     def test_subject(self):
         subject, _, _ = welcome_email("Acme", "https://app.example.com")
-        assert subject == "Welcome to CrossBorderAgent!"
+        assert subject == "Welcome to Aganim!"
 
     def test_html_contains_merchant_name(self):
         _, html, _ = welcome_email("Acme Store", "https://app.example.com")
@@ -86,7 +86,7 @@ class TestWelcomeEmail:
 
     def test_html_contains_cta(self):
         _, html, _ = welcome_email("Acme")
-        assert "Visit CrossBorderAgent" in html
+        assert "Visit Aganim" in html
         assert _LANDING_URL in html
         assert _SUPPORT_URL in html
 
@@ -127,7 +127,7 @@ class TestPlanUpgradeEmail:
 
     def test_html_contains_cta(self):
         _, html, _ = plan_upgrade_email("Acme", "Pro")
-        assert "Visit CrossBorderAgent" in html
+        assert "Visit Aganim" in html
         assert _LANDING_URL in html
         assert _SUPPORT_URL in html
 
@@ -159,7 +159,7 @@ class TestCreditLimitReachedEmail:
 
     def test_html_contains_upgrade_cta(self):
         _, html, _ = credit_limit_reached_email("Acme", "Free")
-        assert "Visit CrossBorderAgent" in html
+        assert "Visit Aganim" in html
         assert _LANDING_URL in html
         assert _SUPPORT_URL in html
 
@@ -252,11 +252,11 @@ class TestRatingEmail:
 
     def test_subject(self):
         subject, _, _ = rating_email("Acme")
-        assert "crossborderagent" in subject.lower()
+        assert "aganim" in subject.lower()
 
     def test_html_contains_cta(self):
         _, html, _ = rating_email("Acme")
-        assert "Visit CrossBorderAgent" in html
+        assert "Visit Aganim" in html
         assert _LANDING_URL in html
         assert _SUPPORT_URL in html
 
