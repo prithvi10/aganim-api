@@ -50,7 +50,7 @@ ALLOWED_ORIGINS = [
     "http://localhost:8000",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:8000",
-    "https://shopify-translator-ui.onrender.com",
+    "https://aganim-ui.onrender.com",
     "https://admin.shopify.com",
     "https://extensions.shopifycdn.com",
 ]
@@ -59,7 +59,7 @@ DEPLOYED_APP_URL = os.getenv("DEPLOYED_APP_URL")
 if DEPLOYED_APP_URL:
     ALLOWED_ORIGINS.append(DEPLOYED_APP_URL)
 
-SHOPIFY_UI_URL = os.getenv("SHOPIFY_UI_URL", "https://shopify-translator-ui.onrender.com")
+SHOPIFY_UI_URL = os.getenv("SHOPIFY_UI_URL", "https://aganim-ui.onrender.com")
 
 # ==============================================================================
 # Localization persona + premium branding glossary
