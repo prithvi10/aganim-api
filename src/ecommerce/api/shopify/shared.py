@@ -21,7 +21,7 @@ from src.shared.security.security import (
 # =============================================================================
 
 SCOPES = "read_products,write_products,read_locales,read_translations,write_translations,read_files"
-SHOPIFY_REDIRECT_URI = "https://shopify-translator-api.onrender.com/api/auth/callback"
+SHOPIFY_REDIRECT_URI = "https://aganim-api.onrender.com/api/auth/callback"
 TOKEN_SYNC_SECRET = os.getenv("TOKEN_SYNC_SECRET")
 
 
