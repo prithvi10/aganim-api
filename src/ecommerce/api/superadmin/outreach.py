@@ -84,12 +84,12 @@ class SendCustomEmailRequest(BaseModel):
 
 class SendFeedbackRequest(BaseModel):
     recipient_filter: RecipientFilter
-    feedback_link: str = "https://forms.gle/crossborderagent-feedback"
+    feedback_link: str = "https://forms.gle/aganim-feedback"
 
 
 class SendRatingRequest(BaseModel):
     recipient_filter: RecipientFilter
-    app_store_review_link: str = "https://apps.shopify.com/crossborderagent#reviews"
+    app_store_review_link: str = "https://apps.shopify.com/aganim#reviews"
 
 
 class SendTemplateBulkRequest(BaseModel):
@@ -210,11 +210,11 @@ class SendTestTemplateRequest(BaseModel):
     template: TemplateName
     to_email: str
     merchant_name: str = "Test Store"
-    app_url: str = "https://app.crossborderagent.com"
+    app_url: str = "https://app.aganim.com"
     plan_name: str = "Pro"
-    upgrade_url: str = "https://app.crossborderagent.com/pricing"
-    feedback_link: str = "https://forms.gle/crossborderagent-feedback"
-    app_store_review_link: str = "https://apps.shopify.com/crossborderagent#reviews"
+    upgrade_url: str = "https://app.aganim.com/pricing"
+    feedback_link: str = "https://forms.gle/aganim-feedback"
+    app_store_review_link: str = "https://apps.shopify.com/aganim#reviews"
     subject: str = ""
     html_body: str = ""
 
@@ -307,7 +307,7 @@ async def send_template_outreach(
             _, html_body, text_body = template_fn(
                 custom_html_body=params.get("html_body", ""),
             )
-            subject = params.get("subject", "Message from CrossBorderAgent")
+            subject = params.get("subject", "Message from Aganim")
         else:
             raise HTTPException(status_code=400, detail="Unsupported template")
     except TypeError as exc:
@@ -513,19 +513,19 @@ async def send_template_bulk_endpoint(
             if req.template == TemplateName.welcome:
                 subject, html_body, text_body = welcome_email(
                     merchant_name=merchant_name,
-                    app_url=req.app_url or "https://app.crossborderagent.com",
+                    app_url=req.app_url or "https://app.aganim.com",
                 )
             elif req.template == TemplateName.upgrade:
                 subject, html_body, text_body = plan_upgrade_email(
                     merchant_name=merchant_name,
                     plan_name=req.plan_name or "Pro",
-                    app_url=req.app_url or "https://app.crossborderagent.com",
+                    app_url=req.app_url or "https://app.aganim.com",
                 )
             elif req.template == TemplateName.credit_limit:
                 subject, html_body, text_body = credit_limit_reached_email(
                     merchant_name=merchant_name,
                     plan_name=req.plan_name or "Free",
-                    upgrade_url=req.upgrade_url or "https://app.crossborderagent.com/pricing",
+                    upgrade_url=req.upgrade_url or "https://app.aganim.com/pricing",
                 )
             elif req.template == TemplateName.enterprise:
                 subject, html_body, text_body = enterprise_invite_email(
@@ -543,7 +543,7 @@ async def send_template_bulk_endpoint(
                 )
             elif req.template == TemplateName.custom:
                 _, html_body, text_body = custom_admin_email(req.html_body)
-                subject = req.subject or "Message from CrossBorderAgent"
+                subject = req.subject or "Message from Aganim"
             else:
                 raise HTTPException(status_code=400, detail="Unknown template")
         except TypeError as exc:

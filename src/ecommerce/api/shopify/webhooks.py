@@ -264,7 +264,7 @@ async def compliance_webhooks(request: Request, db: Session = Depends(get_db)):
         if topic == "customers/data_request":
             security_logger.info(
                 f"[GDPR] customers/data_request acknowledged shop={shop_domain or '<missing>'} "
-                f"(no customer PII stored by Cross-Border AI)"
+                f"(no customer PII stored by Aganim AI)"
             )
             return {"status": "ok", "message": "No customer personal data stored."}
 

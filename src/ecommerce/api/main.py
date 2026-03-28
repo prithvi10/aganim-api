@@ -91,6 +91,16 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS ui_language VARCHAR(5) DEFAULT 'en'"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS default_target_locale VARCHAR(10) NOT NULL DEFAULT 'en'"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS free_trial_expires_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS strategic_intelligence JSONB"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS strategic_intelligence_updated_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS meta_access_token VARCHAR"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS meta_page_id VARCHAR"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS price_guardrails JSONB"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_url VARCHAR"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_missions_remaining INTEGER NOT NULL DEFAULT 3"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_image_credits_remaining INTEGER NOT NULL DEFAULT 5"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_missions_used INTEGER NOT NULL DEFAULT 0"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_image_generations_used INTEGER NOT NULL DEFAULT 0"))
         # Backfill: set free_trial_expires_at for existing Free-plan shops that don't have it yet
         conn.execute(text("""
             UPDATE shops
