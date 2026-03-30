@@ -148,4 +148,4 @@ node_modules/
 shopify-translator-api.code-workspace
 test.db
 tmp/
-scripts/rakuten_data/
+scripts/rakuten_data/aganim_db_dump.bak

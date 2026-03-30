@@ -118,12 +118,15 @@ def _ensure_pgvector_extension_and_indexes():
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS context_chunks_tenant_id_idx ON context_chunks (tenant_id)"))
-        conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS context_chunks_embedding_idx "
-                "ON context_chunks USING ivfflat (embedding vector_cosine_ops)"
+        try:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS context_chunks_embedding_idx "
+                    "ON context_chunks USING hnsw (embedding vector_cosine_ops)"
+                )
             )
-        )
+        except Exception:
+            pass
 
 
 def _ensure_plan_columns_exist():
@@ -238,11 +241,13 @@ def _ensure_agentic_tables_exist():
 
         conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_tenant_id_idx ON agent_corrections(tenant_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS agent_corrections_resource_id_idx ON agent_corrections(resource_id)"))
-        # Embedding similarity index for learning
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS agent_corrections_embedding_idx 
-            ON agent_corrections USING ivfflat (embedding vector_cosine_ops)
-        """))
+        try:
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS agent_corrections_embedding_idx 
+                ON agent_corrections USING hnsw (embedding vector_cosine_ops)
+            """))
+        except Exception:
+            pass
 
 
 def _ensure_superadmin_tables_exist():
