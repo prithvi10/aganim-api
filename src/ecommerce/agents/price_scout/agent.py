@@ -288,12 +288,17 @@ class PriceScoutAgent(BaseAgent):
         )
         
         # Store enriched analysis in state
+        _LOCALE_CURRENCY = {"ja": "¥", "ko": "₩", "zh-TW": "NT$", "zh-CN": "¥", "th": "฿", "pt": "R$"}
+        target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+        currency_symbol = _LOCALE_CURRENCY.get(target_locale, "$")
+
         state.pricing_analysis = {
             **analysis_dict,
             "valid_competitors": valid_competitors,
             "market_analysis": market_analysis,
             "filter_reasoning": filter_reasoning,
             "raw_competitor_count": len(raw_competitors),
+            "currency": currency_symbol,
         }
         
         logger.info(
