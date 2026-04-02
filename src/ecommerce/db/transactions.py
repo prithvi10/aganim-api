@@ -242,7 +242,7 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         # Reinstall / grace period metadata
         "last_plan_name": last_plan_name,
         "current_plan_name": (getattr(shop, "current_plan_name", None) or None),
-        "effective_plan_name": (getattr(shop, "current_plan_name", None) or None),
+        "effective_plan_name": effective_plan_name,
         "access_expires_at": access_expires_at,
         "grace_active": bool(grace_active),
         # Reinstall-only UI flag: show "Grace" only when the shop previously uninstalled.
