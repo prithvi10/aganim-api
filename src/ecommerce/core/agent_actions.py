@@ -707,6 +707,7 @@ def price_scout_action(
             median_price=market_analysis.get("median_price", 0),
             competitor_text=competitor_text,
             filter_reasoning=filter_reasoning,
+            currency_symbol=currency_symbol,
         )
         
         try:
