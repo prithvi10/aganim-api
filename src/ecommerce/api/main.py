@@ -101,6 +101,7 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_image_credits_remaining INTEGER NOT NULL DEFAULT 5"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_missions_used INTEGER NOT NULL DEFAULT 0"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS monthly_image_generations_used INTEGER NOT NULL DEFAULT 0"))
+        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS brand_soul_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
         # Backfill: set free_trial_expires_at for existing Free-plan shops that don't have it yet
         conn.execute(text("""
             UPDATE shops

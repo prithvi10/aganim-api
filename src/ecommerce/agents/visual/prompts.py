@@ -413,13 +413,97 @@ light grey).
 {brand_style}Soft, even lighting. No harsh shadows. No added text or graphics.
 """
 
+# ---------------------------------------------------------------------------
+# Refinement Theme Templates (fal-ai/nano-banana/edit -- themed backgrounds)
+# ---------------------------------------------------------------------------
 
-def build_nano_banana_refinement_prompt(brand_soul: str = "") -> str:
+REFINEMENT_FIDELITY_PREAMBLE = """\
+CRITICAL FIDELITY RULES -- follow these exactly:
+- Reproduce the product from the reference image with 100% fidelity.
+- Keep the EXACT same shape, size, proportions, color, texture, material, \
+and every physical detail of the product.
+- Preserve ALL labels, brand names, logos, and text that are physically \
+printed, embossed, or attached to the product or its packaging.
+- Do NOT alter, redraw, or reinterpret any part of the physical product.
+CLEANUP RULES:
+- Remove all overlay text, promotional banners, sale stickers, price tags, \
+watermarks, and decorative graphics that are NOT part of the physical product.
+"""
+
+REFINEMENT_THEME_TEMPLATES: dict[str, str] = {
+    "clean": """\
+{fidelity_preamble}
+Replace the background with a clean, well-lit studio surface (white or light grey).
+{brand_style}Soft, even lighting. No harsh shadows. No added text or graphics.
+""",
+    "lifestyle": """\
+{fidelity_preamble}
+Place the product in a realistic, lived-in setting that matches its category. \
+A kitchen countertop for food items, a bathroom vanity for beauty products, a wooden desk for stationery. \
+Warm natural light from a window. Subtle complementary props that add context without competing with the product. \
+Photorealistic, editorial lifestyle photography.
+{brand_style}No added text or graphics.
+""",
+    "natural": """\
+{fidelity_preamble}
+Place the product on a raw natural surface -- weathered wood plank, rough linen cloth, or stone slab. \
+Surround with dried botanicals, twine, or kraft paper as minimal props. \
+Warm, golden-hour sunlight filtering through. Earthy, organic, wabi-sabi aesthetic. Muted earth tones.
+{brand_style}No added text or graphics.
+""",
+    "premium": """\
+{fidelity_preamble}
+Place the product on a dark, luxurious surface -- black marble, brushed gold tray, or deep velvet. \
+Dramatic low-key lighting with a single highlight. Rich shadows. \
+Aspirational, high-end product photography. Dark moody background with subtle texture.
+{brand_style}No added text or graphics.
+""",
+    "seasonal": """\
+{fidelity_preamble}
+Place the product in a seasonally appropriate setting. {season_description} \
+The seasonal elements should complement, not overwhelm, the product. Warm, inviting photography.
+{brand_style}No added text or graphics.
+""",
+    "minimalist": """\
+{fidelity_preamble}
+Place the product on a matte concrete or pale ash wood surface. \
+Single directional light casting a long, geometric shadow. \
+Completely empty background in a single muted tone (warm off-white, pale grey, or soft beige). \
+Ultra-clean, Muji-inspired. Absolute simplicity.
+{brand_style}No added text or graphics.
+""",
+}
+
+_SEASON_DESCRIPTIONS: dict[str, str] = {
+    "spring": "Cherry blossoms, fresh green leaves, soft pink and white tones.",
+    "summer": "Bright sunlight, citrus slices, cool blue and white tones.",
+    "autumn": "Warm amber leaves, cinnamon sticks, rich orange and brown tones.",
+    "winter": "Pine sprigs, soft snow, warm candlelight, red and gold accents.",
+}
+
+
+def _get_current_season() -> str:
+    """Return the current meteorological season based on the month."""
+    import datetime
+    month = datetime.date.today().month
+    if month in (3, 4, 5):
+        return "spring"
+    elif month in (6, 7, 8):
+        return "summer"
+    elif month in (9, 10, 11):
+        return "autumn"
+    return "winter"
+
+
+def build_nano_banana_refinement_prompt(
+    brand_soul: str = "",
+    theme: str = "clean",
+) -> str:
     """Build a fidelity-first prompt for Nano Banana /edit image refinement.
 
-    Unlike the marketing prompt, this prompt instructs the model to reproduce
-    the product exactly while only cleaning up the background and removing
-    non-product overlay text.
+    Supports themed backgrounds via the ``theme`` parameter:
+    - clean (default), lifestyle, natural, premium, seasonal, minimalist.
+    Falls back to 'clean' for unknown theme values.
     """
     brand_style = ""
     if brand_soul:
@@ -427,8 +511,17 @@ def build_nano_banana_refinement_prompt(brand_soul: str = "") -> str:
         if aesthetic:
             brand_style = f"{aesthetic} aesthetic. "
 
-    return NANO_BANANA_REFINEMENT_TEMPLATE.format(
+    template = REFINEMENT_THEME_TEMPLATES.get(theme, REFINEMENT_THEME_TEMPLATES["clean"])
+
+    season_description = ""
+    if theme == "seasonal":
+        season = _get_current_season()
+        season_description = _SEASON_DESCRIPTIONS.get(season, _SEASON_DESCRIPTIONS["spring"])
+
+    return template.format(
+        fidelity_preamble=REFINEMENT_FIDELITY_PREAMBLE,
         brand_style=brand_style,
+        season_description=season_description,
     ).strip()
 
 

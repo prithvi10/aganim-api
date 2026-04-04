@@ -43,6 +43,7 @@ def mission_state():
             "title": "Handcrafted Ceramic Bowl",
             "description": "Made in Kyoto using traditional techniques.",
             "category": "Kitchenware",
+            "brand_soul_enabled": True,
         },
         target_locale="en",
     )

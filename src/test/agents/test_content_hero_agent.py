@@ -175,7 +175,7 @@ class TestPerceiveDomain:
             product_id="p1",
             shop_id="s1",
             plan_tier="Pro",
-            raw_input={},
+            raw_input={"brand_soul_enabled": True},
         )
         state.agent_outputs = {}
         ctx = AgentContext(

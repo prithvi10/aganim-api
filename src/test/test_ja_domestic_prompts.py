@@ -574,6 +574,7 @@ class TestRewriterAgentJADomestic:
         ])
 
         state = self._make_state("ja")
+        state.raw_input["brand_soul_enabled"] = True
         agent = RewriterAgent("test-shop.myshopify.com", mock_services)
         context = await agent.perceive(state)
 
