@@ -157,7 +157,14 @@ class ImageRefinementAgent(BaseAgent):
 
         brand_soul = context.external_data.get("brand_soul", "")
         refinement_theme = context.external_data.get("refinement_theme", "clean")
-        prompt = build_nano_banana_refinement_prompt(brand_soul=brand_soul, theme=refinement_theme)
+        product_name = context.external_data.get("product_name", "")
+        brand_name = (state.raw_input or {}).get("brand_name", "")
+        prompt = build_nano_banana_refinement_prompt(
+            brand_soul=brand_soul,
+            theme=refinement_theme,
+            product_name=product_name,
+            brand_name=brand_name,
+        )
 
         visual_assets: Dict[str, Optional[str]] = {
             "original_image_url": image_url,

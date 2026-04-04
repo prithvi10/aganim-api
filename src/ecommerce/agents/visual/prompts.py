@@ -430,13 +430,19 @@ printed, embossed, or attached to the product or its packaging.
 CLEANUP RULES:
 - Remove all overlay text, promotional banners, sale stickers, price tags, \
 watermarks, and decorative graphics that are NOT part of the physical product.
+STRICT TEXT PROHIBITION:
+- Do NOT generate, render, or add ANY new text, letters, words, characters, \
+numbers, captions, labels, or typography anywhere in the image.
+- Do NOT add Japanese, Chinese, Korean, or any other script to the image.
+- The ONLY text allowed is what is physically printed on the product itself.
 """
 
 REFINEMENT_THEME_TEMPLATES: dict[str, str] = {
     "clean": """\
 {fidelity_preamble}
 Replace the background with a clean, well-lit studio surface (white or light grey).
-{brand_style}Soft, even lighting. No harsh shadows. No added text or graphics.
+{brand_style}Soft, even lighting. No harsh shadows. \
+No text, words, letters, captions, or watermarks. Purely visual.
 """,
     "lifestyle": """\
 {fidelity_preamble}
@@ -444,27 +450,27 @@ Place the product in a realistic, lived-in setting that matches its category. \
 A kitchen countertop for food items, a bathroom vanity for beauty products, a wooden desk for stationery. \
 Warm natural light from a window. Subtle complementary props that add context without competing with the product. \
 Photorealistic, editorial lifestyle photography.
-{brand_style}No added text or graphics.
+{brand_style}No text, words, letters, captions, or watermarks. Purely visual.
 """,
     "natural": """\
 {fidelity_preamble}
 Place the product on a raw natural surface -- weathered wood plank, rough linen cloth, or stone slab. \
 Surround with dried botanicals, twine, or kraft paper as minimal props. \
 Warm, golden-hour sunlight filtering through. Earthy, organic, wabi-sabi aesthetic. Muted earth tones.
-{brand_style}No added text or graphics.
+{brand_style}No text, words, letters, captions, or watermarks. Purely visual.
 """,
     "premium": """\
 {fidelity_preamble}
 Place the product on a dark, luxurious surface -- black marble, brushed gold tray, or deep velvet. \
 Dramatic low-key lighting with a single highlight. Rich shadows. \
 Aspirational, high-end product photography. Dark moody background with subtle texture.
-{brand_style}No added text or graphics.
+{brand_style}No text, words, letters, captions, or watermarks. Purely visual.
 """,
     "seasonal": """\
 {fidelity_preamble}
 Place the product in a seasonally appropriate setting. {season_description} \
 The seasonal elements should complement, not overwhelm, the product. Warm, inviting photography.
-{brand_style}No added text or graphics.
+{brand_style}No text, words, letters, captions, or watermarks. Purely visual.
 """,
     "minimalist": """\
 {fidelity_preamble}
@@ -472,7 +478,34 @@ Place the product on a matte concrete or pale ash wood surface. \
 Single directional light casting a long, geometric shadow. \
 Completely empty background in a single muted tone (warm off-white, pale grey, or soft beige). \
 Ultra-clean, Muji-inspired. Absolute simplicity.
-{brand_style}No added text or graphics.
+{brand_style}No text, words, letters, captions, or watermarks. Purely visual.
+""",
+    "informative": """\
+{fidelity_preamble}
+Professional e-commerce product photography with elegant typography overlay.
+Place the product on a clean, premium surface with soft studio lighting.
+{brand_style}\
+Render the text "{product_name}" in clean, modern, elegant typography \
+that is clearly legible and well-positioned on the image.
+{brand_name_line}\
+Spell every word correctly -- double-check spelling before rendering.
+Do NOT misspell, abbreviate, or alter the provided text in any way.
+Render the text EXACTLY as provided, character for character.
+Do NOT add any extra text, hashtags, captions, or decorative text beyond what is specified.
+High-end e-commerce quality. Print-ready.
+""",
+    "ai_choice": """\
+{fidelity_preamble}
+You are a world-class product photographer. Based on the product in the reference image, \
+choose the BEST possible setting, surface, lighting, and props that complement this specific product. \
+Consider the product's category, material, color palette, and intended audience. \
+For example: food products look best on kitchen surfaces with ingredient props; \
+skincare on marble with botanical accents; electronics on sleek dark surfaces; \
+artisan crafts on natural wood with cultural props. \
+Select the most visually compelling and commercially effective scene for THIS product.
+{brand_style}\
+Photorealistic, editorial-quality product photography. Beautiful composition.
+No text, words, letters, captions, or watermarks. Purely visual.
 """,
 }
 
@@ -500,12 +533,17 @@ def _get_current_season() -> str:
 def build_nano_banana_refinement_prompt(
     brand_soul: str = "",
     theme: str = "clean",
+    product_name: str = "",
+    brand_name: str = "",
 ) -> str:
     """Build a fidelity-first prompt for Nano Banana /edit image refinement.
 
     Supports themed backgrounds via the ``theme`` parameter:
-    - clean (default), lifestyle, natural, premium, seasonal, minimalist.
+    - clean (default), lifestyle, natural, premium, seasonal, minimalist, informative.
     Falls back to 'clean' for unknown theme values.
+
+    The ``informative`` theme renders product_name and optionally brand_name
+    as typography on the image.
     """
     brand_style = ""
     if brand_soul:
@@ -520,10 +558,19 @@ def build_nano_banana_refinement_prompt(
         season = _get_current_season()
         season_description = _SEASON_DESCRIPTIONS.get(season, _SEASON_DESCRIPTIONS["spring"])
 
+    brand_name_line = ""
+    if theme == "informative" and brand_name:
+        brand_name_line = (
+            f'Include the brand name "{brand_name}" in a smaller, '
+            f"elegant font below or beside the product name.\n"
+        )
+
     return template.format(
         fidelity_preamble=REFINEMENT_FIDELITY_PREAMBLE,
         brand_style=brand_style,
         season_description=season_description,
+        product_name=product_name or "Product",
+        brand_name_line=brand_name_line,
     ).strip()
 
 

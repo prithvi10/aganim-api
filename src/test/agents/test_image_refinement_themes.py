@@ -95,7 +95,10 @@ class TestBuildRefinementPrompt:
     def test_all_themes_have_no_text_instruction(self):
         for theme_id in REFINEMENT_THEME_TEMPLATES:
             prompt = build_nano_banana_refinement_prompt(theme=theme_id)
-            assert "No added text or graphics" in prompt or "No harsh shadows. No added text" in prompt
+            if theme_id == "informative":
+                assert "Render the text" in prompt
+            else:
+                assert "No text, words, letters, captions, or watermarks" in prompt
 
 
 # =============================================================================
@@ -142,3 +145,74 @@ class TestImageRefinementAgentTheme:
 
         context = await agent.perceive(state)
         assert context.external_data["refinement_theme"] == "clean"
+
+
+class TestInformativeTheme:
+    def test_informative_theme_includes_product_name(self):
+        prompt = build_nano_banana_refinement_prompt(
+            theme="informative",
+            product_name="Aomori Cidre Sweet",
+        )
+        assert "Aomori Cidre Sweet" in prompt
+        assert "Render the text" in prompt
+
+    def test_informative_theme_includes_brand_name(self):
+        prompt = build_nano_banana_refinement_prompt(
+            theme="informative",
+            product_name="Aomori Cidre Sweet",
+            brand_name="Wakasa Nuri Koubou",
+        )
+        assert "Wakasa Nuri Koubou" in prompt
+
+    def test_informative_theme_without_brand_name(self):
+        prompt = build_nano_banana_refinement_prompt(
+            theme="informative",
+            product_name="Aomori Cidre Sweet",
+            brand_name="",
+        )
+        assert "Aomori Cidre Sweet" in prompt
+        assert "brand name" not in prompt.lower() or "Wakasa" not in prompt
+
+    def test_informative_theme_has_spelling_instructions(self):
+        prompt = build_nano_banana_refinement_prompt(
+            theme="informative",
+            product_name="Test",
+        )
+        assert "Spell every word correctly" in prompt
+        assert "Do NOT misspell" in prompt
+
+    def test_informative_theme_still_has_fidelity_preamble(self):
+        prompt = build_nano_banana_refinement_prompt(theme="informative", product_name="Test")
+        assert "100% fidelity" in prompt
+
+
+class TestTextProhibition:
+    def test_all_non_informative_themes_have_text_prohibition(self):
+        for theme_id in REFINEMENT_THEME_TEMPLATES:
+            if theme_id == "informative":
+                continue
+            prompt = build_nano_banana_refinement_prompt(theme=theme_id)
+            assert "Do NOT generate, render, or add ANY new text" in prompt
+            assert "Do NOT add Japanese" in prompt
+
+
+class TestAiChoiceTheme:
+    def test_ai_choice_theme_gives_creative_freedom(self):
+        prompt = build_nano_banana_refinement_prompt(theme="ai_choice")
+        assert "world-class product photographer" in prompt
+        assert "BEST possible setting" in prompt
+
+    def test_ai_choice_still_has_fidelity_preamble(self):
+        prompt = build_nano_banana_refinement_prompt(theme="ai_choice")
+        assert "100% fidelity" in prompt
+
+    def test_ai_choice_has_no_text_rule(self):
+        prompt = build_nano_banana_refinement_prompt(theme="ai_choice")
+        assert "No text, words, letters, captions, or watermarks" in prompt
+
+    def test_ai_choice_with_brand_soul(self):
+        prompt = build_nano_banana_refinement_prompt(
+            theme="ai_choice",
+            brand_soul="Traditional Japanese artisan craftsmanship",
+        )
+        assert "aesthetic" in prompt.lower()
