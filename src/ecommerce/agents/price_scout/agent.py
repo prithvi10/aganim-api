@@ -264,6 +264,10 @@ class PriceScoutAgent(BaseAgent):
         # === STEP 2: Calculate Market Metrics (No LLM) ===
         market_analysis = self._calculate_market_metrics(valid_competitors)
         
+        _LOCALE_CURRENCY = {"ja": "¥", "ko": "₩", "zh-TW": "NT$", "zh-CN": "¥", "th": "฿", "pt": "R$"}
+        target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
+        currency_symbol = _LOCALE_CURRENCY.get(target_locale, "$")
+
         # === STEP 3: Generate Pricing Recommendation (LLM Call 2) ===
         analysis_dict = await self._generate_pricing_recommendation(
             product_name=product_name,
@@ -272,6 +276,7 @@ class PriceScoutAgent(BaseAgent):
             valid_competitors=valid_competitors,
             market_analysis=market_analysis,
             filter_reasoning=filter_reasoning,
+            currency_symbol=currency_symbol,
         )
         
         actions.append(
@@ -288,10 +293,6 @@ class PriceScoutAgent(BaseAgent):
         )
         
         # Store enriched analysis in state
-        _LOCALE_CURRENCY = {"ja": "¥", "ko": "₩", "zh-TW": "NT$", "zh-CN": "¥", "th": "฿", "pt": "R$"}
-        target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
-        currency_symbol = _LOCALE_CURRENCY.get(target_locale, "$")
-
         state.pricing_analysis = {
             **analysis_dict,
             "valid_competitors": valid_competitors,
@@ -425,6 +426,7 @@ class PriceScoutAgent(BaseAgent):
         valid_competitors: List[Dict[str, Any]],
         market_analysis: Dict[str, Any],
         filter_reasoning: str,
+        currency_symbol: str = "$",
     ) -> Dict[str, Any]:
         """
         Generate final pricing recommendation using filtered data and metrics.
@@ -446,6 +448,7 @@ class PriceScoutAgent(BaseAgent):
             median_price=market_analysis.get("median_price", 0),
             competitor_text=competitor_text,
             filter_reasoning=filter_reasoning,
+            currency_symbol=currency_symbol,
         )
         
         try:

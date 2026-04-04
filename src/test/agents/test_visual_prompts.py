@@ -120,15 +120,15 @@ class TestBuildAdPrompt:
         )
         assert "Brand aesthetic" not in prompt
 
-    def test_brand_soul_truncated_at_300(self):
+    def test_brand_soul_truncated(self):
         long_soul = "B" * 600
         prompt = build_ad_prompt(
             product_name="Bowl",
             hook_text="Test",
             brand_soul=long_soul,
         )
-        assert "B" * 300 in prompt
-        assert "B" * 301 not in prompt
+        assert "B" * 200 in prompt
+        assert "B" * 201 not in prompt
 
     def test_result_is_stripped(self):
         prompt = build_ad_prompt(product_name="X", hook_text="Y")

@@ -500,11 +500,25 @@ def _effective_tone(plan_name: str | None, requested: str | None) -> str:
     return tone if tone in TONE_PROMPTS else "professional"
 
 
-def _should_use_brand_context(plan_name: str | None, requested: bool | None) -> bool:
+def _should_use_brand_context(plan_name: str | None, requested: bool | None, shop_toggle: bool | None = None) -> bool:
+    if shop_toggle is not None and not shop_toggle:
+        return False
     if not requested:
         return False
     name = str(plan_name or "").strip().lower()
     return name in ("standard", "pro")
+
+
+def _get_shop_brand_soul_toggle(db, shop_domain: str) -> bool:
+    """Read the persistent brand_soul_enabled flag from the Shop record."""
+    try:
+        from src.ecommerce.db.models import Shop
+        shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+        if shop_rec:
+            return bool(getattr(shop_rec, "brand_soul_enabled", True))
+    except Exception:
+        pass
+    return True
 
 
 def _render_brand_context_block(chunks: list[dict]) -> str:
@@ -1396,8 +1410,9 @@ async def process_generation_request(
             primary_locale = await _fetch_primary_locale(shop, access_token)
 
         brand_context_block = None
+        _bs_toggle = _get_shop_brand_soul_toggle(db, shop)
         try:
-            if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+            if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False), _bs_toggle):
                 query_text = f"{request.product_name}\n{processed_desc}".strip()
                 brand_context_block = _build_brand_context_block(
                     db,
@@ -1519,8 +1534,9 @@ async def process_bulk_generation_request(
         tone_profile = _effective_tone(plan_name, getattr(request, "tone_profile", None))
 
         brand_context_block = None
+        _bs_toggle = _get_shop_brand_soul_toggle(db, shop)
         try:
-            if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+            if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False), _bs_toggle):
                 query_text = f"{request.product_name}\n{processed_desc}".strip()
                 # Compute per-locale in the task below.
                 brand_context_block = None
@@ -1530,7 +1546,7 @@ async def process_bulk_generation_request(
         def _task(locale: str):
             locale_context_block = brand_context_block
             try:
-                if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False)):
+                if _should_use_brand_context(plan_name, getattr(request, "brand_soul_enabled", False), _bs_toggle):
                     locale_context_block = _build_brand_context_block(
                         db,
                         shop=shop,
