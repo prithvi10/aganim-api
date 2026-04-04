@@ -1124,7 +1124,11 @@ class TestSerpQuerySanitizer:
             assert "google_domain" in params, f"Missing google_domain for locale {locale}"
 
     def test_real_rakuten_product_title(self):
-        """The exact product title from the user's bug report should produce a clean short query."""
+        """The exact product title from the user's bug report should produce a clean short query.
+
+        Note: 'General' is no longer stripped by _sanitize_serp_query — it is
+        skipped at the caller level (get_competitor_prices) instead.
+        """
         from src.agentic_core.tools.serp_service import _sanitize_serp_query
         raw = "【ふるさと納税】 大ボリューム！ 魚鶴仕込の 鮭 切身 ( 冷凍 ) / シャケ 切り身 紅鮭 銀鮭 ※離島への配送不可 //fish General"
         result = _sanitize_serp_query(raw)
@@ -1132,7 +1136,6 @@ class TestSerpQuerySanitizer:
         assert "大ボリューム" not in result
         assert "離島" not in result
         assert "配送不可" not in result
-        assert "General" not in result
         assert "鮭" in result
         assert "魚鶴" in result
         assert len(result) <= 80
