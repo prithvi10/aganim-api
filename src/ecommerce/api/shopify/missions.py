@@ -195,7 +195,8 @@ async def create_mission(
             "category": mission_req.category,
             "tone": mission_req.tone_profile,
             "target_locale": mission_req.target_locale,
-            "brand_soul_enabled": mission_req.brand_soul_enabled,
+            "brand_soul_enabled": bool(auth_context.get("brand_soul_enabled", True)),
+            "refinement_theme": getattr(mission_req, "refinement_theme", "clean"),
     }
     # Include product image URL for VisualAgent
     if mission_req.image_url:
@@ -2304,7 +2305,7 @@ async def create_bulk_mission(
             "category": item.category,
             "tone": prefs.tone_profile,
             "target_locale": item.target_market,
-            "brand_soul_enabled": prefs.brand_soul_enabled,
+            "brand_soul_enabled": bool(auth_context.get("brand_soul_enabled", True)),
             "us_units_conversion": prefs.us_units_conversion,
             "image_url": image_urls.get(item.row_id),
             "_bulk_mission": True,

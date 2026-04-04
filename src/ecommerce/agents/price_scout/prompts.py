@@ -87,10 +87,10 @@ Category: {category}
 Description: {product_description}
 
 ## MARKET ANALYSIS (from {competitor_count} filtered competitors):
-- Minimum Price: ${min_price:.2f}
-- Maximum Price: ${max_price:.2f}
-- Average Price: ${average_price:.2f}
-- Median Price: ${median_price:.2f}
+- Minimum Price: {currency_symbol}{min_price:.2f}
+- Maximum Price: {currency_symbol}{max_price:.2f}
+- Average Price: {currency_symbol}{average_price:.2f}
+- Median Price: {currency_symbol}{median_price:.2f}
 
 ## FILTERED COMPETITORS (True Comparables):
 {competitor_text}

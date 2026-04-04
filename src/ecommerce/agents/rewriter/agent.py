@@ -121,8 +121,8 @@ class RewriterAgent(BaseAgent):
         # Build product text for embedding search
         product_text = f"{context.get_product_title()} {context.get_product_description()}"
         
-        # Fetch brand context via RAG (embedding similarity - not LLM)
-        if state.db:
+        brand_soul_enabled = (state.raw_input or {}).get("brand_soul_enabled", True)
+        if brand_soul_enabled and state.db:
             try:
                 brand_chunks = await self.services.rag.get_brand_context(
                     db=state.db,
