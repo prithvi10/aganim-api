@@ -127,7 +127,9 @@ def build_ad_prompt(
     """Build the Ideogram ad generation prompt."""
     brand_style = ""
     if brand_soul:
-        brand_style = f"Brand aesthetic: {brand_soul[:300]}."
+        aesthetic = _distill_brand_aesthetic(brand_soul, max_len=200)
+        if aesthetic:
+            brand_style = f"Brand aesthetic: {aesthetic}."
 
     brand_name_line = ""
     if brand_name:
