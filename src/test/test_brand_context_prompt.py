@@ -21,3 +21,5 @@ def test_brand_context_gating():
     assert _should_use_brand_context("Pro", True) is True
     assert _should_use_brand_context("Basic", True) is False
     assert _should_use_brand_context("Free", True) is False
+    assert _should_use_brand_context("Standard", True, shop_toggle=False) is False
+    assert _should_use_brand_context("Pro", True, shop_toggle=False) is False

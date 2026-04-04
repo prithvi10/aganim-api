@@ -300,6 +300,8 @@ async def get_usage(
         # Free trial
         "free_trial_expires_at": (auth_context.get("free_trial_expires_at").isoformat() if auth_context.get("free_trial_expires_at") else None),
         "free_trial_expired": bool(auth_context.get("free_trial_expired")),
+        "brand_soul_enabled": bool(getattr(shop, "brand_soul_enabled", True)),
+        "brand_context_status": getattr(shop, "brand_context_status", None) or "idle",
     }
 
 
@@ -339,6 +341,41 @@ async def update_ui_language(
 
     logger.info("[UiLang] shop=%s lang=%s", shop_domain, ui_language)
     return {"ui_language": ui_language}
+
+
+# =============================================================================
+# Brand Soul Toggle
+# =============================================================================
+
+@router.put("/api/admin/brand-soul-toggle")
+async def update_brand_soul_toggle(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Persist the merchant's brand soul enabled/disabled preference."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    shop_domain = str(body.get("shop") or "").strip()
+    enabled = body.get("enabled")
+
+    if not shop_domain:
+        raise HTTPException(status_code=400, detail="Missing shop")
+    if enabled is None or not isinstance(enabled, bool):
+        raise HTTPException(status_code=400, detail="enabled must be a boolean")
+
+    shop_rec = db.query(Shop).filter(Shop.domain == shop_domain).first()
+    if not shop_rec:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    shop_rec.brand_soul_enabled = enabled
+    db.add(shop_rec)
+    db.commit()
+
+    logger.info("[BrandSoulToggle] shop=%s enabled=%s", shop_domain, enabled)
+    return {"brand_soul_enabled": enabled}
 
 
 # =============================================================================
@@ -1186,7 +1223,8 @@ async def generate_content_endpoint(
                 else:
                     # --- Standard path: Art Director LLM call ---
                     shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-                    strategic_intel = getattr(shop_record, "strategic_intelligence", None) if shop_record else None
+                    _brand_soul_on = bool(getattr(shop_record, "brand_soul_enabled", True)) if shop_record else False
+                    strategic_intel = getattr(shop_record, "strategic_intelligence", None) if (shop_record and _brand_soul_on) else None
                     brand_soul = str(strategic_intel)[:300] if strategic_intel else ""
                     brand_name = body.get("brand_name", "")
 
