@@ -131,9 +131,26 @@ class TestPerceiveDomain:
         assert ctx.external_data["hook_text"] == "From Raw"
 
     @pytest.mark.asyncio
-    async def test_extracts_brand_soul(self, agent, pro_state, context_base):
+    async def test_extracts_brand_soul(self, agent, context_base):
         """Should extract brand_soul from strategic_intelligence or raw_input."""
-        ctx = await agent._perceive_domain(pro_state, context_base)
+        state = MissionState(
+            product_id="product-123",
+            shop_id="test-shop.myshopify.com",
+            plan_tier="Pro",
+            raw_input={
+                "title": "Handcrafted Ceramic Bowl",
+                "product_name": "Handcrafted Ceramic Bowl",
+                "image_url": "https://cdn.shopify.com/product.jpg",
+                "brand_name": "Kyoto Artisan",
+                "hook_text": "New Collection",
+                "brand_soul_enabled": True,
+            },
+        )
+        state.visual_assets = {
+            "refined_url": "https://cdn.shopify.com/refined.png",
+            "original_image_url": "https://cdn.shopify.com/product.jpg",
+        }
+        ctx = await agent._perceive_domain(state, context_base)
         assert "brand_soul" in ctx.external_data
 
 

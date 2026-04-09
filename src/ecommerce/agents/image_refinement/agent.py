@@ -76,6 +76,7 @@ class ImageRefinementAgent(BaseAgent):
         context.external_data["product_name"] = raw.get(
             "product_name", raw.get("title", "")
         )
+        context.external_data["refinement_theme"] = raw.get("refinement_theme", "clean")
 
         if not image_url:
             logger.warning(
@@ -155,7 +156,15 @@ class ImageRefinementAgent(BaseAgent):
             state.add_log(f"ImageRefinement: [{pct}%] {label}")
 
         brand_soul = context.external_data.get("brand_soul", "")
-        prompt = build_nano_banana_refinement_prompt(brand_soul=brand_soul)
+        refinement_theme = context.external_data.get("refinement_theme", "clean")
+        product_name = context.external_data.get("product_name", "")
+        brand_name = (state.raw_input or {}).get("brand_name", "")
+        prompt = build_nano_banana_refinement_prompt(
+            brand_soul=brand_soul,
+            theme=refinement_theme,
+            product_name=product_name,
+            brand_name=brand_name,
+        )
 
         visual_assets: Dict[str, Optional[str]] = {
             "original_image_url": image_url,

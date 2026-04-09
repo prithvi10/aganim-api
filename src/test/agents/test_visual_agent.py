@@ -255,7 +255,7 @@ class TestPerceiveDomain:
             product_id="p1",
             shop_id="s1",
             plan_tier="Pro",
-            raw_input={"image_url": "https://img.com/p.jpg"},
+            raw_input={"image_url": "https://img.com/p.jpg", "brand_soul_enabled": True},
         )
         context_base.strategic_intelligence = {"archetype": "Artisan", "tone": "refined"}
 
@@ -272,6 +272,7 @@ class TestPerceiveDomain:
             raw_input={
                 "image_url": "https://img.com/p.jpg",
                 "brand_context": "Traditional Japanese craftsmanship",
+                "brand_soul_enabled": True,
             },
         )
         context_base.strategic_intelligence = None
@@ -286,7 +287,7 @@ class TestPerceiveDomain:
             product_id="p1",
             shop_id="s1",
             plan_tier="Pro",
-            raw_input={"image_url": "https://img.com/p.jpg"},
+            raw_input={"image_url": "https://img.com/p.jpg", "brand_soul_enabled": True},
         )
         context_base.strategic_intelligence = {"long": "A" * 1000}
 

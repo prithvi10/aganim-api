@@ -30,8 +30,7 @@ _JA_NOISE_PHRASES_RE = _re.compile(
     r"|画像はイメージ|お早めに|賞味期限|消費期限|保存方法"
     r"|寄附申込み.{0,10}キャンセル|返礼品の変更|よくある質問"
     r"|共通返礼品|配送方法|製造者|提供元|配送不可地域"
-    r"|お選びください|こちらの.{0,10}返礼品"
-    r"|General$",
+    r"|お選びください|こちらの.{0,10}返礼品",
     _re.IGNORECASE,
 )
 
@@ -239,6 +238,11 @@ class SerpService:
             logger.warning("[SERP] API key not configured; skipping shopping search")
             return []
 
+        logger.info(
+            "[SERP] shopping query=%s gl=%s hl=%s location=%s domain=%s",
+            q[:60], gl, hl, location, google_domain,
+        )
+
         currency = self._currency_symbol(gl)
 
         base_params: dict = {
@@ -364,8 +368,16 @@ class SerpService:
         hl: Optional[str] = None,
         google_domain: Optional[str] = None,
     ) -> List[Dict]:
-        """Fetch competitor prices using Google Shopping API."""
-        query = f"{product_name} {category}"
+        """Fetch competitor prices using Google Shopping API.
+
+        Tries the full product name first.  If zero results, retries with a
+        simplified query (first few meaningful words + category) to catch
+        broader matches.
+        """
+        cat = (category or "").strip()
+        cat_suffix = f" {cat}" if cat and cat.lower() != "general" else ""
+
+        query = f"{product_name}{cat_suffix}"
         results = await self.search_shopping(
             query,
             num_results=num_results,
@@ -374,6 +386,21 @@ class SerpService:
             hl=hl,
             google_domain=google_domain,
         )
+
+        if not results:
+            short_name = " ".join(product_name.split()[:4])
+            fallback_query = f"{short_name}{cat_suffix}"
+            if _sanitize_serp_query(fallback_query) != _sanitize_serp_query(query):
+                logger.info("[SERP] retrying with shorter query: %s", fallback_query[:40])
+                results = await self.search_shopping(
+                    fallback_query,
+                    num_results=num_results,
+                    location=location or "United States",
+                    gl=gl,
+                    hl=hl,
+                    google_domain=google_domain,
+                )
+
         return [
             {
                 "title": r.title,
