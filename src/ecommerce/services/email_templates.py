@@ -132,7 +132,7 @@ def _feature_list_text(features: dict[str, bool], *, only_true: bool = True) -> 
 
 def welcome_email(merchant_name: str, app_url: str = "") -> tuple[str, str, str]:
     """Welcome email sent when a merchant first installs the app."""
-    subject = "Welcome to Aganim!"
+    subject = "Welcome to Aganim AI"
 
     free_features = PLAN_ENTITLEMENTS["Free"]
 

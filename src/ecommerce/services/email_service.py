@@ -5,7 +5,7 @@ Required env vars:
     AWS_REGION           -- SES region (e.g. us-east-1)
     AWS_ACCESS_KEY_ID    -- IAM credentials (already set for R2)
     AWS_SECRET_ACCESS_KEY
-    SES_FROM_ADDRESS     -- Verified SES sender (e.g. hello@aganim.com)
+    SES_FROM_ADDRESS     -- Verified SES sender (e.g. Aganim <architect@aganim-ai.com>)
 """
 
 from __future__ import annotations
@@ -55,7 +55,9 @@ async def send_email(
 
     Returns dict with ``message_id`` on success, raises on failure.
     """
-    from_address = os.getenv("SES_FROM_ADDRESS", "noreply@aganim.com")
+    from_address = os.getenv(
+        "SES_FROM_ADDRESS", '"Aganim" <architect@aganim-ai.com>'
+    )
     client = _get_ses_client()
 
     message: dict = {
