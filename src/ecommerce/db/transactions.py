@@ -252,6 +252,7 @@ def get_shop_quota_context(db: Session, shop_domain: str) -> dict | None:
         # Free trial
         "free_trial_expires_at": free_trial_expires_at,
         "free_trial_expired": bool(free_trial_expired),
+        "brand_soul_enabled": bool(getattr(shop, "brand_soul_enabled", True)),
     }
 
 def record_successful_rewrite(db: Session, shop_domain: str, amount: int = 1) -> Shop | None:

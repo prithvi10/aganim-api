@@ -120,12 +120,12 @@ class BaseAgent(ABC):
     # -------------------------------------------------------------------------
     async def perceive(self, state: MissionState) -> AgentContext:
         """Gather context from environment."""
-        # Base perception: get learned rules from memory
         learned_rules = await self.memory.get_learned_preferences(self.role_name)
         
-        # Get strategic intelligence if available
+        brand_soul_enabled = (state.raw_input or {}).get("brand_soul_enabled", True)
+
         strategic_intel = None
-        if state.db:
+        if brand_soul_enabled and state.db:
             try:
                 strategic_intel = await self.services.rag.get_strategic_intelligence(
                     state.db,
@@ -145,7 +145,6 @@ class BaseAgent(ABC):
             strategic_intelligence=strategic_intel,
         )
         
-        # Let subclasses add domain-specific perception (RAG, SERP, etc.)
         return await self._perceive_domain(state, context)
 
     @abstractmethod

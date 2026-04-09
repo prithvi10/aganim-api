@@ -77,6 +77,8 @@ class Shop(Base):
     monthly_missions_used = Column(Integer, nullable=False, default=0, server_default="0")
     monthly_image_generations_used = Column(Integer, nullable=False, default=0, server_default="0")
 
+    brand_soul_enabled = Column(Boolean, nullable=False, default=True, server_default="1")
+
 
 class UsageRecord(Base):
     __tablename__ = "usage_records"

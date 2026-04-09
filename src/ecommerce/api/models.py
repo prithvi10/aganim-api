@@ -108,6 +108,8 @@ class MissionRequest(BaseModel):
     workflow_config: list[dict[str, Any]] | None = None
     # Product featured image URL — used by VisualAgent for image generation
     image_url: str | None = None
+    # Theme for ImageRefinementAgent background styling
+    refinement_theme: str = "clean"
     # Extra context from the Mission Wizard (blog topic, collection info, etc.)
     # Merged into raw_input so agents can access it via state.raw_input.
     extra_context: dict[str, Any] | None = None
