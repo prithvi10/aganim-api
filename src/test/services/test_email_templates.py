@@ -78,7 +78,7 @@ class TestWelcomeEmail:
 
     def test_subject(self):
         subject, _, _ = welcome_email("Acme", "https://app.example.com")
-        assert subject == "Welcome to Aganim!"
+        assert subject == "Welcome to Aganim AI"
 
     def test_html_contains_merchant_name(self):
         _, html, _ = welcome_email("Acme Store", "https://app.example.com")
