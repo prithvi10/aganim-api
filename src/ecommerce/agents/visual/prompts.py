@@ -436,11 +436,9 @@ numbers, captions, labels, or typography anywhere in the image.
 - Do NOT add Japanese, Chinese, Korean, or any other script to the image.
 - The ONLY text allowed is what is physically printed on the product itself.
 COMPOSITION SAFETY:
-- NEVER crop, truncate, or cut off any person, face, or body part at image edges.
-- All human subjects must be fully visible within the frame with proper headroom.
+- NEVER crop, truncate, or cut off any person, face, or body part.
 - Maintain natural proportions — no distortion of faces, hands, or limbs.
 - Avoid any imagery that could appear violent, disturbing, or anatomically incorrect.
-- Ensure the product is fully visible and centered in the frame.
 """
 
 REFINEMENT_THEME_TEMPLATES: dict[str, str] = {
