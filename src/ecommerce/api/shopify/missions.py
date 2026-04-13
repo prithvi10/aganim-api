@@ -1210,14 +1210,32 @@ async def continue_step(
                     rid, shop, str(e),
                 )
         
-        # 2.5️⃣ Inject visual assets (refined image + ad) into product description
+        # 2.5️⃣ Inject visual assets (refined image + ad) into product description + media gallery
         visual_assets = state.visual_assets or {}
         refined_url = visual_assets.get("refined_url")
         ad_url = visual_assets.get("ad_url")
         if access_token and product_id and (refined_url or ad_url):
+            product_name = (state.raw_input or {}).get("product_name", "product")
+
+            # Add images to product media gallery
+            from src.ecommerce.services.shopify_service import add_product_image
+            product_gid = product_id if product_id.startswith("gid://") else f"gid://shopify/Product/{product_id}"
+            for url, label in [(refined_url, "AI-refined product image"), (ad_url, "marketing ad")]:
+                if url:
+                    try:
+                        await add_product_image(
+                            shop_domain=shop,
+                            access_token=access_token,
+                            product_id=product_gid,
+                            image_url=url,
+                            alt_text=f"{product_name} - {label}",
+                        )
+                    except Exception as e:
+                        logger.warning("[MissionStep] add_product_image failed url=%s err=%s", url, e)
+
+            # Inject into product description HTML
             try:
                 current_body = await get_product_body(shop, access_token, product_id) or ""
-                product_name = (state.raw_input or {}).get("product_name", "product")
 
                 img_parts = []
                 if refined_url:
@@ -2046,6 +2064,50 @@ async def skip_step(
         "mission_status": state.status,
         "skipped_agents": state.skipped_agents,
     }
+
+
+# =============================================================================
+# Cancel Mission
+# =============================================================================
+
+@router.post("/api/missions/{mission_id}/cancel")
+async def cancel_mission(
+    mission_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    shop: str = Depends(resolve_shop_domain),
+):
+    """Cancel a mission. Works for any non-completed status."""
+    rid = _rid(request)
+    from src.ecommerce.db.models import Mission
+
+    mission = db.query(Mission).filter(
+        Mission.id == mission_id,
+        Mission.shop_id == shop,
+    ).first()
+
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+
+    if mission.status == "COMPLETED":
+        raise HTTPException(status_code=400, detail="Cannot cancel a completed mission")
+
+    logger.info(
+        "[MissionCancel] rid=%s shop=%s mission_id=%s prev_status=%s",
+        rid, shop, mission_id, mission.status,
+    )
+
+    mission.status = "CANCELLED"
+    state_dict = mission.current_state or {}
+    state_dict["status"] = "CANCELLED"
+    mission.current_state = state_dict
+    mission.logs = (mission.logs or []) + [f"Mission cancelled by merchant (was {mission.status})"]
+    db.add(mission)
+    db.commit()
+
+    _mission_locks.pop(mission_id, None)
+
+    return {"status": "cancelled", "mission_id": mission_id}
 
 
 # =============================================================================
