@@ -239,7 +239,7 @@ def test_plan_gating_non_pro_rejected(mock_create_task, client):
 @patch("src.ecommerce.api.shopify.missions.asyncio.create_task")
 def test_image_credit_preflight_insufficient(mock_create_task, client):
     """Pro shop with only 3 remaining image credits -> 422 for 5-product full_launch."""
-    _seed_shop("Pro", image_credits_used=147)  # 150 - 147 = 3 remaining
+    _seed_shop("Pro", image_credits_used=97)  # 100 - 97 = 3 remaining
     zip_data = _zip_bytes(5)
 
     resp = client.post(
