@@ -487,6 +487,26 @@ def _is_ja_domestic(locale: str | None) -> bool:
         return False
     return str(locale).strip().lower() == "ja"
 
+
+SPEC_HEADINGS: dict[str, tuple[str, str]] = {
+    "en": ("Product Specifications", "Detailed Dimensions"),
+    "ja": ("製品仕様", "詳細寸法"),
+    "fr": ("Spécifications du produit", "Dimensions détaillées"),
+    "de": ("Produktspezifikationen", "Detaillierte Abmessungen"),
+    "es": ("Especificaciones del producto", "Dimensiones detalladas"),
+    "pt": ("Especificações do produto", "Dimensões detalhadas"),
+    "ko": ("제품 사양", "상세 치수"),
+    "zh": ("产品规格", "详细尺寸"),
+    "it": ("Specifiche del prodotto", "Dimensioni dettagliate"),
+    "th": ("ข้อมูลจำเพาะของผลิตภัณฑ์", "ขนาดโดยละเอียด"),
+}
+
+
+def get_spec_headings(locale: str | None) -> tuple[str, str]:
+    """Return (specs_heading, dimensions_heading) for the given locale."""
+    lang = str(locale or "en").strip().lower().split("-")[0]
+    return SPEC_HEADINGS.get(lang, SPEC_HEADINGS["en"])
+
 def _effective_tone(plan_name: str | None, requested: str | None) -> str:
     """
     Basic plan: force professional.
@@ -829,7 +849,12 @@ def _augment_spec_tables_for_standard_pro(
     
     Returns dict with keys: description, seo_title, seo_description
     """
-    system = UNIFIED_STANDARD_PRO_PASS_SYSTEM_TEMPLATE.format(target_locale=target_locale)
+    spec_h, dim_h = get_spec_headings(target_locale)
+    system = UNIFIED_STANDARD_PRO_PASS_SYSTEM_TEMPLATE.format(
+        target_locale=target_locale,
+        spec_heading=spec_h,
+        dim_heading=dim_h,
+    )
 
     user = {
         "target_locale": target_locale,
@@ -907,16 +932,15 @@ def _augment_spec_tables_for_standard_pro(
     def _strip_existing_spec_dim_tables(html: str) -> str:
         """
         Remove previously-inserted Product Specifications / Detailed Dimensions blocks.
-        Conservative: only strips when it sees the exact <h3> headers and a following <table>.
+        Handles headings in all supported locales.
         """
         import re
 
         out = str(html or "")
-        patterns = [
-            r"<h3>\s*Product Specifications\s*</h3>\s*<table[\s\S]*?</table>",
-            r"<h3>\s*Detailed Dimensions\s*</h3>\s*<table[\s\S]*?</table>",
-        ]
-        for pat in patterns:
+        all_spec_headings = [h[0] for h in SPEC_HEADINGS.values()]
+        all_dim_headings = [h[1] for h in SPEC_HEADINGS.values()]
+        for heading in all_spec_headings + all_dim_headings:
+            pat = rf"<h3>\s*{re.escape(heading)}\s*</h3>\s*<table[\s\S]*?</table>"
             out = re.sub(pat, "", out, flags=re.IGNORECASE)
         return out.strip()
 
@@ -935,32 +959,32 @@ def _augment_spec_tables_for_standard_pro(
     # We accept either:
     # - a fully-merged final_description_html that already contains the tables, OR
     # - split table fields we can append ourselves.
+    spec_h, dim_h = get_spec_headings(target_locale)
+
     final_has_any_table = "<table" in final_html.lower()
-    final_has_specs = "<h3>Product Specifications</h3>" in final_html
-    final_has_dims = "<h3>Detailed Dimensions</h3>" in final_html
+    final_has_specs = f"<h3>{spec_h}</h3>" in final_html or "<h3>Product Specifications</h3>" in final_html
+    final_has_dims = f"<h3>{dim_h}</h3>" in final_html or "<h3>Detailed Dimensions</h3>" in final_html
 
     specs_block = ""
     dims_block = ""
 
-    # Prefer explicit split fields if present; otherwise try extracting from final_html.
     if "<table" in (specs_tbl or "").lower():
         specs_block = specs_tbl
     else:
-        specs_block = _extract_table_block(final_html, "Product Specifications")
+        specs_block = _extract_table_block(final_html, spec_h) or _extract_table_block(final_html, "Product Specifications")
 
     if "<table" in (dims_tbl or "").lower():
         dims_block = dims_tbl
     else:
-        dims_block = _extract_table_block(final_html, "Detailed Dimensions")
+        dims_block = _extract_table_block(final_html, dim_h) or _extract_table_block(final_html, "Detailed Dimensions")
 
-    # Ensure headings exist (some models might return bare <table>...</table>)
     if specs_block and "<h3" not in specs_block.lower():
-        specs_block = f"<h3>Product Specifications</h3>\n{specs_block}".strip()
+        specs_block = f"<h3>{spec_h}</h3>\n{specs_block}".strip()
     if dims_block and "<h3" not in dims_block.lower():
-        dims_block = f"<h3>Detailed Dimensions</h3>\n{dims_block}".strip()
+        dims_block = f"<h3>{dim_h}</h3>\n{dims_block}".strip()
 
-    has_specs = "<h3>Product Specifications</h3>" in specs_block
-    has_dims = "<h3>Detailed Dimensions</h3>" in dims_block
+    has_specs = bool(specs_block and "<table" in specs_block.lower())
+    has_dims = bool(dims_block and "<table" in dims_block.lower())
 
     try:
         logger.info(

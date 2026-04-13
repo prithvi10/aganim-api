@@ -182,7 +182,7 @@ class ImageRefinementAgent(BaseAgent):
                 prompt[:200], image_url,
             )
 
-            _progress("refining", 20, "Sending image to Nano Banana for refinement...")
+            _progress("refining", 20, "AI image refinement in progress...")
 
             fal_client = _get_fal_client()
             result = await asyncio.to_thread(

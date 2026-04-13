@@ -408,8 +408,8 @@ TASK:
 
 2. **Spec Tables**:
    - Produce exactly TWO tables in HTML and append them to the END of the description:
-     1) <h3>Product Specifications</h3> + <table>...</table>
-     2) <h3>Detailed Dimensions</h3> + <table>...</table>
+     1) <h3>{spec_heading}</h3> + <table>...</table>
+     2) <h3>{dim_heading}</h3> + <table>...</table>
    - Remove any existing specification/dimensions tables from description_html before appending.
    - **Strict constraint**: Only include specs/dimensions explicitly in `source_text`. If none, omit the row.
 
