@@ -195,10 +195,10 @@ class TestPlanEntitlements:
         assert ent["price_scout"] is True
         assert ent["product_limit"] == -1
 
-    def test_standard_no_image_agents_in_missions(self):
+    def test_standard_image_credits_and_agents_in_missions(self):
         ent = PLAN_ENTITLEMENTS["Standard"]
         assert ent["mission_agents"] == "text_full"
-        assert ent["image_generation_limit"] == 0
+        assert ent["image_generation_limit"] == 10
         assert ent["image_refinement_adhoc"] is False
 
     def test_standard_3_monthly_missions(self):
@@ -214,8 +214,8 @@ class TestPlanEntitlements:
                         "apply_price", "meta_integration"]:
             assert ent[feature] is True, f"Pro should have {feature}=True"
 
-    def test_pro_150_image_credits(self):
-        assert PLAN_ENTITLEMENTS["Pro"]["image_generation_limit"] == 150
+    def test_pro_100_image_credits(self):
+        assert PLAN_ENTITLEMENTS["Pro"]["image_generation_limit"] == 100
         assert PLAN_ENTITLEMENTS["Pro"]["image_limit_type"] == "monthly"
 
     def test_pro_unlimited_missions(self):
@@ -436,7 +436,7 @@ class TestValidateImageCredits:
         validate_image_credits(ctx)
 
     def test_pro_blocks_when_at_limit(self):
-        ctx = _make_context("Pro", {"monthly_image_generations_used": 150})
+        ctx = _make_context("Pro", {"monthly_image_generations_used": 100})
         with pytest.raises(HTTPException) as exc:
             validate_image_credits(ctx)
         assert exc.value.status_code == 403

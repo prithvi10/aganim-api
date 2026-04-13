@@ -782,12 +782,12 @@ class TestApproachingLimitsFlow:
             lifetime_missions_remaining=3,
             lifetime_image_credits_remaining=5,
         ))
-        # Pro merchant with high image usage (entitlement: 150)
+        # Pro merchant with high image usage (entitlement: 100)
         db.add(Plan(name="Pro", price_usd_monthly=29.99, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
         db.add(Shop(
             domain="pro-img-high.myshopify.com", access_token="t",
             current_plan_name="Pro", is_active=True,
-            monthly_image_generations_used=140,
+            monthly_image_generations_used=90,
         ))
         # Inactive merchant (should be excluded)
         db.add(Shop(
@@ -814,7 +814,7 @@ class TestApproachingLimitsFlow:
 
         pro_img = next(m for m in data["merchants"] if m["domain"] == "pro-img-high.myshopify.com")
         img_breach = next(b for b in pro_img["breaches"] if b["resource"] == "Image Credits")
-        assert img_breach["pct"] == round(140 / 150 * 100)
+        assert img_breach["pct"] == round(90 / 100 * 100)
         assert img_breach["limit_type"] == "monthly"
 
 

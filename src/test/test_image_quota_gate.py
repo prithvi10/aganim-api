@@ -98,9 +98,9 @@ class TestCheckImageQuota:
         with pytest.raises(ImageQuotaExceeded, match="not available"):
             check_image_quota(db_session, "free-ok", "Basic")
 
-    def test_standard_zero_limit_raises(self, db_session):
-        with pytest.raises(ImageQuotaExceeded, match="not available"):
-            check_image_quota(db_session, "free-ok", "Standard")
+    def test_standard_within_limit(self, db_session):
+        """Standard now has 10 image credits/month — should pass with credits remaining."""
+        check_image_quota(db_session, "free-ok", "Standard")
 
     def test_unknown_shop_passes(self, db_session):
         """If the shop is not in the DB, we allow (fail-open)."""
