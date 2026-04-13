@@ -199,7 +199,8 @@ class TestPlanEntitlements:
         ent = PLAN_ENTITLEMENTS["Standard"]
         assert ent["mission_agents"] == "text_full"
         assert ent["image_generation_limit"] == 10
-        assert ent["image_refinement_adhoc"] is False
+        assert ent["image_refinement_adhoc"] is True
+        assert ent["ad_image_generation"] is True
 
     def test_standard_3_monthly_missions(self):
         ent = PLAN_ENTITLEMENTS["Standard"]
@@ -234,7 +235,7 @@ class TestPlanEntitlements:
         assert get_required_tier("seo") == "Standard"
 
     def test_get_required_tier_image(self):
-        assert get_required_tier("image_refinement_adhoc") == "Pro"
+        assert get_required_tier("image_refinement_adhoc") == "Standard"
 
     def test_get_required_tier_unknown_returns_none(self):
         assert get_required_tier("rewriter") is None
@@ -275,12 +276,10 @@ class TestValidateFeatureAccess:
             validate_feature_access(ctx, "price_scout")
         assert exc.value.status_code == 403
 
-    def test_standard_cannot_access_images(self):
+    def test_standard_can_access_images(self):
         ctx = _make_context("Standard")
-        with pytest.raises(HTTPException) as exc:
-            validate_feature_access(ctx, "image_refinement_adhoc")
-        assert exc.value.status_code == 403
-        assert "Pro" in exc.value.detail
+        validate_feature_access(ctx, "image_refinement_adhoc")
+        validate_feature_access(ctx, "ad_image_generation")
 
     def test_standard_cannot_publish(self):
         ctx = _make_context("Standard")
@@ -415,11 +414,9 @@ class TestValidateImageCredits:
             validate_image_credits(ctx)
         assert exc.value.status_code == 403
 
-    def test_standard_has_no_image_access(self):
-        ctx = _make_context("Standard")
-        with pytest.raises(HTTPException) as exc:
-            validate_image_credits(ctx)
-        assert exc.value.status_code == 403
+    def test_standard_allows_when_credits_remain(self):
+        ctx = _make_context("Standard", {"monthly_image_generations_used": 5})
+        validate_image_credits(ctx)
 
     def test_free_allows_when_credits_remain(self):
         ctx = _make_context("Free", {"lifetime_image_credits_remaining": 3})
