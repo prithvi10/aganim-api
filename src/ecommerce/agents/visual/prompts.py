@@ -435,10 +435,6 @@ STRICT TEXT PROHIBITION:
 numbers, captions, labels, or typography anywhere in the image.
 - Do NOT add Japanese, Chinese, Korean, or any other script to the image.
 - The ONLY text allowed is what is physically printed on the product itself.
-COMPOSITION SAFETY:
-- NEVER crop, truncate, or cut off any person, face, or body part.
-- Maintain natural proportions — no distortion of faces, hands, or limbs.
-- Avoid any imagery that could appear violent, disturbing, or anatomically incorrect.
 """
 
 REFINEMENT_THEME_TEMPLATES: dict[str, str] = {
