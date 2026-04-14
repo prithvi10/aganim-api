@@ -1011,7 +1011,7 @@ class TestConcerns:
         assert resp.status_code == 422
 
     def test_submit_concern_no_auth(self, client):
-        """Submit-concern endpoint (merchant-facing) doesn't need admin JWT."""
+        """Submit-concern endpoint now requires admin JWT (Header validation → 422)."""
         resp = client.post(
             "/api/superadmin/submit-concern",
             json={
@@ -1021,10 +1021,7 @@ class TestConcerns:
                 "message": "Product page is broken",
             },
         )
-        # No admin auth required — but since it's under the superadmin router
-        # with mixed auth, it should still work since the submit-concern
-        # endpoint is on the non-admin sub-router.
-        assert resp.status_code in (200, 422)  # depends on auth dependency scope
+        assert resp.status_code in (401, 403, 422)
 
     def test_submit_concern_missing_fields(self, client):
         resp = client.post(

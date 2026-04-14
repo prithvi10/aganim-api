@@ -24,6 +24,7 @@ def mock_get_db():
 # Override the dependencies globally
 app.dependency_overrides[get_api_key_hash] = mock_get_api_key_hash
 app.dependency_overrides[get_db] = mock_get_db
+app.dependency_overrides[verify_shopify_proxy_request] = lambda: "test-shop.myshopify.com"
 
 @pytest.fixture
 def mock_auth_context():
@@ -93,15 +94,19 @@ def test_proxy_generate_copy_endpoint_success(mock_auth_context):
         mock_validate.assert_called_once()
         mock_process.assert_called_once()
 
-def test_proxy_generate_copy_missing_shop():
-    """Test proxy endpoint fails correctly when shop param is missing."""
-    
-    response = client.post(
-        "/api/proxy/generate-copy", # No shop param
-        json={
-            "product_name": "Proxy Product",
-            "japanese_description": "Proxy Desc"
-        }
-    )
-    assert response.status_code == 400
-    assert "Missing shop parameter" in response.json()["detail"]
+def test_proxy_generate_copy_missing_signature():
+    """Test proxy endpoint rejects requests without a valid proxy signature."""
+    saved = app.dependency_overrides.pop(verify_shopify_proxy_request, None)
+    try:
+        response = client.post(
+            "/api/proxy/generate-copy",
+            json={
+                "product_name": "Proxy Product",
+                "japanese_description": "Proxy Desc"
+            }
+        )
+        assert response.status_code == 400
+        assert "signature" in response.json()["detail"].lower()
+    finally:
+        if saved is not None:
+            app.dependency_overrides[verify_shopify_proxy_request] = saved

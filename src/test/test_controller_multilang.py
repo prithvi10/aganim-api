@@ -8,6 +8,7 @@ from datetime import date
 
 from src.ecommerce.api.main import app
 from src.shared.db.database import get_db
+from src.shared.security.security import verify_shopify_proxy_request
 from src.ecommerce.db.models import User, Plan
 from src.shared.security.security import SHOPIFY_API_SECRET
 
@@ -18,6 +19,7 @@ def mock_get_db():
     return MagicMock(spec=Session)
 
 app.dependency_overrides[get_db] = mock_get_db
+app.dependency_overrides[verify_shopify_proxy_request] = lambda: "test-shop.myshopify.com"
 
 @pytest.fixture
 def mock_auth_context():

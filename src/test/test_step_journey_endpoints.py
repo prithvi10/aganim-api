@@ -26,15 +26,18 @@ from src.ecommerce.api.main import app
 def client():
     """Create test client with auth dependency override."""
     from src.ecommerce.api.shopify.shared import resolve_shop_domain
+    from fastapi import Request as _Req
     
-    # Override auth to return test shop
-    app.dependency_overrides[resolve_shop_domain] = lambda: "test-shop.myshopify.com"
+    async def _mock_resolve(request: _Req = None):
+        return "test-shop.myshopify.com"
+
+    app.dependency_overrides[resolve_shop_domain] = _mock_resolve
     
     with TestClient(app) as c:
         yield c
     
-    # Clean up overrides
-    app.dependency_overrides.clear()
+    # Clean up only the override we set
+    app.dependency_overrides.pop(resolve_shop_domain, None)
 
 
 @pytest.fixture
@@ -127,7 +130,7 @@ def test_list_missions_returns_missions_for_shop(client, sample_mission):
     assert data["missions"][0]["id"] == sample_mission.id
     assert data["missions"][0]["product_name"] == "Test Product 1"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_list_missions_empty(client):
@@ -149,7 +152,7 @@ def test_list_missions_empty(client):
     assert data["missions"] == []
     assert data["latest"] is None
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_list_missions_respects_limit_parameter(client, sample_mission):
@@ -169,7 +172,7 @@ def test_list_missions_respects_limit_parameter(client, sample_mission):
     # Verify limit was called with limit*3 (over-fetch to account for ad-hoc + bulk filtering)
     mock_query.filter.return_value.order_by.return_value.limit.assert_called_with(15)
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_list_missions_includes_all_status_fields(client):
@@ -211,7 +214,7 @@ def test_list_missions_includes_all_status_fields(client):
     assert m["completed_at"] is not None
     assert m["error_message"] is None
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_list_missions_handles_null_product_name(client):
@@ -245,7 +248,7 @@ def test_list_missions_handles_null_product_name(client):
     assert m["product_name"] is None
     assert m["error_message"] == "Something went wrong"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_list_missions_handles_null_current_state(client):
@@ -278,7 +281,7 @@ def test_list_missions_handles_null_current_state(client):
     m = data["missions"][0]
     assert m["product_name"] is None
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -306,7 +309,7 @@ def test_get_mission_status_returns_structured_response(client, sample_mission):
     assert data["total_agents"] == 4
     assert "RewriterAgent" in data["workflow_agents"]
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_get_mission_status_includes_current_state(client, sample_mission):
@@ -356,7 +359,7 @@ def test_get_mission_status_includes_current_state(client, sample_mission):
     assert len(state["social_hooks"]) == 1
     assert state["pricing_analysis"]["recommended_price"] == 29.99
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_get_mission_status_current_state_for_in_progress(client, sample_mission):
@@ -389,7 +392,7 @@ def test_get_mission_status_current_state_for_in_progress(client, sample_mission
     assert "current_state" in data
     assert data["current_state"]["agent_outputs"]["RewriterAgent"]["draft_title"] == "New Title"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_get_mission_status_not_found(client):
@@ -405,7 +408,7 @@ def test_get_mission_status_not_found(client):
     
     assert response.status_code == 404
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_get_mission_status_includes_agent_outputs(client, sample_mission):
@@ -431,7 +434,7 @@ def test_get_mission_status_includes_agent_outputs(client, sample_mission):
     assert "RewriterAgent" in data["agent_outputs"]
     assert data["agent_outputs"]["RewriterAgent"]["draft_title"] == "Test Title"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_get_mission_status_includes_skipped_agents(client, sample_mission):
@@ -452,7 +455,7 @@ def test_get_mission_status_includes_skipped_agents(client, sample_mission):
     
     assert "MarketingAgent" in data["skipped_agents"]
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -481,7 +484,7 @@ def test_continue_step_advances_index(client, sample_mission):
     assert data["next_agent"] == "MarketingAgent"
     assert data["is_complete"] is False
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_continue_step_completes_at_end(client, sample_mission):
@@ -513,7 +516,7 @@ def test_continue_step_completes_at_end(client, sample_mission):
     assert data["is_complete"] is True
     assert data["mission_status"] == "COMPLETED"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_continue_step_rejects_wrong_status(client, sample_mission):
@@ -531,7 +534,7 @@ def test_continue_step_rejects_wrong_status(client, sample_mission):
     
     assert response.status_code == 400
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_continue_step_not_found(client):
@@ -547,7 +550,7 @@ def test_continue_step_not_found(client):
     
     assert response.status_code == 404
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -578,7 +581,7 @@ def test_regenerate_step_sets_feedback(client, sample_mission):
     assert data["feedback_applied"] is True
     assert data["mission_status"] == "PENDING"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_regenerate_step_without_feedback(client, sample_mission):
@@ -603,7 +606,7 @@ def test_regenerate_step_without_feedback(client, sample_mission):
     
     assert data["feedback_applied"] is False
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_regenerate_step_rejects_wrong_status(client, sample_mission):
@@ -624,7 +627,7 @@ def test_regenerate_step_rejects_wrong_status(client, sample_mission):
     
     assert response.status_code == 400
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -653,7 +656,7 @@ def test_skip_step_records_agent(client, sample_mission):
     assert data["current_agent_index"] == 1
     assert "RewriterAgent" in data["skipped_agents"]
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_skip_step_advances_index(client, sample_mission):
@@ -677,7 +680,7 @@ def test_skip_step_advances_index(client, sample_mission):
     assert data["skipped_agent"] == "MarketingAgent"
     assert data["next_agent"] == "PriceScoutAgent"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_skip_step_completes_at_end(client, sample_mission):
@@ -709,7 +712,7 @@ def test_skip_step_completes_at_end(client, sample_mission):
     assert data["is_complete"] is True
     assert data["skipped_agent"] == "ComplianceAgent"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_skip_step_allows_pending_status(client, sample_mission):
@@ -728,7 +731,7 @@ def test_skip_step_allows_pending_status(client, sample_mission):
     
     assert response.status_code == 200
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_skip_step_rejects_completed(client, sample_mission):
@@ -746,7 +749,7 @@ def test_skip_step_rejects_completed(client, sample_mission):
     
     assert response.status_code == 400
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -789,7 +792,7 @@ def test_create_mission_returns_step_info(client):
     assert data["current_agent_index"] == 0
     assert data["first_agent"] is not None
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -819,7 +822,7 @@ def test_run_step_rejects_if_already_in_progress(client, sample_mission):
     
     # Clean up lock
     _mission_locks.pop(sample_mission.id, None)
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_run_step_resets_stuck_in_progress_mission(client, sample_mission):
@@ -848,7 +851,7 @@ def test_run_step_resets_stuck_in_progress_mission(client, sample_mission):
     
     # Clean up
     _mission_locks.pop(sample_mission.id, None)
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_run_step_rejects_completed_mission(client, sample_mission):
@@ -868,7 +871,7 @@ def test_run_step_rejects_completed_mission(client, sample_mission):
     assert response.status_code == 400
     assert "completed" in response.json()["detail"].lower()
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_run_step_rejects_error_mission(client, sample_mission):
@@ -888,7 +891,7 @@ def test_run_step_rejects_error_mission(client, sample_mission):
     assert response.status_code == 400
     assert "error" in response.json()["detail"].lower()
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -914,7 +917,7 @@ def test_status_with_empty_workflow_agents(client, sample_mission):
     assert data["total_agents"] == 0
     assert data["current_agent"] is None
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_continue_at_index_zero(client, sample_mission):
@@ -937,7 +940,7 @@ def test_continue_at_index_zero(client, sample_mission):
     
     assert data["current_agent_index"] == 1
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_regenerate_empty_body(client, sample_mission):
@@ -962,7 +965,7 @@ def test_regenerate_empty_body(client, sample_mission):
     # Should handle gracefully (empty body defaults to {})
     assert response.status_code in [200, 422]  # Either accept empty or validation error
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -1008,7 +1011,7 @@ def test_continue_completion_saves_product_content(client, sample_mission):
     assert call_kwargs["description"] == "<p>Optimized description</p>"
     assert call_kwargs["target_locale"] == "en"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_continue_completion_saves_metafields(client, sample_mission):
@@ -1065,7 +1068,7 @@ def test_continue_completion_saves_metafields(client, sample_mission):
         assert mf["namespace"] == "crossborder_agent"
         assert mf["type"] == "json"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_continue_completion_no_save_without_access_token(client, sample_mission):
@@ -1096,7 +1099,7 @@ def test_continue_completion_no_save_without_access_token(client, sample_mission
     mock_save_content.assert_not_called()
     mock_save_meta.assert_not_called()
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_continue_completion_no_save_without_content(client, sample_mission):
@@ -1129,7 +1132,7 @@ def test_continue_completion_no_save_without_content(client, sample_mission):
     # But metafields save should also not be called since there's no data
     mock_save_meta.assert_not_called()
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_continue_completion_handles_shopify_error_gracefully(client, sample_mission):
@@ -1164,7 +1167,7 @@ def test_continue_completion_handles_shopify_error_gracefully(client, sample_mis
     data = response.json()
     assert data["is_complete"] is True
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_skip_completion_saves_to_shopify(client, sample_mission):
@@ -1200,7 +1203,7 @@ def test_skip_completion_saves_to_shopify(client, sample_mission):
     call_kwargs = mock_save_content.call_args.kwargs
     assert call_kwargs["product_id"] == "prod-789"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -1228,7 +1231,7 @@ def test_approve_step_advances_index(client, sample_mission):
     assert data["current_agent_index"] == 1
     assert data["is_complete"] is False
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_approve_step_completes_at_end(client, sample_mission):
@@ -1258,7 +1261,7 @@ def test_approve_step_completes_at_end(client, sample_mission):
     assert data["is_complete"] is True
     assert data["mission_status"] == "COMPLETED"
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_approve_step_rejects_wrong_status(client, sample_mission):
@@ -1276,7 +1279,7 @@ def test_approve_step_rejects_wrong_status(client, sample_mission):
     
     assert response.status_code == 400
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_approve_step_not_found(client):
@@ -1292,7 +1295,7 @@ def test_approve_step_not_found(client):
     
     assert response.status_code == 404
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 # =============================================================================
@@ -1340,7 +1343,7 @@ def test_create_mission_with_workflow_config(client):
     assert "PriceScoutAgent" in data["workflow_agents"]
     assert "RewriterAgent" in data["workflow_agents"]
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_create_mission_workflow_config_stored_in_state(client):
@@ -1385,7 +1388,7 @@ def test_create_mission_workflow_config_stored_in_state(client):
         assert "MarketingAgent" in agent_names
         assert "PriceScoutAgent" in agent_names
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_create_mission_workflow_config_overrides_requested_agents(client):
@@ -1423,7 +1426,7 @@ def test_create_mission_workflow_config_overrides_requested_agents(client):
     assert data["total_agents"] == 1
     assert "PriceScoutAgent" in data["workflow_agents"]
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 def test_status_includes_workflow_config(client, sample_mission):
@@ -1449,4 +1452,4 @@ def test_status_includes_workflow_config(client, sample_mission):
     if "current_state" in data and data["current_state"]:
         assert "workflow_config" in data["current_state"]
     
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
