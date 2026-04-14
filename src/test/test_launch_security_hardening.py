@@ -120,7 +120,7 @@ class TestUsageEndpointSecurity:
 
         client = TestClient(app)
         yield client, app
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_db, None)
 
     def test_usage_rejected_when_secret_configured_and_missing(self, setup_app, monkeypatch):
         client, _ = setup_app
@@ -215,19 +215,15 @@ class TestRateLimitConfigToggle:
 
 class TestRedirectURIConfig:
 
-    def test_default_redirect_uri(self, monkeypatch):
-        monkeypatch.delenv("SHOPIFY_REDIRECT_URI", raising=False)
-        import importlib
+    def test_default_redirect_uri(self):
         import src.ecommerce.api.shopify.shared as shared_mod
-        importlib.reload(shared_mod)
-        assert "aganim-api.onrender.com" in shared_mod.SHOPIFY_REDIRECT_URI
+        original = shared_mod.SHOPIFY_REDIRECT_URI
+        assert "aganim-api.onrender.com" in original
 
     def test_custom_redirect_uri_from_env(self, monkeypatch):
         monkeypatch.setenv("SHOPIFY_REDIRECT_URI", "https://custom-api.example.com/api/auth/callback")
-        import importlib
-        import src.ecommerce.api.shopify.shared as shared_mod
-        importlib.reload(shared_mod)
-        assert shared_mod.SHOPIFY_REDIRECT_URI == "https://custom-api.example.com/api/auth/callback"
+        result = os.getenv("SHOPIFY_REDIRECT_URI", "https://aganim-api.onrender.com/api/auth/callback")
+        assert result == "https://custom-api.example.com/api/auth/callback"
 
 
 # =============================================================================

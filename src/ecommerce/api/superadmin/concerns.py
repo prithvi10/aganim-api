@@ -71,8 +71,6 @@ async def reply_concern(
     return {"message": "Reply saved", "concern_id": concern_id}
 
 
-router.include_router(admin_router)
-
 
 # -- Admin-only concern submission (requires admin JWT) --
 
@@ -97,3 +95,6 @@ async def submit_concern(body: SubmitConcernRequest, db: Session = Depends(get_d
     db.refresh(concern)
 
     return {"message": "Concern submitted successfully", "concern_id": concern.id}
+
+
+router.include_router(admin_router)

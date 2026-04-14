@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 
 from src.ecommerce.api.main import app
 from src.shared.db.database import Base, get_db
+from src.shared.security.security import verify_shopify_proxy_request
 from src.ecommerce.db.models import User, Plan, Shop
 # Removed APIKey import and key hashing
 from datetime import datetime, timedelta, timezone
@@ -33,13 +34,14 @@ def client():
     
     # Override dependencies locally
     app.dependency_overrides[get_db] = override_get_db
-    # Removed api key override
+    app.dependency_overrides[verify_shopify_proxy_request] = lambda: "integration-shop.myshopify.com"
     
     with TestClient(app) as c:
         yield c
         
     # Cleanup overrides
     del app.dependency_overrides[get_db]
+    del app.dependency_overrides[verify_shopify_proxy_request]
     
     Base.metadata.drop_all(bind=engine)
     engine.dispose()

@@ -6,6 +6,7 @@ from datetime import date
 
 from src.ecommerce.api.main import app
 from src.shared.db.database import get_db
+from src.shared.security.security import verify_shopify_proxy_request
 from src.ecommerce.db.models import User, Plan
 
 client = TestClient(app, raise_server_exceptions=False)
@@ -22,6 +23,7 @@ def _ensure_db_override():
     """
     prev = app.dependency_overrides.get(get_db)
     app.dependency_overrides[get_db] = mock_get_db
+    app.dependency_overrides[verify_shopify_proxy_request] = lambda: "test-shop.myshopify.com"
     try:
         yield
     finally:
