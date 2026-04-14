@@ -74,7 +74,7 @@ async def reply_concern(
 router.include_router(admin_router)
 
 
-# -- Merchant-facing endpoint (no admin JWT required; protected by Shopify session at the proxy layer) --
+# -- Admin-only concern submission (requires admin JWT) --
 
 class SubmitConcernRequest(BaseModel):
     shop_domain: str
@@ -83,7 +83,7 @@ class SubmitConcernRequest(BaseModel):
     message: str
 
 
-@router.post("/submit-concern")
+@admin_router.post("/submit-concern")
 async def submit_concern(body: SubmitConcernRequest, db: Session = Depends(get_db)):
     concern = ConcernLog(
         shop_domain=body.shop_domain,

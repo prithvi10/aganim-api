@@ -8,11 +8,22 @@ import os
 from contextlib import asynccontextmanager
 from time import perf_counter
 import uuid
-
 from src.ecommerce.config.configs import DATABASE_URL, ALLOWED_ORIGINS
 from src.shared.db.database import engine, Base, get_db
 from src.ecommerce.api.controller import router as api_router
 from src.shared.logging.logger import get_logger
+
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            traces_sample_rate=0.1,
+            environment=os.getenv("ENVIRONMENT", "development"),
+        )
+    except ImportError:
+        pass
 
 request_logger = get_logger("api.request")
 
