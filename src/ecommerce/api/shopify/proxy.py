@@ -36,7 +36,8 @@ router = APIRouter()
 @router.post("/api/proxy/generate-copy")
 async def proxy_generate_copy(
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    shop_domain: str = Depends(verify_shopify_proxy_request),
 ):
     rid = _rid(request)
     try:
@@ -51,11 +52,6 @@ async def proxy_generate_copy(
         raise HTTPException(status_code=422, detail=e.errors())
 
     validate_rewrite_request(rewrite_request.model_dump())
-
-    shop_domain = request.query_params.get("shop")
-    if not shop_domain:
-        logger.info("[Copy] missing_shop rid=%s", rid)
-        raise HTTPException(status_code=400, detail="Missing shop parameter")
 
     logger.info(
         "[Copy] start rid=%s shop=%s target=%s has_product_id=%s desc_len=%s name_len=%s",

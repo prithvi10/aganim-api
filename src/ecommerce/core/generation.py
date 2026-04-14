@@ -16,6 +16,7 @@ from src.ecommerce.config.configs import (
     LOCALE_PERSONA_MAP,
     OPENAI_MODEL,
 )
+from src.shared.config.configs import PRODUCTION_RATE_LIMIT_CONFIG
 from src.shared.config.prompts import (
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_JA_DOMESTIC,
@@ -37,7 +38,8 @@ from src.ecommerce.services.fair_use_service import get_base_model_for_shop, get
 from src.agentic_core.rag.rag_service import get_brand_context
 
 logger = get_logger(__name__)
-limiter = InMemoryRateLimiter(LOCAL_RATE_LIMIT_CONFIG)
+_rate_config = PRODUCTION_RATE_LIMIT_CONFIG if os.getenv("ENVIRONMENT") == "production" else LOCAL_RATE_LIMIT_CONFIG
+limiter = InMemoryRateLimiter(_rate_config)
 openai_service = OpenAIService()
 
 ALLOWED_DISCOVERY_CATEGORIES = {

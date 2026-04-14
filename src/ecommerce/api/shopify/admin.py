@@ -35,7 +35,7 @@ from src.ecommerce.services.email_templates import welcome_email
 from src.ecommerce.services.email_service import send_email
 from src.ecommerce.config.shopify_config import SHOPIFY_UI_URL
 
-from .shared import resolve_shop_domain, _rid
+from .shared import resolve_shop_domain, _rid, TOKEN_SYNC_SECRET
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -187,11 +187,15 @@ async def get_usage(
 ):
     """
     Returns current usage and plan info for the shop.
-    Authenticated via shop query param (internal/proxy usage).
+    Secured via X-Token-Sync-Secret header (server-to-server from UI).
     """
+    if TOKEN_SYNC_SECRET:
+        sync_secret = request.headers.get("X-Token-Sync-Secret")
+        if not sync_secret or sync_secret != TOKEN_SYNC_SECRET:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
     shop_domain = request.query_params.get("shop")
     if not shop_domain:
-        # Try finding it in headers if passed by proxy or middleware
         shop_domain = request.headers.get("X-Shopify-Shop-Domain")
         
     if not shop_domain:
@@ -1697,9 +1701,12 @@ async def upload_product_image(
 
 
 # ---------------------------------------------------------
-# Merchant Concern Submission
+# Merchant Concern Submission (rate-limited)
 # ---------------------------------------------------------
 from pydantic import BaseModel as _BaseModel
+from src.shared.security.ratelimiter import InMemoryRateLimiter as _RateLimiter
+
+_concern_limiter = _RateLimiter([{"limit": 5, "window": 60}])
 
 class _SubmitConcernReq(_BaseModel):
     subject: str
@@ -1708,7 +1715,10 @@ class _SubmitConcernReq(_BaseModel):
 
 
 @router.post("/api/admin/submit-concern")
-async def submit_concern(body: _SubmitConcernReq, shop: str = Depends(resolve_shop_domain), db: Session = Depends(get_db)):
+async def submit_concern(request: Request, body: _SubmitConcernReq, shop: str = Depends(resolve_shop_domain), db: Session = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    if not _concern_limiter.is_allowed(f"concern:{client_ip}"):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
     from src.ecommerce.db.models import ConcernLog
     concern = ConcernLog(
         shop_domain=shop,

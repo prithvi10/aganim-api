@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from src.ecommerce.api.main import app
 from src.shared.db.database import Base, get_db
+from src.shared.security.security import verify_shopify_proxy_request
 from src.ecommerce.db.models import Plan, Shop, User
 
 
@@ -131,6 +132,12 @@ def integration_client(monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
 
+    # Override proxy signature verification so tests can call generate-copy without HMAC
+    from fastapi import Request as _Req
+    async def _mock_proxy_verify(request: _Req):
+        return request.query_params.get("shop", "test-shop.myshopify.com")
+    app.dependency_overrides[verify_shopify_proxy_request] = _mock_proxy_verify
+
     # Mock generation so /api/proxy/generate-copy can be used for quota decrementing without OpenAI.
     async def _mock_generation_request(*args, **kwargs):
         return {"status": "success", "data": {"title": "ok", "description": "<p>ok</p>"}}
@@ -146,6 +153,7 @@ def integration_client(monkeypatch):
         yield client, TestingSessionLocal
 
     app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(verify_shopify_proxy_request, None)
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
