@@ -80,7 +80,6 @@ class MarketingAgent(BaseAgent):
     # Maps template_id → async handler(self, state, creds) for autonomous publishing.
     PUBLISH_MAP: Dict[str, str] = {
         "marketing/email-*": "_publish_flow_event",
-        "marketing/ad-*": "_publish_meta_ad",
     }
 
     async def _publish_flow_event(self, state, creds):
@@ -98,36 +97,6 @@ class MarketingAgent(BaseAgent):
                 "content": state.draft_content or "",
             },
         )
-
-    async def _publish_meta_ad(self, state, creds):
-        """Push ad copy → Meta Graph API."""
-        meta_token = creds.get("meta_access_token")
-        meta_page_id = creds.get("meta_page_id")
-        if not meta_token or not meta_page_id:
-            raise ValueError("meta_credentials_missing")
-
-        meta_service = self.services.meta
-        if not meta_service:
-            raise ValueError("MetaService not available")
-
-        # Parse caption from draft_content
-        caption = state.draft_content or ""
-        try:
-            parsed = json.loads(caption)
-            if isinstance(parsed, dict):
-                caption = parsed.get("primary_text", parsed.get("caption", caption))
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-        image_url = state.raw_input.get("image_url")
-        success, result = await meta_service.post_ad(
-            page_id=meta_page_id,
-            access_token=meta_token,
-            caption=caption,
-            image_url=image_url,
-        )
-        if not success:
-            raise Exception(f"Meta post failed: {result}")
 
     # -------------------------------------------------------------------------
     # PERCEPTION: No external data needed for social hooks

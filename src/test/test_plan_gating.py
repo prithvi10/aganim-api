@@ -165,7 +165,6 @@ class TestPlanEntitlements:
     def test_free_no_autonomous(self):
         ent = PLAN_ENTITLEMENTS["Free"]
         assert ent["autonomous"] is False
-        assert ent["publish"] is False
         assert ent["apply_price"] is False
 
     def test_basic_no_seo_no_price_scout(self):
@@ -211,8 +210,8 @@ class TestPlanEntitlements:
         ent = PLAN_ENTITLEMENTS["Pro"]
         for feature in ["rewriter", "seo", "marketing", "price_scout", "missions",
                         "image_refinement_adhoc", "ad_image_generation",
-                        "social_post_preview", "autonomous", "publish",
-                        "apply_price", "meta_integration"]:
+                        "social_post_preview", "autonomous",
+                        "apply_price"]:
             assert ent[feature] is True, f"Pro should have {feature}=True"
 
     def test_pro_100_image_credits(self):
@@ -260,7 +259,7 @@ class TestValidateFeatureAccess:
         ctx = _make_context("Pro")
         for feature in ["seo", "price_scout", "image_refinement_adhoc",
                         "ad_image_generation", "social_post_preview",
-                        "autonomous", "publish", "meta_integration"]:
+                        "autonomous"]:
             validate_feature_access(ctx, feature)
 
     def test_basic_cannot_access_seo(self):

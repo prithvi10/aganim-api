@@ -29,11 +29,6 @@ def _lazy_rag():
     return RAGService
 
 
-def _lazy_meta():
-    from src.agentic_core.tools.meta_service import MetaService
-    return MetaService
-
-
 @dataclass
 class ServiceRegistry:
     """
@@ -49,7 +44,6 @@ class ServiceRegistry:
     llm: Any  # LLMService
     serp: Any  # SerpService
     rag: Any  # RAGService
-    meta: Optional[Any] = None  # MetaService
     publish_adapter: Optional[Any] = None  # PublishAdapter protocol
 
     @classmethod
@@ -84,7 +78,6 @@ class ServiceRegistry:
         """
         SerpService = _lazy_serp()
         RAGService = _lazy_rag()
-        MetaService = _lazy_meta()
 
         return cls(
             llm=LLMService(
@@ -95,7 +88,6 @@ class ServiceRegistry:
             ),
             serp=SerpService(api_key=os.getenv("SERP_API_KEY")),
             rag=RAGService(storage_adapter=rag_adapter),
-            meta=MetaService(),
             publish_adapter=publish_adapter,
         )
 
@@ -117,7 +109,6 @@ class ServiceRegistry:
             llm=LLMService(api_key=api_key or os.getenv("OPENAI_API_KEY")),
             serp=SerpService(api_key=serp_api_key or os.getenv("SERP_API_KEY")),
             rag=RAGService(),
-            meta=None,
             publish_adapter=None,
         )
 

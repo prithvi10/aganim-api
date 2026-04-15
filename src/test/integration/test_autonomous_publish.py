@@ -14,7 +14,6 @@ from src.ecommerce.agents.rewriter import RewriterAgent
 from src.ecommerce.agents.seo import SEOAgent
 from src.ecommerce.agents.marketing import MarketingAgent
 from src.ecommerce.agents.price_scout import PriceScoutAgent
-from src.agentic_core.tools.meta_service import MetaService
 from src.ecommerce.publish_adapters import ShopifyPublishAdapter
 
 CopywriterAgent = RewriterAgent
@@ -39,8 +38,6 @@ def mock_services():
     services.serp.search = AsyncMock(return_value=[])
     services.serp.get_competitor_prices = AsyncMock(return_value=[])
     services.rag.get_brand_context = AsyncMock(return_value=[])
-    services.meta = MagicMock(spec=MetaService)
-    services.meta.post_ad = AsyncMock(return_value=(True, "post_id_123"))
     return services
 
 
@@ -415,75 +412,6 @@ async def test_marketing_publish_flow_event():
     assert is_published is True
     assert error is None
     mock_trigger.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_marketing_publish_meta_ad():
-    """Test MarketingAgent publishes ad via Meta Graph API."""
-    mock_meta = MagicMock(spec=MetaService)
-    mock_meta.post_ad = AsyncMock(return_value=(True, "post_99"))
-
-    mock_services = MagicMock()
-    mock_services.publish_adapter = ShopifyPublishAdapter()
-    mock_services.meta = mock_meta
-
-    state = MissionState(
-        product_id="product-123",
-        shop_id="shop.myshopify.com",
-        plan_tier="Pro",
-        raw_input={"template_id": "marketing/ad-facebook", "image_url": "https://cdn.shopify.com/img.jpg"},
-        autonomous=True,
-    )
-    state.draft_content = "Shop our new arrivals! Limited time only."
-
-    mock_db = MagicMock()
-    state.db = mock_db
-
-    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
-        "access_token": "shpat_test",
-        "meta_access_token": "EAA_token",
-        "meta_page_id": "page_123",
-    }):
-        agent = MarketingAgent("shop.myshopify.com", services=mock_services)
-        is_published, error = await agent._maybe_publish(state, "marketing/ad-facebook")
-
-    assert is_published is True
-    assert error is None
-    mock_meta.post_ad.assert_called_once()
-    call_kwargs = mock_meta.post_ad.call_args.kwargs
-    assert call_kwargs["page_id"] == "page_123"
-    assert call_kwargs["access_token"] == "EAA_token"
-
-
-@pytest.mark.asyncio
-async def test_marketing_meta_ad_fails_without_credentials():
-    """Test that MarketingAgent Meta ad fails without Meta credentials."""
-    mock_services = MagicMock()
-    mock_services.publish_adapter = ShopifyPublishAdapter()
-    mock_services.meta = MagicMock(spec=MetaService)
-
-    state = MissionState(
-        product_id="product-123",
-        shop_id="shop.myshopify.com",
-        plan_tier="Pro",
-        raw_input={"template_id": "marketing/ad-google"},
-        autonomous=True,
-    )
-    state.draft_content = "Ad copy"
-
-    mock_db = MagicMock()
-    state.db = mock_db
-
-    with patch('src.ecommerce.services.shopify_service.get_shop_credentials', return_value={
-        "access_token": "shpat_test",
-        "meta_access_token": None,
-        "meta_page_id": None,
-    }):
-        agent = MarketingAgent("shop.myshopify.com", services=mock_services)
-        is_published, error = await agent._maybe_publish(state, "marketing/ad-google")
-
-    assert is_published is False
-    assert "meta_credentials_missing" in error
 
 
 # =============================================================================
