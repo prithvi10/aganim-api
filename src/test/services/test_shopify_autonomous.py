@@ -34,8 +34,6 @@ class TestGetShopCredentials:
         """Test that valid shop returns all credential fields."""
         mock_shop = MagicMock()
         mock_shop.access_token = "shpat_abc123"
-        mock_shop.meta_access_token = "EAA_meta_token"
-        mock_shop.meta_page_id = "page_12345"
         mock_shop.price_guardrails = {"min_price": 10, "max_price": 200}
 
         mock_db = MagicMock()
@@ -44,8 +42,6 @@ class TestGetShopCredentials:
         result = get_shop_credentials(mock_db, "test-shop.myshopify.com")
 
         assert result["access_token"] == "shpat_abc123"
-        assert result["meta_access_token"] == "EAA_meta_token"
-        assert result["meta_page_id"] == "page_12345"
         assert result["price_guardrails"]["min_price"] == 10
 
     def test_returns_empty_dict_for_unknown_shop(self):
@@ -57,22 +53,18 @@ class TestGetShopCredentials:
 
         assert result == {}
 
-    def test_handles_missing_meta_fields(self):
-        """Test graceful handling when meta fields are missing from model."""
+    def test_handles_missing_optional_fields(self):
+        """Test graceful handling when optional fields are missing from model."""
         mock_shop = MagicMock(spec=[])  # Empty spec — getattr will be used
         mock_shop.access_token = "shpat_abc"
         mock_shop.domain = "shop.myshopify.com"
-        # meta_access_token, meta_page_id, price_guardrails not set on spec
 
         mock_db = MagicMock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_shop
 
-        # get_shop_credentials uses getattr for optional fields
         result = get_shop_credentials(mock_db, "shop.myshopify.com")
 
         assert result["access_token"] == "shpat_abc"
-        # Optional fields should be None when not present
-        assert result.get("meta_access_token") is None or result["meta_access_token"] is None
 
 
 # =============================================================================

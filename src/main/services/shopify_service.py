@@ -909,8 +909,7 @@ def get_shop_credentials(db, shop_domain: str) -> dict:
     """
     Retrieve shop credentials needed for autonomous publishing.
     
-    Returns a dict with access_token, meta_access_token, meta_page_id,
-    and price_guardrails from the Shop model.
+    Returns a dict with access_token and price_guardrails from the Shop model.
     """
     from src.main.db.db_models import Shop
 
@@ -919,7 +918,5 @@ def get_shop_credentials(db, shop_domain: str) -> dict:
         return {}
     return {
         "access_token": shop.access_token,
-        "meta_access_token": getattr(shop, "meta_access_token", None),
-        "meta_page_id": getattr(shop, "meta_page_id", None),
         "price_guardrails": getattr(shop, "price_guardrails", None),
     }

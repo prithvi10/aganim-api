@@ -62,8 +62,6 @@ class Shop(Base):
     last_plan_change_type = Column(String, nullable=True)
     last_plan_change_at = Column(DateTime(timezone=True), nullable=True)
     last_shopify_subscription_status = Column(String, nullable=True)
-    meta_access_token = Column(String, nullable=True)
-    meta_page_id = Column(String, nullable=True)
     price_guardrails = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     logo_url = Column(String, nullable=True)
     ui_language = Column(String(5), nullable=False, default="en", server_default="en")

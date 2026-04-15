@@ -104,8 +104,6 @@ def _ensure_shop_columns_exist():
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS free_trial_expires_at TIMESTAMPTZ"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS strategic_intelligence JSONB"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS strategic_intelligence_updated_at TIMESTAMPTZ"))
-        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS meta_access_token VARCHAR"))
-        conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS meta_page_id VARCHAR"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS price_guardrails JSONB"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS logo_url VARCHAR"))
         conn.execute(text("ALTER TABLE shops ADD COLUMN IF NOT EXISTS lifetime_missions_remaining INTEGER NOT NULL DEFAULT 3"))
