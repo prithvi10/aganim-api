@@ -183,7 +183,7 @@ async def reinstall_pathfinder(
     ctx = get_shop_quota_context(db, shop_domain)
     if not ctx:
         # Unknown shop: treat as Free new install
-        return {"redirect_to": "/app/dashboard", "reason": "new_shop"}
+        return {"redirect_to": "/app", "reason": "new_shop"}
 
     shop: Shop = ctx["shop"]
     last_plan = str(ctx.get("last_plan_name") or "").strip() or "Free"
@@ -256,5 +256,5 @@ async def reinstall_pathfinder(
                 db.rollback()
             except Exception:
                 pass
-        return {"redirect_to": "/app/dashboard", "reason": "free_with_credits"}
+        return {"redirect_to": "/app", "reason": "free_with_credits"}
     return {"redirect_to": "/app/pricing", "reason": "free_no_credits"}

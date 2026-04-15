@@ -1233,44 +1233,6 @@ async def continue_step(
                     except Exception as e:
                         logger.warning("[MissionStep] add_product_image failed url=%s err=%s", url, e)
 
-            # Inject into product description HTML
-            try:
-                current_body = await get_product_body(shop, access_token, product_id) or ""
-
-                img_parts = []
-                if refined_url:
-                    img_parts.append(
-                        f'<img src="{refined_url}" alt="{product_name} - AI-refined product image" '
-                        f'style="max-width:100%;height:auto;border-radius:8px;" />'
-                    )
-                if ad_url:
-                    img_parts.append(
-                        f'<img src="{ad_url}" alt="{product_name} - marketing ad" '
-                        f'style="max-width:100%;height:auto;border-radius:8px;" />'
-                    )
-
-                visual_html = (
-                    "<!-- cba-visual-start -->\n"
-                    '<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0;">\n'
-                    + "\n".join(img_parts)
-                    + "\n</div>\n<!-- cba-visual-end -->"
-                )
-
-                current_body = inject_section(
-                    current_body, visual_html,
-                    "<!-- cba-visual-start -->", "<!-- cba-visual-end -->",
-                    position="append",
-                )
-                await update_product_body(shop, access_token, product_id, current_body)
-                logger.info(
-                    "[MissionStep] visual_assets_injected rid=%s shop=%s product_id=%s refined=%s ad=%s",
-                    rid, shop, product_id, bool(refined_url), bool(ad_url),
-                )
-            except Exception as e:
-                logger.error(
-                    "[MissionStep] visual_inject_failed rid=%s shop=%s err=%s",
-                    rid, shop, str(e),
-                )
         
         # 3️⃣ Create blog articles for any product/blog-post steps
         if access_token and blog_post_outputs:
@@ -1833,49 +1795,6 @@ async def skip_step(
                     rid, shop, str(e),
                 )
         
-        # 2.5️⃣ Inject visual assets (refined image + ad) into product description
-        visual_assets = state.visual_assets or {}
-        refined_url = visual_assets.get("refined_url")
-        ad_url = visual_assets.get("ad_url")
-        if access_token and product_id and (refined_url or ad_url):
-            try:
-                current_body = await get_product_body(shop, access_token, product_id) or ""
-                product_name = (state.raw_input or {}).get("product_name", "product")
-
-                img_parts = []
-                if refined_url:
-                    img_parts.append(
-                        f'<img src="{refined_url}" alt="{product_name} - AI-refined product image" '
-                        f'style="max-width:100%;height:auto;border-radius:8px;" />'
-                    )
-                if ad_url:
-                    img_parts.append(
-                        f'<img src="{ad_url}" alt="{product_name} - marketing ad" '
-                        f'style="max-width:100%;height:auto;border-radius:8px;" />'
-                    )
-
-                visual_html = (
-                    "<!-- cba-visual-start -->\n"
-                    '<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0;">\n'
-                    + "\n".join(img_parts)
-                    + "\n</div>\n<!-- cba-visual-end -->"
-                )
-
-                current_body = inject_section(
-                    current_body, visual_html,
-                    "<!-- cba-visual-start -->", "<!-- cba-visual-end -->",
-                    position="append",
-                )
-                await update_product_body(shop, access_token, product_id, current_body)
-                logger.info(
-                    "[MissionStep] visual_assets_injected rid=%s shop=%s product_id=%s refined=%s ad=%s (via skip)",
-                    rid, shop, product_id, bool(refined_url), bool(ad_url),
-                )
-            except Exception as e:
-                logger.error(
-                    "[MissionStep] visual_inject_failed rid=%s shop=%s err=%s (via skip)",
-                    rid, shop, str(e),
-                )
         
         # 3️⃣ Create blog articles for any product/blog-post steps
         if access_token and blog_post_outputs:

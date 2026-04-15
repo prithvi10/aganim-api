@@ -796,7 +796,7 @@ def run_agent_action(
 
 # ------------------------------------------------------------------------------
 # Publish Action Map (Pro tier - called from POST /api/publish)
-# Each handler is a thin async function that calls ShopifyService/MetaService.
+# Each handler is a thin async function that calls ShopifyService.
 # Signature: async handler(db, shop, content, product_id, context) -> dict | None
 # ------------------------------------------------------------------------------
 
@@ -875,32 +875,6 @@ async def publish_variant_price(*, db, shop, content, product_id, context, **kw)
     return None
 
 
-async def publish_meta_post(*, db, shop, content, product_id, context, **kw):
-    """Push caption → Meta Graph API."""
-    from src.ecommerce.services.shopify_service import get_shop_credentials
-    from src.agentic_core.tools.meta_service import MetaService
-
-    creds = get_shop_credentials(db, shop)
-    meta_token = creds.get("meta_access_token")
-    meta_page_id = creds.get("meta_page_id")
-    if not meta_token or not meta_page_id:
-        raise ValueError("meta_credentials_missing")
-
-    caption = content if isinstance(content, str) else str(content or "")
-    image_url = context.get("image_url")
-
-    meta = MetaService()
-    success, result = await meta.post_ad(
-        page_id=meta_page_id,
-        access_token=meta_token,
-        caption=caption,
-        image_url=image_url,
-    )
-    if not success:
-        raise Exception(f"Meta post failed: {result}")
-    return None
-
-
 async def publish_flow_campaign(*, db, shop, content, product_id, context, **kw):
     """Push campaign data → Shopify Flow trigger."""
     from src.ecommerce.services.shopify_service import trigger_flow_event, get_shop_credentials
@@ -951,8 +925,6 @@ async def publish_value_metafields(*, db, shop, content, product_id, context, **
 PUBLISH_ACTION_MAP: dict[str, Any] = {
     "seo_optimize": publish_seo_fields,
     "price_scout": publish_variant_price,
-    "social_hook_architect": publish_meta_post,
     "seasonal_campaign_agent": publish_flow_campaign,
-    "seasonal_campaign_caption": publish_meta_post,
     "value_discovery": publish_value_metafields,
 }

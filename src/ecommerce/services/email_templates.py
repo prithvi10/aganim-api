@@ -35,7 +35,6 @@ _FEATURE_LABELS: dict[str, str] = {
     "autonomous": "Autonomous Mode",
     "publish": "One-Click Publish",
     "apply_price": "Apply Pricing",
-    "meta_integration": "Meta Integration",
     "multi_locale_bulk": "Multi-Locale Bulk",
 }
 

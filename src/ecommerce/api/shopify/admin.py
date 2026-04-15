@@ -1598,60 +1598,6 @@ async def _publish_via_action(db, shop, action, content, product_id, context):
 
 
 # =============================================================================
-# Meta Credentials Endpoints (Pro tier)
-# =============================================================================
-
-@router.post("/api/admin/meta-credentials")
-async def save_meta_credentials(
-    request: Request,
-    db: Session = Depends(get_db),
-    shop: str = Depends(resolve_shop_domain),
-):
-    """
-    Save Meta (Facebook/Instagram) API credentials for the shop.
-    Pro tier only. Requires user consent before submission.
-    """
-    body = await request.json()
-    auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
-    validate_feature_access(auth_context, "meta_integration")
-
-    meta_access_token = body.get("meta_access_token")
-    meta_page_id = body.get("meta_page_id")
-    if not meta_access_token or not meta_page_id:
-        raise HTTPException(400, "meta_access_token and meta_page_id are required")
-
-    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-    if not shop_record:
-        raise HTTPException(404, "Shop not found")
-
-    shop_record.meta_access_token = meta_access_token
-    shop_record.meta_page_id = meta_page_id
-    db.commit()
-
-    logger.info("[MetaCreds] saved shop=%s page_id=%s", shop, meta_page_id)
-    return {"status": "success", "has_meta_credentials": True}
-
-
-@router.get("/api/admin/meta-credentials/status")
-async def meta_credentials_status(
-    request: Request,
-    db: Session = Depends(get_db),
-    shop: str = Depends(resolve_shop_domain),
-):
-    """Check Meta credentials status (does NOT expose the token)."""
-    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-    has_creds = bool(
-        shop_record
-        and getattr(shop_record, "meta_access_token", None)
-        and getattr(shop_record, "meta_page_id", None)
-    )
-    return {
-        "has_meta_credentials": has_creds,
-        "meta_page_id": getattr(shop_record, "meta_page_id", None) if has_creds else None,
-    }
-
-
-# =============================================================================
 # Retail Calendar
 # =============================================================================
 
