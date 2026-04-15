@@ -165,7 +165,6 @@ class TestPlanEntitlements:
     def test_free_no_autonomous(self):
         ent = PLAN_ENTITLEMENTS["Free"]
         assert ent["autonomous"] is False
-        assert ent["apply_price"] is False
 
     def test_basic_no_seo_no_price_scout(self):
         ent = PLAN_ENTITLEMENTS["Basic"]

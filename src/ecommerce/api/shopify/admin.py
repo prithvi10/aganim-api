@@ -62,9 +62,9 @@ def _complete_install_sync(shop_domain: str) -> None:
         if not user:
             return
 
+        owner_email = None
         if not user.email:
             access_token = get_shop_access_token(db, shop_domain)
-            owner_email = None
             if access_token:
                 owner_email = _fetch_shop_owner_email(shop_domain, access_token)
                 if not owner_email:
@@ -102,7 +102,8 @@ def _complete_install_sync(shop_domain: str) -> None:
                             owner_email, shop_domain,
                         )
 
-        if not user.email:
+        send_to_email = user.email or owner_email
+        if not send_to_email:
             logger.info("[CompleteInstall] still no email for %s — skipping welcome", shop_domain)
             return
 
@@ -120,13 +121,13 @@ def _complete_install_sync(shop_domain: str) -> None:
                 app_url=SHOPIFY_UI_URL,
             )
             asyncio.run(send_email(
-                to=user.email,
+                to=send_to_email,
                 subject=subj,
                 html_body=html_body,
                 text_body=text_body,
             ))
             log = OutreachLog(
-                recipient_email=user.email,
+                recipient_email=send_to_email,
                 recipient_shop=shop_domain,
                 subject=subj,
                 body=text_body[:500],
@@ -134,7 +135,7 @@ def _complete_install_sync(shop_domain: str) -> None:
             )
             db.add(log)
             db.commit()
-            logger.info("[CompleteInstall] welcome email sent to %s for %s", user.email, shop_domain)
+            logger.info("[CompleteInstall] welcome email sent to %s for %s", send_to_email, shop_domain)
         except Exception as e:
             logger.warning("[CompleteInstall] welcome email failed for %s: %s", shop_domain, e)
     except Exception as e:
