@@ -1,6 +1,5 @@
-name: CI/CD Pipeline
+name: CI Pipeline
 
-# 1. TRIGGER: Run on every push to the main branch and on every Pull Request
 on:
   push:
     branches: [ main ]
@@ -8,15 +7,12 @@ on:
     branches: [ main ]
 
 jobs:
-  # ----------------------------------------------------
-  # JOB 1: Continuous Integration (CI) - Build and Test
-  # ----------------------------------------------------
   test:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -25,37 +21,11 @@ jobs:
 
     - name: Install Dependencies
       run: pip install -r requirements.txt
-      
-    # ⚠️ CRITICAL: Run your Unit Tests
+
     - name: Run Pytest Tests
       run: python -m pytest
       env:
-        # Dummy values required for module initialization or mocked tests
         OPENAI_API_KEY: "dummy-key-for-tests"
         DATABASE_URL: "sqlite:///:memory:"
         SHOPIFY_API_SECRET: "dummy-secret"
         SHOPIFY_API_KEY: "dummy-api-key"
-        
-    # Optional: If you use flake8/Black/Mypy, add linting here
-    # - name: Run Linter
-    #   run: pip install flake8 && flake8 .
-      
-  # ----------------------------------------------------
-  # JOB 2: Continuous Deployment (CD) - Deploy to Render
-  # ----------------------------------------------------
-  deploy:
-    # 2. DEPENDENCY: Only run if the 'test' job succeeded
-    needs: test
-    
-    # 3. CONDITION: Only deploy when code is pushed to the main branch, not on PRs
-    if: github.ref == 'refs/heads/main'
-    
-    runs-on: ubuntu-latest
-    steps:
-    - name: Trigger Render Deployment
-      run: |
-        # Use curl to send an HTTP POST request to the Render Deploy Hook URL
-        curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-      env:
-        # We need the secret from the GitHub repository settings
-        RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}

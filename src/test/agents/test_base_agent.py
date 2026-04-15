@@ -599,8 +599,6 @@ async def test_maybe_publish_handler_receives_correct_creds(mock_services, missi
 
     test_creds = {
         "access_token": "shpat_test123",
-        "meta_access_token": "EAA_test",
-        "meta_page_id": "page_123",
         "price_guardrails": {"min_price": 5, "max_price": 500},
     }
 
@@ -611,4 +609,3 @@ async def test_maybe_publish_handler_receives_correct_creds(mock_services, missi
     assert MockPublishAgent._publish_called_with is not None
     received_creds = MockPublishAgent._publish_called_with[2]
     assert received_creds["access_token"] == "shpat_test123"
-    assert received_creds["meta_access_token"] == "EAA_test"

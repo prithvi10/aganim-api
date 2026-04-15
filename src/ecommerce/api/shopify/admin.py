@@ -62,9 +62,9 @@ def _complete_install_sync(shop_domain: str) -> None:
         if not user:
             return
 
+        owner_email = None
         if not user.email:
             access_token = get_shop_access_token(db, shop_domain)
-            owner_email = None
             if access_token:
                 owner_email = _fetch_shop_owner_email(shop_domain, access_token)
                 if not owner_email:
@@ -102,7 +102,8 @@ def _complete_install_sync(shop_domain: str) -> None:
                             owner_email, shop_domain,
                         )
 
-        if not user.email:
+        send_to_email = user.email or owner_email
+        if not send_to_email:
             logger.info("[CompleteInstall] still no email for %s — skipping welcome", shop_domain)
             return
 
@@ -120,13 +121,13 @@ def _complete_install_sync(shop_domain: str) -> None:
                 app_url=SHOPIFY_UI_URL,
             )
             asyncio.run(send_email(
-                to=user.email,
+                to=send_to_email,
                 subject=subj,
                 html_body=html_body,
                 text_body=text_body,
             ))
             log = OutreachLog(
-                recipient_email=user.email,
+                recipient_email=send_to_email,
                 recipient_shop=shop_domain,
                 subject=subj,
                 body=text_body[:500],
@@ -134,7 +135,7 @@ def _complete_install_sync(shop_domain: str) -> None:
             )
             db.add(log)
             db.commit()
-            logger.info("[CompleteInstall] welcome email sent to %s for %s", user.email, shop_domain)
+            logger.info("[CompleteInstall] welcome email sent to %s for %s", send_to_email, shop_domain)
         except Exception as e:
             logger.warning("[CompleteInstall] welcome email failed for %s: %s", shop_domain, e)
     except Exception as e:
@@ -1595,60 +1596,6 @@ async def _publish_via_action(db, shop, action, content, product_id, context):
         error_msg = str(e)
         logger.error("[Publish] action=%s shop=%s err=%s", action, shop, error_msg)
         return {"is_published": False, "error": error_msg}
-
-
-# =============================================================================
-# Meta Credentials Endpoints (Pro tier)
-# =============================================================================
-
-@router.post("/api/admin/meta-credentials")
-async def save_meta_credentials(
-    request: Request,
-    db: Session = Depends(get_db),
-    shop: str = Depends(resolve_shop_domain),
-):
-    """
-    Save Meta (Facebook/Instagram) API credentials for the shop.
-    Pro tier only. Requires user consent before submission.
-    """
-    body = await request.json()
-    auth_context = validate_shop_and_quota(db, shop, enforce_limit=False)
-    validate_feature_access(auth_context, "meta_integration")
-
-    meta_access_token = body.get("meta_access_token")
-    meta_page_id = body.get("meta_page_id")
-    if not meta_access_token or not meta_page_id:
-        raise HTTPException(400, "meta_access_token and meta_page_id are required")
-
-    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-    if not shop_record:
-        raise HTTPException(404, "Shop not found")
-
-    shop_record.meta_access_token = meta_access_token
-    shop_record.meta_page_id = meta_page_id
-    db.commit()
-
-    logger.info("[MetaCreds] saved shop=%s page_id=%s", shop, meta_page_id)
-    return {"status": "success", "has_meta_credentials": True}
-
-
-@router.get("/api/admin/meta-credentials/status")
-async def meta_credentials_status(
-    request: Request,
-    db: Session = Depends(get_db),
-    shop: str = Depends(resolve_shop_domain),
-):
-    """Check Meta credentials status (does NOT expose the token)."""
-    shop_record = db.query(Shop).filter(Shop.domain == shop).first()
-    has_creds = bool(
-        shop_record
-        and getattr(shop_record, "meta_access_token", None)
-        and getattr(shop_record, "meta_page_id", None)
-    )
-    return {
-        "has_meta_credentials": has_creds,
-        "meta_page_id": getattr(shop_record, "meta_page_id", None) if has_creds else None,
-    }
 
 
 # =============================================================================

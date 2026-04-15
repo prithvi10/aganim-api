@@ -27,6 +27,7 @@ CONSTRAINTS:
 - Overlay suggestions must be <= 28 characters
 - Do NOT make false claims about the product
 - IMPORTANT: All captions, hashtags, and overlay suggestions MUST be written in the language of the Target Locale provided by the user.
+- ALWAYS include 2-3 relevant emojis in each caption to boost engagement
 """
 
 SOCIAL_HOOKS_SYSTEM_PROMPT_JA_DOMESTIC = """You are a senior social media strategist specializing in Instagram and TikTok for the Japanese domestic market.
@@ -52,6 +53,7 @@ CONSTRAINTS:
 - Each hook must include 8-12 relevant hashtags (mix of Japanese and English)
 - Overlay suggestions must be <= 28 characters
 - Do NOT make false claims about the product
+- ALWAYS include 2-3 relevant emojis in each caption to boost engagement
 """
 
 SOCIAL_HOOKS_USER_PROMPT_TEMPLATE = """Generate 3 viral hooks for this product:
@@ -87,6 +89,7 @@ CONSTRAINTS:
 - Tone: warm, seasonal, authentic
 - Do NOT invent product claims
 - IMPORTANT: All captions and CTAs MUST be written in the language of the Target Locale provided by the user.
+- ALWAYS include 2-3 relevant emojis in the caption
 """
 
 SEASONAL_CAPTION_SYSTEM_PROMPT_JA_DOMESTIC = """You are a senior social media strategist for the Japanese domestic market.
@@ -102,6 +105,7 @@ CONSTRAINTS:
 - Do NOT invent product claims
 - Use Japanese seasonal references (e.g., お歳暮, 母の日, 新生活, 夏ギフト) rather than Western holiday names.
 - CTA should be natural Japanese (e.g., 「今すぐチェック」「詳しく見る」「プレゼントにもぴったり」).
+- ALWAYS include 2-3 relevant emojis in the caption
 """
 
 SEASONAL_CAPTION_USER_PROMPT_TEMPLATE = """Generate a seasonal caption:

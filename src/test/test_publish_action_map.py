@@ -1,7 +1,7 @@
 """
 Unit tests for PUBLISH_ACTION_MAP handlers in agent_actions.py.
 
-Tests publish_seo_fields, publish_variant_price, publish_meta_post,
+Tests publish_seo_fields, publish_variant_price,
 publish_flow_campaign, and publish_value_metafields.
 """
 
@@ -12,7 +12,6 @@ from src.ecommerce.core.agent_actions import (
     PUBLISH_ACTION_MAP,
     publish_seo_fields,
     publish_variant_price,
-    publish_meta_post,
     publish_flow_campaign,
     publish_value_metafields,
 )
@@ -30,9 +29,7 @@ class TestPublishActionMapRegistry:
         expected = [
             "seo_optimize",
             "price_scout",
-            "social_hook_architect",
             "seasonal_campaign_agent",
-            "seasonal_campaign_caption",
             "value_discovery",
         ]
         for key in expected:
@@ -47,9 +44,7 @@ class TestPublishActionMapRegistry:
         """Test that action names map to the correct handler functions."""
         assert PUBLISH_ACTION_MAP["seo_optimize"] is publish_seo_fields
         assert PUBLISH_ACTION_MAP["price_scout"] is publish_variant_price
-        assert PUBLISH_ACTION_MAP["social_hook_architect"] is publish_meta_post
         assert PUBLISH_ACTION_MAP["seasonal_campaign_agent"] is publish_flow_campaign
-        assert PUBLISH_ACTION_MAP["seasonal_campaign_caption"] is publish_meta_post
         assert PUBLISH_ACTION_MAP["value_discovery"] is publish_value_metafields
 
 
@@ -256,102 +251,6 @@ class TestPublishVariantPrice:
             )
 
             mock_update.assert_called_once()
-
-
-# =============================================================================
-# Tests: publish_meta_post
-# =============================================================================
-
-class TestPublishMetaPost:
-    """Tests for the publish_meta_post handler."""
-
-    @pytest.mark.asyncio
-    async def test_success(self):
-        """Test successful Meta post publish."""
-        mock_db = MagicMock()
-
-        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
-            "access_token": "shpat_test",
-            "meta_access_token": "EAA_token",
-            "meta_page_id": "page_123",
-        }), patch("src.agentic_core.tools.meta_service.MetaService") as MockMeta:
-            mock_instance = MockMeta.return_value
-            mock_instance.post_ad = AsyncMock(return_value=(True, "post_id_999"))
-
-            await publish_meta_post(
-                db=mock_db,
-                shop="test.myshopify.com",
-                content="Amazing new product! 🎉",
-                product_id="123",
-                context={},
-            )
-
-            mock_instance.post_ad.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_raises_when_meta_credentials_missing(self):
-        """Test that missing Meta credentials raises ValueError."""
-        mock_db = MagicMock()
-
-        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
-            "access_token": "shpat_test",
-            "meta_access_token": None,
-            "meta_page_id": None,
-        }):
-            with pytest.raises(ValueError, match="meta_credentials_missing"):
-                await publish_meta_post(
-                    db=mock_db,
-                    shop="test.myshopify.com",
-                    content="Test caption",
-                    product_id="123",
-                    context={},
-                )
-
-    @pytest.mark.asyncio
-    async def test_raises_when_meta_post_fails(self):
-        """Test that failed Meta post raises Exception."""
-        mock_db = MagicMock()
-
-        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
-            "access_token": "shpat_test",
-            "meta_access_token": "EAA_token",
-            "meta_page_id": "page_123",
-        }), patch("src.agentic_core.tools.meta_service.MetaService") as MockMeta:
-            mock_instance = MockMeta.return_value
-            mock_instance.post_ad = AsyncMock(return_value=(False, "Invalid token"))
-
-            with pytest.raises(Exception, match="Meta post failed"):
-                await publish_meta_post(
-                    db=mock_db,
-                    shop="test.myshopify.com",
-                    content="Test",
-                    product_id="123",
-                    context={},
-                )
-
-    @pytest.mark.asyncio
-    async def test_passes_image_url_from_context(self):
-        """Test that image_url is passed to MetaService from context."""
-        mock_db = MagicMock()
-
-        with patch("src.ecommerce.services.shopify_service.get_shop_credentials", return_value={
-            "access_token": "shpat_test",
-            "meta_access_token": "EAA_token",
-            "meta_page_id": "page_123",
-        }), patch("src.agentic_core.tools.meta_service.MetaService") as MockMeta:
-            mock_instance = MockMeta.return_value
-            mock_instance.post_ad = AsyncMock(return_value=(True, "post_99"))
-
-            await publish_meta_post(
-                db=mock_db,
-                shop="test.myshopify.com",
-                content="Test caption",
-                product_id="123",
-                context={"image_url": "https://cdn.shopify.com/product.jpg"},
-            )
-
-            call_kwargs = mock_instance.post_ad.call_args.kwargs
-            assert call_kwargs["image_url"] == "https://cdn.shopify.com/product.jpg"
 
 
 # =============================================================================

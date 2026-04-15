@@ -162,8 +162,10 @@ class TestCompleteInstallBackgroundTask:
     @patch("src.ecommerce.api.shopify.admin.send_email", new_callable=AsyncMock)
     @patch("src.ecommerce.api.shopify.admin._fetch_shop_owner_email", return_value="shared@owner.com")
     def test_skips_email_when_another_user_already_has_it(self, mock_fetch, mock_send, db_session):
-        """When another user row already owns the email, skip assignment to avoid UniqueViolation."""
+        """When another user row already owns the email, skip DB assignment but still send welcome."""
         from src.ecommerce.api.shopify.admin import _complete_install_sync
+
+        mock_send.return_value = {"MessageId": "test-shared"}
 
         plan = db_session.query(Plan).first()
         shop1 = Shop(domain="shop1.myshopify.com", access_token="tok1")
@@ -182,7 +184,7 @@ class TestCompleteInstallBackgroundTask:
 
         db_session.refresh(user2)
         assert user2.email is None
-        mock_send.assert_not_called()
+        mock_send.assert_called_once()
 
     @patch("src.ecommerce.api.shopify.admin.send_email", new_callable=AsyncMock)
     def test_does_not_refetch_if_email_already_present(self, mock_send, db_session):
