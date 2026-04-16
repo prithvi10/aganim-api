@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.Column("can_stream_responses", sa.Boolean(), server_default="false"),
         sa.Column("is_active", sa.Boolean(), server_default="true"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.UniqueConstraint("name"),
+        sa.UniqueConstraint("name", name="plans_name_key"),
     )
     op.create_index("ix_plans_id", "plans", ["id"])
     op.create_index("ix_plans_name", "plans", ["name"])
@@ -53,8 +53,8 @@ def upgrade() -> None:
         sa.Column("email", sa.String(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.Column("plan_id", sa.Integer(), sa.ForeignKey("plans.id"), nullable=True),
-        sa.UniqueConstraint("username"),
-        sa.UniqueConstraint("email"),
+        sa.UniqueConstraint("username", name="users_username_key"),
+        sa.UniqueConstraint("email", name="users_email_key"),
     )
     op.create_index("ix_users_id", "users", ["id"])
     op.create_index("ix_users_username", "users", ["username"])
@@ -104,7 +104,7 @@ def upgrade() -> None:
         sa.Column("monthly_missions_used", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("monthly_image_generations_used", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("brand_soul_enabled", sa.Boolean(), nullable=False, server_default="1"),
-        sa.UniqueConstraint("domain"),
+        sa.UniqueConstraint("domain", name="shops_domain_key"),
     )
     op.create_index("ix_shops_id", "shops", ["id"])
     op.create_index("ix_shops_domain", "shops", ["domain"])
@@ -256,7 +256,8 @@ def upgrade() -> None:
     op.create_index("ix_concern_log_id", "concern_log", ["id"])
     op.create_index("concern_log_shop_idx", "concern_log", ["shop_domain"])
 
-    # pgvector HNSW indexes (best-effort; extension must be available)
+    # pgvector HNSW indexes — managed outside Alembic autogenerate.
+    # The include_object filter in env.py excludes them from `alembic check`.
     op.execute(
         "CREATE INDEX IF NOT EXISTS context_chunks_embedding_idx "
         "ON context_chunks USING hnsw (embedding vector_cosine_ops)"
