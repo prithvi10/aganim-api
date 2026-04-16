@@ -5,7 +5,7 @@ These tables are Shopify-specific and stay in the ecommerce service.
 """
 from sqlalchemy import (
     Column, Integer, String, DateTime, ForeignKey, Boolean,
-    Date, BigInteger, Numeric, Text, JSON,
+    Date, BigInteger, Numeric, Text, JSON, UniqueConstraint, Index,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, synonym
@@ -15,10 +15,14 @@ from src.shared.db.database import Base
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("username", name="users_username_key"),
+        UniqueConstraint("email", name="users_email_key"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=True)
+    username = Column(String, index=True)
+    email = Column(String, index=True, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     plan_id = Column(Integer, ForeignKey("plans.id"))
@@ -29,9 +33,12 @@ class User(Base):
 
 class Shop(Base):
     __tablename__ = "shops"
+    __table_args__ = (
+        UniqueConstraint("domain", name="shops_domain_key"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    domain = Column(String, unique=True, index=True)
+    domain = Column(String, index=True)
     access_token = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
@@ -91,9 +98,12 @@ class UsageRecord(Base):
 
 class Plan(Base):
     __tablename__ = "plans"
+    __table_args__ = (
+        UniqueConstraint("name", name="plans_name_key"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String, index=True)
     price_usd_monthly = Column(Numeric(10, 2))
     monthly_rewrite_limit = Column("monthly_token_quota", BigInteger)
     max_request_rate = Column(Integer)
@@ -185,9 +195,12 @@ class OutreachLog(Base):
 class ConcernLog(Base):
     """Tracks merchant concerns / support requests."""
     __tablename__ = "concern_log"
+    __table_args__ = (
+        Index("concern_log_shop_idx", "shop_domain"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    shop_domain = Column(String, index=True, nullable=False)
+    shop_domain = Column(String, nullable=False)
     email = Column(String, nullable=True)
     subject = Column(String, nullable=False)
     message = Column(Text, nullable=False)

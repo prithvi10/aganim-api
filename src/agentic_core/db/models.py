@@ -7,7 +7,7 @@ and have NO foreign keys to Shopify-specific tables.
 When agentic_core is extracted into a microservice, these models
 travel with it and get their own database.
 """
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Index
 from sqlalchemy.orm import synonym
 from sqlalchemy.dialects.postgresql import JSONB
 try:
@@ -41,10 +41,15 @@ class Mission(Base):
     that may involve multiple agents.
     """
     __tablename__ = "missions"
+    __table_args__ = (
+        Index("missions_tenant_id_idx", "tenant_id"),
+        Index("missions_resource_id_idx", "resource_id"),
+        Index("missions_bulk_mission_id_idx", "bulk_mission_id"),
+    )
 
     id = Column(String, primary_key=True)  # UUID
-    tenant_id = Column(String, index=True, nullable=False)      # was shop_id
-    resource_id = Column(String, index=True, nullable=False)    # was product_id
+    tenant_id = Column(String, nullable=False)
+    resource_id = Column(String, nullable=False)
 
     # Backward-compat synonyms (ecommerce code may still use old names)
     shop_id = synonym("tenant_id")
@@ -67,7 +72,7 @@ class Mission(Base):
     plan_tier = synonym("tier")
 
     # Bulk upload: links child missions to their parent bulk mission row
-    bulk_mission_id = Column(String, nullable=True, index=True)
+    bulk_mission_id = Column(String, nullable=True)
 
     # Error tracking
     error_message = Column(Text, nullable=True)
@@ -83,9 +88,13 @@ class AgentCorrection(Base):
     Stores user corrections to agent outputs for learning.
     """
     __tablename__ = "agent_corrections"
+    __table_args__ = (
+        Index("agent_corrections_tenant_id_idx", "tenant_id"),
+        Index("agent_corrections_resource_id_idx", "resource_id"),
+    )
 
     id = Column(String, primary_key=True)  # UUID
-    tenant_id = Column(String, index=True, nullable=False)      # was shop_id
+    tenant_id = Column(String, nullable=False)
 
     # Backward-compat synonym
     shop_id = synonym("tenant_id")
@@ -103,7 +112,7 @@ class AgentCorrection(Base):
     embedding = Column(Vector(1536).with_variant(TextType, "sqlite"), nullable=True)
 
     # Context
-    resource_id = Column(String, index=True, nullable=True)     # was product_id
+    resource_id = Column(String, nullable=True)
     context_metadata = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
 
     # Backward-compat synonym
@@ -118,9 +127,12 @@ class ContextChunk(Base):
     Generic RAG vector store -- replaces StoreContext for agentic_core.
     """
     __tablename__ = "context_chunks"
+    __table_args__ = (
+        Index("context_chunks_tenant_id_idx", "tenant_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    tenant_id = Column(String, index=True, nullable=False)      # was shop_id
+    tenant_id = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     embedding = Column(Vector(1536).with_variant(TextType, "sqlite"), nullable=False)
     metadata_json = Column("metadata", JSON().with_variant(JSONB, "postgresql"), nullable=True)
