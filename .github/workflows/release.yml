@@ -22,8 +22,23 @@ jobs:
         SHOPIFY_API_SECRET: "dummy-secret"
         SHOPIFY_API_KEY: "dummy-api-key"
 
-  deploy:
+  migrate:
     needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: 'pip'
+    - run: pip install -r requirements.txt
+    - name: Run Alembic migrations against production DB
+      run: alembic upgrade head
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  deploy:
+    needs: migrate
     runs-on: ubuntu-latest
     steps:
     - name: Deploy to Render

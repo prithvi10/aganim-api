@@ -29,3 +29,8 @@ jobs:
         DATABASE_URL: "sqlite:///:memory:"
         SHOPIFY_API_SECRET: "dummy-secret"
         SHOPIFY_API_KEY: "dummy-api-key"
+
+    - name: Check for pending model changes without a migration
+      run: alembic check
+      env:
+        DATABASE_URL: "sqlite:///:memory:"
