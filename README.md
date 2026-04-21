@@ -1,234 +1,223 @@
-# Shopify Translator API
+# Aganim AI — API
 
-A robust FastAPI-based backend designed to generate localized, high-quality English product descriptions from Japanese inputs for Shopify stores. This service leverages OpenAI for content generation and includes enterprise-grade features like rate limiting, usage-based billing quotas, and response streaming.
+The backend engine for [Aganim AI](https://aganim-ai.com), powering AI-driven product localization, SEO optimization, competitor pricing analysis, marketing content generation, and multi-agent mission pipelines for Shopify stores. Built with FastAPI and Python 3.13.
 
-## 🏗️ Architecture
-
-### Package Structure
-
-The codebase is organized into three top-level packages:
+## Architecture
 
 ```
 src/
-  agentic_core/   # Generic AI platform — agents, LLM, RAG, orchestration
-  shared/         # Shared utilities — logging, config, security, DB engine
-  ecommerce/      # Shopify domain — API routes, services, domain agents, templates
-  test/           # All tests
+  agentic_core/        # Generic AI platform (zero Shopify dependencies)
+    agents/            # Base agent framework, orchestration
+    api/               # Mission router, models
+    llm/               # LLM client abstraction
+    rag/               # Retrieval-augmented generation
+  shared/              # Cross-cutting infrastructure
+    config/            # Environment config, feature flags
+    db/                # SQLAlchemy engine, session factory
+    logging/           # Structured logging
+    security/          # HMAC verification, JWT, rate limiting
+  ecommerce/           # Shopify domain layer
+    agents/            # Domain agents (rewriter, SEO, pricing, marketing, visual)
+    api/
+      shopify/         # OAuth, admin, proxy, webhook, mission routes
+      superadmin/      # Internal portal (merchants, concerns, outreach)
+    core/              # Content generation, plan entitlements, templates
+    db/                # Domain models (merchants, plans, usage, missions)
+    services/          # Shopify API client, billing, product sync
+  test/                # Comprehensive test suite
 ```
 
-- **`agentic_core/`** is designed to be extractable as a standalone microservice.
-  It has zero imports from `ecommerce/`.
-- **`shared/`** contains infrastructure used by both packages (logging, DB, security).
-- **`ecommerce/`** holds all Shopify-specific code: FastAPI app, domain agents,
-  services, templates, and database models.
+### Design Principles
 
-### System Diagram
+- **`agentic_core/`** is extractable as a standalone service — zero imports from `ecommerce/`
+- **`shared/`** provides infrastructure used by both packages
+- **`ecommerce/`** contains all Shopify-specific business logic
+
+## System Overview
 
 ```mermaid
 graph TD
-    subgraph "Shopify Cloud"
-        Store[Shopify Storefront / Admin]
-        API_S[Shopify Admin API]
+    subgraph "Shopify"
+        Store[Shopify Admin / Storefront]
+        GQL[Shopify GraphQL API]
     end
 
-    subgraph "Frontend: shopify-translator-ui (Remix/Express)"
-        UI[App Dashboard / Plans Page]
-        ServerUI[Shopify App Server]
+    subgraph "Frontend — aganim-ui"
+        UI[React Router 7 + Polaris]
     end
 
-    subgraph "Backend: shopify-translator-api (FastAPI/Python)"
-        FastAPI[API Controllers]
-        Core[Core Business Logic]
-        DB[(PostgreSQL)]
-        LLM[OpenAI GPT-4o-mini]
+    subgraph "Backend — aganim-api"
+        API[FastAPI Controllers]
+        Agents[AI Agent Pipelines]
+        DB[(PostgreSQL + pgvector)]
+        LLM[OpenAI GPT-4o / GPT-4o-mini]
+        IMG[fal.ai Image Generation]
+        S3[AWS S3 Asset Storage]
     end
 
-    %% Flow 1: Installation & Billing
-    Store -- 1. Install/Open App --> UI
-    UI -- 2. Manage Plans --> Store
-    Store -- 3. Billing Webhook --> FastAPI
-    FastAPI -- 4. Update Plan --> DB
-
-    %% Flow 2: Product Translation (The "Magic")
-    Store -- 5. App Proxy Request --> FastAPI
-    FastAPI -- 6. Check Quota/Plan --> DB
-    FastAPI -- 7. Generate Copy --> LLM
-    FastAPI -- 8. Save Translation --> API_S
-    API_S -- 9. Persistence --> Store
+    Store -->|Install / OAuth| UI
+    UI -->|Admin API calls| API
+    Store -->|App Proxy| API
+    Store -->|Webhooks| API
+    API --> Agents
+    Agents --> LLM
+    Agents --> IMG
+    Agents --> S3
+    API --> DB
+    API -->|Write translations| GQL
 ```
 
-### Component Roles
+## API Surface
 
-#### **1. Frontend: `shopify-translator-ui` (The Interface)**
-*   **Technology:** React (Polaris) + Remix/Express.
-*   **Purpose:** This is the "Admin Dashboard." It handles:
-    *   **Onboarding:** The initial OAuth handshake.
-    *   **Billing:** The native Shopify Plans selection UI.
-    *   **Settings:** Merchant-facing configuration and plan management.
+### Shopify OAuth & Webhooks
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/callback` | GET | OAuth callback, merchant provisioning |
+| `/webhooks/app/uninstalled` | POST | Cleanup on app removal |
+| `/webhooks/subscription-activated` | POST | Plan billing sync |
+| `/api/webhooks/compliance` | POST | GDPR data request / redact |
 
-#### **2. Backend: `shopify-translator-api` (The Engine)**
-*   **Technology:** Python (FastAPI) + PostgreSQL.
-*   **Purpose:** This is the logic layer that performs the heavy lifting.
-    *   **LLM Processing:** Translates and beautifies product descriptions using market-specific personas.
-    *   **Shopify Integration:** Routes updates via REST (primary locale) or GraphQL (secondary locales).
-    *   **Usage Tracking:** Monitors token usage and enforces plan-based quotas.
+### Admin (Embedded App — JWT verified)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/admin/usage` | GET | Plan usage stats for dashboard |
+| `/api/admin/submit-concern` | POST | Merchant feedback (rate-limited) |
+| `/api/admin/reinstall-path` | GET | Reinstall detection for returning merchants |
 
-#### **3. Shopify Integration (The Ecosystem)**
-*   **The Widget:** Injected into the Product Admin via Theme App Extensions.
-*   **App Proxy:** Securely forwards frontend requests to the FastAPI backend without exposing raw credentials.
+### App Proxy (HMAC signature verified)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/proxy/generate-copy` | POST | AI product rewrite (title + description + SEO) |
+| `/api/proxy/seo/*` | POST | SEO analysis, competitor data, CTR scoring |
+| `/api/proxy/pricing/*` | POST | Competitor price scraping + AI recommendations |
+| `/api/proxy/marketing/*` | POST | Social captions, ad copy, campaigns, email |
+| `/api/proxy/visual/*` | POST | Hero image generation, image refinement |
+| `/api/proxy/missions/*` | POST | Multi-agent pipeline orchestration |
 
----
+### Super-Admin Portal
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/superadmin/dashboard` | GET | Platform analytics |
+| `/api/superadmin/merchants` | GET | Merchant management |
+| `/api/superadmin/concerns` | GET | Support ticket triage |
+| `/api/superadmin/missions` | GET | Mission monitoring |
 
-## 🚀 Overview
+## Key Capabilities
 
-This application serves as the backend for a Shopify App. It provides two main interfaces:
-1.  **Public API**: Used by the store's frontend or background workers to generate content, authenticated via API Keys.
-2.  **Admin API**: Used for app configuration and setup, authenticated via Shopify Session Tokens (JWT).
+- **AI Rewriter** — Brand Soul-aware product localization for 12+ markets
+- **SEO Optimizer** — SERP analysis, LSI enrichment, competitor mirroring, CTR best practices
+- **Price Scout** — Google-powered competitor pricing with AI-driven recommendations
+- **Marketing Studio** — Social media captions, ad copy, seasonal campaigns, email templates
+- **Visual Pipeline** — Hero/blog/collection image generation via fal.ai, background removal (rembg)
+- **Agentic Missions** — Multi-step AI pipelines chaining rewriter, SEO, pricing, marketing, and visual agents
+- **Image Refinement** — AI-enhanced product imagery with background replacement
 
-## Key Features
+## Security
 
-*   **AI-Powered Translation**: Context-aware translation using OpenAI's GPT models.
-*   **Dual Authentication Strategy**:
-    *   **Shopify JWT** for secure admin access.
-    *   **Hashed API Keys** for secure, quota-tracked API usage.
-*   **Granular Quota Management**:
-    *   Plans define monthly token limits and feature access (e.g., Streaming).
-    *   Real-time tracking of token usage per billing cycle.
-    *   Automatic blocking when quotas are exceeded.
-*   **Rate Limiting**: In-memory sliding window rate limiter to prevent abuse.
-*   **Streaming Support**: Server-Sent Events (SSE) for real-time content generation feedback.
-*   **Dockerized**: Production-ready Docker Compose setup with PostgreSQL.
+| Layer | Mechanism |
+|-------|-----------|
+| Shopify App Proxy | HMAC signature verification on every request |
+| Admin endpoints | Shopify JWT session token validation |
+| Server-to-server | `TOKEN_SYNC_SECRET` shared secret header |
+| Super-admin portal | Separate JWT auth with role-based access |
+| Dev bypass | Gated behind `ENVIRONMENT != "production"` |
+| Rate limiting | In-memory sliding window per IP (LLM calls + submit endpoints) |
+| Error tracking | Sentry SDK integration |
 
-## 📡 API Contracts
+## Tech Stack
 
-### 1. Generate Copy (Public/Client)
-Generates marketing copy. Supports both standard JSON responses and Streaming (SSE).
+- **Framework:** FastAPI + Uvicorn
+- **Language:** Python 3.13
+- **Database:** PostgreSQL + pgvector (SQLAlchemy ORM, Alembic migrations)
+- **LLM:** OpenAI (GPT-4o, GPT-4o-mini)
+- **Image Gen:** fal.ai (FLUX models)
+- **Storage:** AWS S3
+- **Auth:** PyJWT, HMAC-SHA256
+- **Monitoring:** Sentry
+- **CI/CD:** GitHub Actions (test on PR, deploy on merge to main)
+- **Deployment:** Docker on Render
 
-*   **Endpoint**: `POST /api/generate-copy`
-*   **Authentication**: `Authorization: Bearer <YOUR_API_KEY>`
-*   **Request Body** (`application/json`):
-    ```json
-    {
-      "product_name": "Premium Ceramic Mug",
-      "japanese_description": "このマグカップは高品質なセラミックで作られています。",
-      "category": "Kitchenware",
-      "stream": false
-    }
-    ```
-    *   `stream` (bool): Set to `true` to receive a Server-Sent Events stream.
+## Prerequisites
 
-*   **Response (Standard)**:
-    ```json
-    {
-      "status": "success",
-      "english_copy": "Crafted from high-quality ceramic, this premium mug..."
-    }
-    ```
+- Python 3.13
+- PostgreSQL (with pgvector extension)
+- OpenAI API key
+- Shopify app credentials
 
-*   **Response (Streaming)**: Returns a stream of chunks.
+## Local Development
 
-### 2. Admin Info (Admin)
-Verifies the Shopify session and returns context.
-
-*   **Endpoint**: `GET /api/admin/me`
-*   **Authentication**: `Authorization: Bearer <SHOPIFY_SESSION_TOKEN>`
-*   **Response**:
-    ```json
-    {
-      "status": "authenticated",
-      "shop": "my-store.myshopify.com",
-      "message": "Welcome to the Admin API"
-    }
-    ```
-
-## 🗄️ Database Models
-
-The application uses **SQLAlchemy** with **PostgreSQL**.
-
-*   **User**: Represents a Shopify Merchant. Links to a `Plan` and holds multiple `APIKey`s.
-*   **Plan**: Defines the service tier.
-    *   `monthly_rewrite_limit (db column: monthly_token_quota)`: Max product rewrites allowed per month.
-    *   `max_request_rate`: Rate limit threshold.
-    *   `can_stream_responses`: Feature flag for streaming.
-*   **APIKey**: Credentials for the Public API.
-    *   `key_hash`: SHA-256 hash of the raw key (raw keys are never stored).
-*   **UsageRecord**: Tracks usage.
-    *   Composite Key: `api_key_id` + `billing_cycle_start`.
-    *   `token_count`: Atomically incremented counter.
-
-## 🔒 Security Features
-
-1.  **API Key Hashing**: Raw API keys are hashed using SHA-256 before storage. The database only contains hashes, ensuring keys cannot be leaked if the DB is compromised.
-2.  **Shopify JWT Verification**: Admin endpoints verify the signature, expiration, and audience of Shopify Session Tokens using `pyjwt`.
-3.  **Rate Limiting**: An `InMemoryRateLimiter` protects endpoints. Configuration is flexible (e.g., `{"limit": 10, "window": 60}` allows 10 requests per minute).
-4.  **Quota Enforcement**: Every request to `/api/generate-copy` verifies the user's monthly token usage against their plan's quota in real-time.
-
-## 🐳 Docker & Setup
-
-The project is fully containerized.
-
-### Prerequisites
-*   Docker & Docker Compose
-*   OpenAI API Key
-*   Shopify App Credentials
-
-### Configuration (.env)
-Create a `.env` file in the root:
 ```bash
-OPENAI_API_KEY=sk-...
-SHOPIFY_API_KEY=your_shopify_client_id
-SHOPIFY_API_SECRET=your_shopify_client_secret
-# DATABASE_URL is set in docker-compose.yml
-```
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate
 
-### Running the App
-```bash
-docker-compose up --build
-```
-*   **API**: http://localhost:8000
-*   **Database**: Postgres on port 5432
-
-## 🧪 Testing
-
-The project maintains a high standard of testing using `pytest`.
-
-### Running Tests
-```bash
-# Install dependencies locally or run inside container
+# Install dependencies
 pip install -r requirements.txt
+
+# Start PostgreSQL
+docker compose up -d
+
+# Run the server
+uvicorn src.ecommerce.api.main:app --reload --port 8000
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `SHOPIFY_API_KEY` | Shopify app client ID |
+| `SHOPIFY_API_SECRET` | Shopify app secret |
+| `TOKEN_SYNC_SECRET` | Shared secret for UI-to-API auth |
+| `ENVIRONMENT` | `production` or `development` |
+| `SENTRY_DSN` | Sentry DSN (optional) |
+| `SHOPIFY_REDIRECT_URI` | OAuth redirect URI (defaults to Render URL) |
+| `DEPLOYED_APP_URL` | Production API base URL |
+| `SHOPIFY_UI_URL` | Production UI base URL |
+| `FAL_KEY` | fal.ai API key (for image generation) |
+| `AWS_ACCESS_KEY_ID` | AWS S3 credentials |
+| `AWS_SECRET_ACCESS_KEY` | AWS S3 credentials |
+| `S3_BUCKET_NAME` | S3 bucket for generated assets |
+
+## Testing
+
+```bash
+# Run full test suite
 pytest
+
+# Run with coverage
+pytest --cov=src
+
+# Run specific test file
+pytest src/test/test_integration.py -v
 ```
 
-### Current Test Coverage
-*   **Integration Tests**: Verify the full flow from API call -> DB Quota Check -> (Mock) OpenAI -> DB Usage Update.
-*   **DB Transaction Tests**: Verify ACID properties of quota updates and concurrency safety.
-*   **Security Tests**: Verify JWT validation and API Key hashing.
-*   **Status**: ✅ All Tests Passing
-*   **Coverage**: 93% overall
+Test suite includes:
+- Integration tests (full API flow with mocked LLM)
+- Security tests (JWT validation, HMAC verification, dev-bypass gating)
+- Rate limiting tests
+- Mission pipeline tests
+- Plan entitlement & quota enforcement tests
+- Database transaction safety tests
 
-### Sample Test Result
-```text
-src/test/test_db_transactions.py::test_verify_api_key_valid PASSED
-src/test/test_db_transactions.py::test_verify_quota_exceeded PASSED
-src/test/test_integration.py::test_integration_generate_copy_flow PASSED
+## CI/CD
+
+- **CI:** GitHub Actions runs `pytest` on every push/PR against Python 3.13 with PostgreSQL service
+- **CD:** Merge to `main` triggers Render deploy via webhook
+
+## Database Migrations
+
+Managed with Alembic:
+
+```bash
+# Generate a new migration
+alembic revision --autogenerate -m "description"
+
+# Apply migrations
+alembic upgrade head
 ```
-### CICD
-A. The CI Job (test)
-This job runs on a fresh virtual machine hosted by GitHub (the Runner).
 
-* `actions/checkout@v4`: Downloads your code from the repository.
+## License
 
-* `actions/setup-python@v5`: Configures the Python environment.
-
-* `pip install -r requirements.txt`: Installs your dependencies (FastAPI, SQLAlchemy, etc.).
-
-* `pytest`: Executes all your unit tests (e.g., test_rate_limiter.py). If any test fails, the workflow stops immediately.
-
-B. The CD Job (deploy)
-This job is very simple because Render handles the heavy lifting.
-
-* `needs: test`: Ensures this job only starts if the test job passed successfully.
-
-* `if: github.ref == 'refs/heads/main'`: Prevents deployment when someone just opens a Pull Request; deployment only happens when the final code is merged into main.
-
-* `curl`: Sends a POST request to your secret RENDER_DEPLOY_HOOK_URL. This signal tells Render: "A new version of the code is ready, please pull the latest changes, build, and deploy."
+Proprietary. All rights reserved.
