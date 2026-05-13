@@ -44,7 +44,8 @@ VALID_STATUSES = {"invited", "accepted", "active", "completed", "churned"}
 # ── Request models ────────────────────────────────────────────────
 
 class EnrollRequest(BaseModel):
-    upgrade_plan: Optional[str] = "Standard"
+    upgrade_plan: Optional[str] = "Pro"
+    beta_duration_days: Optional[int] = 42
     source: Optional[str] = None
     target_market: Optional[str] = None
     notes: Optional[str] = None
@@ -181,6 +182,7 @@ async def list_beta_merchants(
             "plan": shop.current_plan_name if shop else None,
             "enrolled_at": str(e.created_at) if e.created_at else None,
             "last_active": str(last_event) if last_event else None,
+            "beta_expires_at": str(shop.access_expires_at) if shop and shop.access_expires_at else None,
             "rewrites": total_rewrites,
             "features_used": features_used,
             "feedback_score": float(e.feedback_score) if e.feedback_score else None,
@@ -224,6 +226,7 @@ async def get_beta_merchant(domain: str, db: Session = Depends(get_db)):
             "plan": shop.current_plan_name,
             "is_active": shop.is_active,
             "created_at": str(shop.created_at) if shop.created_at else None,
+            "access_expires_at": str(shop.access_expires_at) if shop.access_expires_at else None,
             "monthly_rewrites_used": shop.monthly_rewrites_used,
             "monthly_missions_used": shop.monthly_missions_used,
             "monthly_image_generations_used": shop.monthly_image_generations_used,
@@ -263,17 +266,35 @@ async def enroll_merchant(
     shop.is_beta_tester = True
     if req.upgrade_plan:
         shop.current_plan_name = req.upgrade_plan
+        shop.last_plan_name = req.upgrade_plan
+        # Set access window for the beta duration (auto-downgrades after expiry)
+        beta_expires = now + timedelta(days=req.beta_duration_days)
+        shop.access_expires_at = beta_expires
+        shop.pending_plan_name = "Free"
+        shop.pending_plan_effective_at = beta_expires
+        shop.last_plan_change_type = "beta_grant"
+        shop.last_plan_change_at = now
+        # Reset usage counters for a fresh start
+        shop.monthly_rewrites_used = 0
+        shop.monthly_missions_used = 0
+        shop.monthly_image_generations_used = 0
+        shop.reset_anchor_date = now
+        shop.next_reset_date = now + timedelta(days=30)
+        # Clear any free trial (they're now on Pro beta)
+        shop.free_trial_expires_at = None
 
     db.commit()
     db.refresh(enrollment)
 
-    logger.info("[Beta] Enrolled %s (plan=%s)", domain, req.upgrade_plan)
+    logger.info("[Beta] Enrolled %s (plan=%s, expires=%s)", domain, req.upgrade_plan, beta_expires if req.upgrade_plan else "N/A")
 
     return {
         "message": f"Merchant {domain} enrolled in beta",
         "enrollment_id": enrollment.id,
         "status": enrollment.status,
         "plan": shop.current_plan_name,
+        "beta_expires_at": str(shop.access_expires_at) if shop.access_expires_at else None,
+        "beta_duration_days": req.beta_duration_days,
     }
 
 
