@@ -84,6 +84,32 @@ class Shop(Base):
 
     brand_soul_enabled = Column(Boolean, nullable=False, default=True, server_default="1")
 
+    is_beta_tester = Column(Boolean, nullable=False, default=False, server_default="0")
+
+
+class BetaEnrollment(Base):
+    """Tracks merchants enrolled in the closed beta program."""
+    __tablename__ = "beta_enrollment"
+    __table_args__ = (
+        UniqueConstraint("shop_domain", name="beta_enrollment_shop_domain_key"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    shop_domain = Column(String, index=True, nullable=False)
+    status = Column(String, nullable=False, default="invited")
+    invited_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    feedback_score = Column(Numeric(3, 1), nullable=True)
+    willingness_to_pay = Column(String, nullable=True)
+    testimonial_text = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    target_market = Column(String, nullable=True)
+    source = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
 
 class UsageRecord(Base):
     __tablename__ = "usage_records"

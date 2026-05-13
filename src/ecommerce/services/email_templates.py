@@ -386,4 +386,193 @@ TEMPLATE_REGISTRY: dict[str, callable] = {
     "feedback": feedback_email,
     "rating": rating_email,
     "custom": custom_admin_email,
+    "beta_invite": lambda name, **kw: beta_invite_email(name),
+    "beta_welcome": lambda name, **kw: beta_welcome_email(name),
+    "beta_checkin": lambda name, **kw: beta_checkin_email(name),
+    "beta_feedback": lambda name, **kw: beta_feedback_request_email(name),
+    "beta_exit": lambda name, **kw: beta_exit_email(name),
 }
+
+
+# ── Beta Templates ────────────────────────────────────────────────
+
+_INSTALL_URL = "https://admin.shopify.com/oauth/install?client_id=315cfaf63c9baf27e4ba9a22b91b168e"
+
+
+def beta_invite_email(merchant_name: str) -> tuple[str, str, str]:
+    """Cold outreach to invite a merchant into the closed beta."""
+    subject = "Invitation: Free Beta Access to Aganim AI"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  We're inviting a small group of merchants to beta test <strong>Aganim AI</strong> —
+  an AI tool that rewrites product pages into sales-grade copy for global markets,
+  optimises SEO, and generates marketing visuals.
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  As a beta tester you get <strong>full access to all features — completely free</strong>,
+  no limits, no commitment. In return, we'd love your honest feedback on the experience.
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  Setup takes less than 5 minutes. Interested?
+</p>
+{_cta_button("Join the Beta", _INSTALL_URL)}
+<p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
+  Simply reply to this email if you have questions. We'd love to have you!
+</p>"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"Hi {merchant_name},\n\n"
+        f"We're inviting a small group of merchants to beta test Aganim AI.\n"
+        f"Full access, completely free, no commitment.\n\n"
+        f"Join the beta: {_INSTALL_URL}\n\n"
+        f"Reply to this email if you have questions.\n"
+    )
+    return subject, html_body, text_body
+
+
+def beta_welcome_email(merchant_name: str) -> tuple[str, str, str]:
+    """Welcome email sent when a beta merchant installs the app."""
+    subject = "Welcome to the Aganim AI Beta!"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Welcome to the Beta, {merchant_name}!</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  You now have <strong>full, unlimited access</strong> to every Aganim feature —
+  product rewriting, SEO optimisation, marketing copy, image generation, and more.
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>Here's how to get started:</strong>
+</p>
+<ol style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>Open Aganim from your Shopify admin panel</li>
+  <li>Complete the Brand Soul wizard (2 minutes)</li>
+  <li>Try rewriting your best-selling product</li>
+</ol>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  I'll check in with you in a week to see how things are going. If you need
+  anything at all, just reply to this email.
+</p>
+{_cta_button("Open Aganim", _LANDING_URL)}"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"Welcome to the Beta, {merchant_name}!\n\n"
+        f"You now have full unlimited access to every Aganim feature.\n\n"
+        f"Get started:\n"
+        f"1. Open Aganim from your Shopify admin panel\n"
+        f"2. Complete the Brand Soul wizard\n"
+        f"3. Try rewriting your best-selling product\n\n"
+        f"Open Aganim: {_LANDING_URL}\n"
+    )
+    return subject, html_body, text_body
+
+
+def beta_checkin_email(merchant_name: str) -> tuple[str, str, str]:
+    """Weekly check-in nudge for beta merchants."""
+    subject = "How's your Aganim experience going?"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  Just checking in on your beta experience. Have you had a chance to try
+  the AI rewriter on your products?
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>Quick tip:</strong> Try the SEO Optimizer on your best-selling product —
+  it analyses Google SERP data for your target market and suggests title/meta
+  improvements that can boost organic traffic.
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  If anything isn't working right, or you have ideas for improvement, just
+  reply to this email. Your feedback shapes what we build next.
+</p>
+{_cta_button("Open Aganim", _LANDING_URL)}"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"Hi {merchant_name},\n\n"
+        f"Just checking in on your beta experience.\n\n"
+        f"Quick tip: Try the SEO Optimizer on your best-selling product.\n\n"
+        f"Reply to this email with any feedback or issues.\n"
+        f"Open Aganim: {_LANDING_URL}\n"
+    )
+    return subject, html_body, text_body
+
+
+def beta_feedback_request_email(merchant_name: str) -> tuple[str, str, str]:
+    """Structured feedback request for beta merchants."""
+    subject = "Quick feedback on Aganim (2 minutes)"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  You've been using Aganim for a while now and we'd love to hear what you think.
+  Your feedback directly shapes our roadmap.
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>3 quick questions:</strong>
+</p>
+<ol style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>What feature has been most valuable to you?</li>
+  <li>What's your biggest frustration?</li>
+  <li>Would you pay for this tool after the beta ends?</li>
+</ol>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  Simply reply to this email with your answers — even a few words helps
+  enormously. Thank you!
+</p>
+{_cta_button("Visit Support Page", _SUPPORT_URL)}"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"Hi {merchant_name},\n\n"
+        f"We'd love your feedback on Aganim (takes 2 minutes).\n\n"
+        f"3 quick questions:\n"
+        f"1. What feature has been most valuable to you?\n"
+        f"2. What's your biggest frustration?\n"
+        f"3. Would you pay for this tool after the beta ends?\n\n"
+        f"Reply to this email with your answers.\n"
+        f"Support: {_SUPPORT_URL}\n"
+    )
+    return subject, html_body, text_body
+
+
+def beta_exit_email(merchant_name: str) -> tuple[str, str, str]:
+    """Thank you / exit email at end of beta period."""
+    subject = "Thank you for beta testing Aganim!"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Thank you, {merchant_name}!</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  The closed beta period is wrapping up, and we want to sincerely thank you
+  for being part of it. Your usage and feedback have been invaluable in shaping
+  Aganim into a better product.
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>What happens next:</strong>
+</p>
+<ul style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>Your access continues — nothing changes right now</li>
+  <li>When we launch publicly, beta testers get the first month free</li>
+  <li>If you'd like to share a testimonial, simply reply to this email</li>
+</ul>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  Thank you for helping us build something great. We couldn't have done it
+  without merchants like you.
+</p>
+{_cta_button("Open Aganim", _LANDING_URL)}"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"Thank you, {merchant_name}!\n\n"
+        f"The closed beta is wrapping up. Your feedback has been invaluable.\n\n"
+        f"What's next:\n"
+        f"- Your access continues\n"
+        f"- Beta testers get first month free at launch\n"
+        f"- Reply to share a testimonial\n\n"
+        f"Open Aganim: {_LANDING_URL}\n"
+    )
+    return subject, html_body, text_body
