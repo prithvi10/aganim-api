@@ -335,4 +335,4 @@ class TestTemplateRegistry:
         assert TEMPLATE_REGISTRY["custom"] is custom_admin_email
 
     def test_registry_has_seven_entries(self):
-        assert len(TEMPLATE_REGISTRY) == 7
+        assert len(TEMPLATE_REGISTRY) == 12
