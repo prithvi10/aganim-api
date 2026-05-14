@@ -401,36 +401,45 @@ _INSTALL_URL = "https://admin.shopify.com/oauth/install?client_id=315cfaf63c9baf
 
 def beta_invite_email(merchant_name: str, signup_url: str = "") -> tuple[str, str, str]:
     """Cold outreach to invite a merchant into the closed beta."""
-    subject = "【ご招待】Aganim AI ベータ版への無料アクセス"
+    subject = "【特別ご招待】Aganim AI — 全Pro機能を6週間無料でお試しください"
 
     cta_url = signup_url or _INSTALL_URL
-    cta_label = "ベータ版に登録する" if signup_url else "ベータ版に参加する"
+    cta_label = "無料で始める" if signup_url else "今すぐ試す"
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様</h1>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  少数のマーチャント様を対象に、<strong>Aganim AI</strong>のベータテストへご招待しております。
-  Aganim AIは、商品ページをグローバル市場向けの高品質なコピーにAIでリライトし、
-  SEOを最適化し、マーケティングビジュアルを生成するツールです。
+  限定のマーチャント様に、<strong>Aganim AI</strong>の全機能を
+  <strong>6週間完全無料</strong>でご体験いただける特別プログラムへご招待いたします。
 </p>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  ベータテスターとして、<strong>全機能のProアクセスを6週間完全無料</strong>でご利用いただけます。
-  ご負担は一切ありません。代わりに、率直なフィードバックをいただけると幸いです。
+  Aganim AIは、あなたのショップを次のレベルへ引き上げるAIツールです：
 </p>
+<ul style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>商品ページを海外市場向けに高品質なコピーへAIリライト</li>
+  <li>SEO最適化で検索順位アップ</li>
+  <li>プロ品質のマーケティング画像を自動生成</li>
+  <li>多言語対応でグローバル展開をサポート</li>
+</ul>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  セットアップは5分以内で完了します。ご興味はございますか？
+  <strong>Pro機能すべてが無料</strong> — クレジットカード不要、いつでも解約可能です。
+  セットアップは5分で完了します。
 </p>
 {_cta_button(cta_label, cta_url)}
 <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
-  ご質問がございましたら、このメールにご返信ください。ぜひご参加をお待ちしております！
+  ご質問がございましたら、このメールにご返信ください。お待ちしております！
 </p>"""
 
     html_body = _base_layout(content)
     text_body = (
         f"{merchant_name} 様\n\n"
-        f"少数のマーチャント様を対象に、Aganim AIのベータテストへご招待しております。\n"
-        f"全機能のProアクセスを6週間完全無料でご利用いただけます。\n\n"
-        f"登録はこちら: {cta_url}\n\n"
+        f"限定マーチャント様向けに、Aganim AIの全Pro機能を6週間無料でご体験いただける\n"
+        f"特別プログラムへご招待いたします。\n\n"
+        f"・商品ページのAIリライト\n"
+        f"・SEO最適化\n"
+        f"・マーケティング画像の自動生成\n"
+        f"・多言語対応\n\n"
+        f"無料で始める: {cta_url}\n\n"
         f"ご質問がございましたら、このメールにご返信ください。\n"
     )
     return subject, html_body, text_body
@@ -438,16 +447,25 @@ def beta_invite_email(merchant_name: str, signup_url: str = "") -> tuple[str, st
 
 def beta_welcome_email(merchant_name: str) -> tuple[str, str, str]:
     """Welcome email sent when a beta merchant installs the app."""
-    subject = "Aganim AI ベータ版へようこそ！"
+    subject = "Aganim AI へようこそ！全Pro機能がご利用可能です"
 
     content = f"""\
-<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様、ベータ版へようこそ！</h1>
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様、ようこそ！</h1>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  Aganimの全機能に<strong>無制限アクセス</strong>が可能になりました。
-  商品リライト、SEO最適化、マーケティングコピー、画像生成など、すべてご利用いただけます。
+  Aganimの全Pro機能に<strong>無制限アクセス</strong>が有効になりました。
+  これからあなたのショップをグローバルに成長させるお手伝いをいたします。
 </p>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  <strong>始め方：</strong>
+  <strong>ご利用いただける機能：</strong>
+</p>
+<ul style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>商品ページのAIリライト（無制限）</li>
+  <li>SEO最適化とキーワード分析</li>
+  <li>マーケティングコピーの自動生成</li>
+  <li>プロ品質の商品画像生成</li>
+</ul>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>おすすめの始め方：</strong>
 </p>
 <ol style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
   <li>Shopify管理画面からAganimを開く</li>
@@ -455,16 +473,16 @@ def beta_welcome_email(merchant_name: str) -> tuple[str, str, str]:
   <li>売れ筋商品でリライトを試す</li>
 </ol>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  1週間後にご状況を確認させていただきます。何かございましたら、
-  このメールにご返信ください。
+  何かお困りのことがございましたら、いつでもこのメールにご返信ください。
+  全力でサポートいたします。
 </p>
 {_cta_button("Aganimを開く", _LANDING_URL)}"""
 
     html_body = _base_layout(content)
     text_body = (
-        f"{merchant_name} 様、ベータ版へようこそ！\n\n"
-        f"Aganimの全機能に無制限アクセスが可能になりました。\n\n"
-        f"始め方:\n"
+        f"{merchant_name} 様、ようこそ！\n\n"
+        f"Aganimの全Pro機能に無制限アクセスが有効になりました。\n\n"
+        f"おすすめの始め方:\n"
         f"1. Shopify管理画面からAganimを開く\n"
         f"2. ブランドソウルウィザードを完了する\n"
         f"3. 売れ筋商品でリライトを試す\n\n"

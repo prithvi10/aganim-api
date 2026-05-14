@@ -469,12 +469,12 @@ class TestBetaInviteEmailTemplate:
         subject, html, text = beta_invite_email("Test Merchant", signup_url="https://example.com/beta/signup?token=abc123")
         assert "https://example.com/beta/signup?token=abc123" in html
         assert "https://example.com/beta/signup?token=abc123" in text
-        assert "ベータ版に登録する" in html
+        assert "無料で始める" in html
 
     def test_template_without_signup_url_uses_install_link(self):
         from src.ecommerce.services.email_templates import beta_invite_email
         subject, html, text = beta_invite_email("Test Merchant")
-        assert "ベータ版に参加する" in html
+        assert "今すぐ試す" in html
         assert "shopify" in html.lower() or "admin.shopify" in html.lower()
 
     def test_template_mentions_6_weeks(self):
