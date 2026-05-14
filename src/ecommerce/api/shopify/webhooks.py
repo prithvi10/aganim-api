@@ -437,6 +437,44 @@ async def handle_app_install(
                 user = User(username=shop_domain, email=None, plan_id=free_plan.id)
                 db.add(user)
                 db.commit()
+
+        # Auto-upgrade beta merchants: if there's an accepted enrollment, activate Pro
+        try:
+            from src.ecommerce.db.models import BetaEnrollment
+            beta_enrollment = db.query(BetaEnrollment).filter(
+                BetaEnrollment.shop_domain == shop_domain,
+                BetaEnrollment.status == "accepted",
+            ).first()
+            if beta_enrollment:
+                from datetime import datetime, timedelta, timezone as tz
+                now_utc = datetime.now(tz.utc)
+                shop_rec.is_beta_tester = True
+                shop_rec.current_plan_name = "Pro"
+                shop_rec.last_plan_name = "Pro"
+                beta_expires = now_utc + timedelta(days=42)
+                shop_rec.access_expires_at = beta_expires
+                shop_rec.pending_plan_name = "Free"
+                shop_rec.pending_plan_effective_at = beta_expires
+                shop_rec.last_plan_change_type = "beta_grant"
+                shop_rec.last_plan_change_at = now_utc
+                shop_rec.monthly_rewrites_used = 0
+                shop_rec.monthly_missions_used = 0
+                shop_rec.monthly_image_generations_used = 0
+                shop_rec.free_trial_expires_at = None
+                beta_enrollment.status = "active"
+                beta_enrollment.activated_at = now_utc
+                # Set user email from enrollment if available
+                if beta_enrollment.contact_email and user and not user.email:
+                    user.email = beta_enrollment.contact_email
+                db.add(shop_rec)
+                db.commit()
+                logger.info("[Webhook] Beta auto-upgrade: %s activated on Pro (expires %s)", shop_domain, beta_expires.isoformat())
+        except Exception as beta_err:
+            logger.warning("[Webhook] Beta auto-upgrade check failed for %s: %s", shop_domain, beta_err)
+            try:
+                db.rollback()
+            except Exception:
+                pass
     except Exception as e:
         logger.warning(f"[Webhook] app_install failed shop={shop_domain}: {e}")
         try:
