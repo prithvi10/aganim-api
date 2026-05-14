@@ -42,12 +42,12 @@ async def validate_beta_token(token: str, db: Session = Depends(get_db)):
     ).first()
 
     if not enrollment:
-        raise HTTPException(status_code=404, detail="Invalid or expired invite link")
+        raise HTTPException(status_code=404, detail="招待リンクが無効、または期限切れです")
 
     if enrollment.status not in ("invited", "accepted"):
         raise HTTPException(
             status_code=410,
-            detail="This invite has already been used"
+            detail="この招待リンクは既に使用されています"
         )
 
     return {
@@ -67,12 +67,12 @@ async def submit_beta_signup(
     ).first()
 
     if not enrollment:
-        raise HTTPException(status_code=404, detail="Invalid or expired invite link")
+        raise HTTPException(status_code=404, detail="招待リンクが無効、または期限切れです")
 
     if enrollment.status not in ("invited",):
         raise HTTPException(
             status_code=410,
-            detail="This invite has already been used"
+            detail="この招待リンクは既に使用されています"
         )
 
     now = datetime.now(timezone.utc)
@@ -126,5 +126,5 @@ async def submit_beta_signup(
         "success": True,
         "status": enrollment.status,
         "install_url": _SHOPIFY_INSTALL_URL,
-        "message": "Beta signup complete! Install the app to activate your Pro access.",
+        "message": "ベータ登録が完了しました！アプリをインストールしてProアクセスを有効にしてください。",
     }
