@@ -11,6 +11,7 @@ Includes:
 from __future__ import annotations
 
 import asyncio
+import uuid as _uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -36,9 +37,12 @@ from src.shared.logging.logger import get_logger
 
 logger = get_logger(__name__)
 
+import os as _os
+
 router = APIRouter(prefix="/beta", dependencies=[Depends(verify_admin_token)])
 
 VALID_STATUSES = {"invited", "accepted", "active", "completed", "churned"}
+_UI_BASE_URL = _os.getenv("SHOPIFY_UI_URL", "https://aganim-ui.onrender.com")
 
 
 # ── Request models ────────────────────────────────────────────────
@@ -187,6 +191,7 @@ async def list_beta_merchants(
             "features_used": features_used,
             "feedback_score": float(e.feedback_score) if e.feedback_score else None,
             "source": e.source,
+            "signup_url": f"{_UI_BASE_URL}/beta/signup?token={e.invite_token}" if e.invite_token else None,
         })
 
     return {"merchants": merchants, "total": total, "page": page}
@@ -219,6 +224,13 @@ async def get_beta_merchant(domain: str, db: Session = Depends(get_db)):
             "notes": enrollment.notes,
             "target_market": enrollment.target_market,
             "source": enrollment.source,
+            "invite_token": enrollment.invite_token,
+            "signup_url": f"{_UI_BASE_URL}/beta/signup?token={enrollment.invite_token}" if enrollment.invite_token else None,
+            "store_name": enrollment.store_name,
+            "contact_email": enrollment.contact_email,
+            "purpose": enrollment.purpose,
+            "product_category": enrollment.product_category,
+            "target_markets": enrollment.target_markets,
             "created_at": str(enrollment.created_at) if enrollment.created_at else None,
         },
         "shop": {
@@ -480,6 +492,7 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
     if not req.shop_domains and not req.raw_emails:
         raise HTTPException(status_code=400, detail="No recipients specified")
 
+    now = datetime.now(timezone.utc)
     results: list[dict] = []
 
     for domain in req.shop_domains:
@@ -488,7 +501,26 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
             results.append({"domain": domain, "status": "skipped", "reason": "no email"})
             continue
 
-        subject, html_body, text_body = beta_invite_email(domain)
+        # Generate token and create enrollment record if not exists
+        existing = db.query(BetaEnrollment).filter(
+            BetaEnrollment.shop_domain == domain
+        ).first()
+        if existing and existing.status != "churned":
+            token = existing.invite_token or _uuid.uuid4().hex
+            existing.invite_token = token
+        else:
+            token = _uuid.uuid4().hex
+            enrollment = BetaEnrollment(
+                shop_domain=domain,
+                status="invited",
+                invite_token=token,
+                invited_at=now,
+                source="admin_invite",
+            )
+            db.add(enrollment)
+
+        signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
+        subject, html_body, text_body = beta_invite_email(domain, signup_url=signup_url)
         try:
             await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body)
             status = "sent"
@@ -501,13 +533,27 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
             subject=subject, body=text_body[:500], status=status,
         )
         db.add(log)
-        results.append({"domain": domain, "email": email, "status": status})
+        results.append({"domain": domain, "email": email, "status": status, "signup_url": signup_url})
 
         if len(req.shop_domains) > 1:
             await asyncio.sleep(1.0)
 
     for email in req.raw_emails:
-        subject, html_body, text_body = beta_invite_email(email)
+        # For raw emails, use email as placeholder domain
+        placeholder_domain = email.split("@")[0] + ".myshopify.com"
+        token = _uuid.uuid4().hex
+        enrollment = BetaEnrollment(
+            shop_domain=placeholder_domain,
+            status="invited",
+            invite_token=token,
+            invited_at=now,
+            contact_email=email,
+            source="admin_invite",
+        )
+        db.add(enrollment)
+
+        signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
+        subject, html_body, text_body = beta_invite_email(email, signup_url=signup_url)
         try:
             await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body)
             status = "sent"
@@ -520,7 +566,7 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
             subject=subject, body=text_body[:500], status=status,
         )
         db.add(log)
-        results.append({"email": email, "status": status})
+        results.append({"email": email, "status": status, "signup_url": signup_url})
 
         if len(req.raw_emails) > 1:
             await asyncio.sleep(1.0)

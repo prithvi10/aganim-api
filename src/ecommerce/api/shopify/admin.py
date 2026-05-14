@@ -307,6 +307,7 @@ async def get_usage(
         "free_trial_expired": bool(auth_context.get("free_trial_expired")),
         "brand_soul_enabled": bool(getattr(shop, "brand_soul_enabled", True)),
         "brand_context_status": getattr(shop, "brand_context_status", None) or "idle",
+        "is_beta_tester": bool(getattr(shop, "is_beta_tester", False)),
     }
 
 

@@ -399,9 +399,12 @@ TEMPLATE_REGISTRY: dict[str, callable] = {
 _INSTALL_URL = "https://admin.shopify.com/oauth/install?client_id=315cfaf63c9baf27e4ba9a22b91b168e"
 
 
-def beta_invite_email(merchant_name: str) -> tuple[str, str, str]:
+def beta_invite_email(merchant_name: str, signup_url: str = "") -> tuple[str, str, str]:
     """Cold outreach to invite a merchant into the closed beta."""
     subject = "Invitation: Free Beta Access to Aganim AI"
+
+    cta_url = signup_url or _INSTALL_URL
+    cta_label = "Sign Up for Beta" if signup_url else "Join the Beta"
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">Hi {merchant_name},</h1>
@@ -411,13 +414,13 @@ def beta_invite_email(merchant_name: str) -> tuple[str, str, str]:
   optimises SEO, and generates marketing visuals.
 </p>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  As a beta tester you get <strong>full access to all features — completely free</strong>,
-  no limits, no commitment. In return, we'd love your honest feedback on the experience.
+  As a beta tester you get <strong>full Pro access to all features — completely free
+  for 6 weeks</strong>, no commitment. In return, we'd love your honest feedback on the experience.
 </p>
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
   Setup takes less than 5 minutes. Interested?
 </p>
-{_cta_button("Join the Beta", _INSTALL_URL)}
+{_cta_button(cta_label, cta_url)}
 <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
   Simply reply to this email if you have questions. We'd love to have you!
 </p>"""
@@ -426,8 +429,8 @@ def beta_invite_email(merchant_name: str) -> tuple[str, str, str]:
     text_body = (
         f"Hi {merchant_name},\n\n"
         f"We're inviting a small group of merchants to beta test Aganim AI.\n"
-        f"Full access, completely free, no commitment.\n\n"
-        f"Join the beta: {_INSTALL_URL}\n\n"
+        f"Full Pro access, completely free for 6 weeks, no commitment.\n\n"
+        f"Sign up: {cta_url}\n\n"
         f"Reply to this email if you have questions.\n"
     )
     return subject, html_body, text_body
