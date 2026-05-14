@@ -428,7 +428,7 @@ class TestEmail:
         logs = db_session.query(OutreachLog).all()
         assert len(logs) == 1
         assert logs[0].recipient_email == "test@example.com"
-        assert "feedback" in logs[0].subject.lower()
+        assert "aganim" in logs[0].subject.lower()
 
     def test_invite_no_recipients_400(self, client, db_session):
         resp = client.post(

@@ -134,13 +134,13 @@ class TestPublicSignupValidation:
     def test_invalid_token_returns_404(self, client):
         resp = client.get("/api/beta/signup/nonexistent-token")
         assert resp.status_code == 404
-        assert "Invalid or expired" in resp.json()["detail"]
+        assert "無効" in resp.json()["detail"] or "期限切れ" in resp.json()["detail"]
 
     def test_used_token_returns_410(self, client, db_session):
         _seed_enrollment(db_session, token="used-token", status="active")
         resp = client.get("/api/beta/signup/used-token")
         assert resp.status_code == 410
-        assert "already been used" in resp.json()["detail"]
+        assert "既に使用" in resp.json()["detail"]
 
     def test_accepted_token_still_valid(self, client, db_session):
         _seed_enrollment(db_session, token="accepted-token", status="accepted")
@@ -469,18 +469,18 @@ class TestBetaInviteEmailTemplate:
         subject, html, text = beta_invite_email("Test Merchant", signup_url="https://example.com/beta/signup?token=abc123")
         assert "https://example.com/beta/signup?token=abc123" in html
         assert "https://example.com/beta/signup?token=abc123" in text
-        assert "Sign Up for Beta" in html
+        assert "ベータ版に登録する" in html
 
     def test_template_without_signup_url_uses_install_link(self):
         from src.ecommerce.services.email_templates import beta_invite_email
         subject, html, text = beta_invite_email("Test Merchant")
-        assert "Join the Beta" in html
+        assert "ベータ版に参加する" in html
         assert "shopify" in html.lower() or "admin.shopify" in html.lower()
 
     def test_template_mentions_6_weeks(self):
         from src.ecommerce.services.email_templates import beta_invite_email
         subject, html, text = beta_invite_email("Store", signup_url="https://x.com/signup?token=t")
-        assert "6 weeks" in html or "6 weeks" in text
+        assert "6週間" in html or "6週間" in text
 
 
 # ===========================================================================
