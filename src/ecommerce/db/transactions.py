@@ -430,6 +430,43 @@ def store_shop_access_token(db: Session, shop_domain: str, access_token: str, to
 
     db.commit()
     db.refresh(shop_record)
+
+    # Beta auto-upgrade: check if there's an accepted enrollment for this domain
+    try:
+        from .models import BetaEnrollment
+        beta_enrollment = db.query(BetaEnrollment).filter(
+            BetaEnrollment.shop_domain == shop_domain,
+            BetaEnrollment.status == "accepted",
+        ).first()
+        if beta_enrollment:
+            now_utc = datetime.now(timezone.utc)
+            shop_record.is_beta_tester = True
+            shop_record.current_plan_name = "Pro"
+            shop_record.last_plan_name = "Pro"
+            beta_expires = now_utc + timedelta(days=42)
+            shop_record.access_expires_at = beta_expires
+            shop_record.pending_plan_name = "Free"
+            shop_record.pending_plan_effective_at = beta_expires
+            shop_record.last_plan_change_type = "beta_grant"
+            shop_record.last_plan_change_at = now_utc
+            shop_record.monthly_rewrites_used = 0
+            shop_record.monthly_missions_used = 0
+            shop_record.monthly_image_generations_used = 0
+            shop_record.free_trial_expires_at = None
+            beta_enrollment.status = "active"
+            beta_enrollment.activated_at = now_utc
+            if beta_enrollment.contact_email and user and not user.email:
+                user.email = beta_enrollment.contact_email
+            db.commit()
+            db.refresh(shop_record)
+            logger.info(f"[BetaAutoUpgrade] {shop_domain} activated on Pro (expires {beta_expires.isoformat()})")
+    except Exception as beta_err:
+        logger.warning(f"[BetaAutoUpgrade] check failed for {shop_domain}: {beta_err}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
     logger.info(f"Successfully stored shop and user for {shop_domain}")
     return shop_record
 
