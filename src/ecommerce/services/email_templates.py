@@ -19,7 +19,7 @@ _BRAND_DARK = "#1E40AF"
 _UNSUBSCRIBE_EMAIL = "unsubscribe@aganim.com"
 _SUPPORT_EMAIL = "support@aganim.com"
 
-_UI_BASE_URL = os.getenv("SHOPIFY_UI_URL", "https://aganim-ui.onrender.com")
+_UI_BASE_URL = os.getenv("PUBLIC_SITE_URL", "https://aganim-ai.com")
 _LANDING_URL = _UI_BASE_URL
 _SUPPORT_URL = f"{_UI_BASE_URL}/support"
 
