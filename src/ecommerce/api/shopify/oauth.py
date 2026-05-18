@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from src.shared.db.database import get_db
-from src.ecommerce.db.models import Shop, User, Plan
+from src.ecommerce.db.models import Shop, User, Plan, BetaEnrollment
 from src.ecommerce.db.transactions import (
     get_shop_quota_context,
     store_shop_access_token,
@@ -207,6 +207,19 @@ async def reinstall_pathfinder(
             pass
 
     if _is_paid(last_plan):
+        # Beta testers with active enrollment should keep their plan intact
+        if getattr(shop, "is_beta_tester", False):
+            beta_enrollment = db.query(BetaEnrollment).filter(
+                BetaEnrollment.shop_domain == shop_domain,
+                BetaEnrollment.status.in_(("active", "accepted")),
+            ).first()
+            if beta_enrollment:
+                return {
+                    "redirect_to": "/app",
+                    "reason": "beta_active",
+                    "access_expires_at": access_expires_at.isoformat() if access_expires_at else None,
+                }
+
         if bool(ctx.get("grace_mode")):
             # Grace: keep their paid tier for gating
             try:
