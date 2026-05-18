@@ -522,6 +522,14 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
             )
             db.add(enrollment)
 
+        # Flush to validate unique constraints before sending email
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            results.append({"domain": domain, "status": "skipped", "reason": "already_enrolled"})
+            continue
+
         signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
         subject, html_body, text_body = beta_invite_email(domain, signup_url=signup_url)
         try:
@@ -562,6 +570,14 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
                 source="admin_invite",
             )
             db.add(enrollment)
+
+        # Flush to validate unique constraints before sending email
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            results.append({"email": email, "status": "skipped", "reason": "already_enrolled"})
+            continue
 
         signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
         subject, html_body, text_body = beta_invite_email(email, signup_url=signup_url)
