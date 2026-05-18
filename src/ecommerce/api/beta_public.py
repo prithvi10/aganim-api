@@ -35,6 +35,15 @@ class BetaSignupRequest(BaseModel):
     purpose: Optional[str] = None
 
 
+class BetaFeedbackRequest(BaseModel):
+    feedback_score: Optional[float] = None
+    favorite_features: Optional[str] = None
+    frustration: Optional[str] = None
+    willingness_to_pay: Optional[str] = None
+    testimonial: Optional[str] = None
+    comments: Optional[str] = None
+
+
 @router.get("/signup/{token}")
 async def validate_beta_token(token: str, db: Session = Depends(get_db)):
     """Validate an invite token and return status info for the signup form."""
@@ -145,4 +154,78 @@ async def submit_beta_signup(
         "status": enrollment.status,
         "install_url": _SHOPIFY_INSTALL_URL,
         "message": "ベータ登録が完了しました！アプリをインストールしてProアクセスを有効にしてください。",
+    }
+
+
+# ── Beta Feedback Endpoints ──────────────────────────────────────────
+
+
+@router.get("/feedback/{token}")
+async def validate_feedback_token(token: str, db: Session = Depends(get_db)):
+    """Validate an invite token for the feedback form."""
+    enrollment = db.query(BetaEnrollment).filter(
+        BetaEnrollment.invite_token == token
+    ).first()
+
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="リンクが無効、または期限切れです")
+
+    if enrollment.status not in ("active", "accepted"):
+        raise HTTPException(
+            status_code=410,
+            detail="このリンクはご利用いただけません"
+        )
+
+    return {
+        "valid": True,
+        "store_name": enrollment.store_name or enrollment.shop_domain,
+    }
+
+
+@router.post("/feedback/{token}")
+async def submit_beta_feedback(
+    token: str, req: BetaFeedbackRequest, db: Session = Depends(get_db)
+):
+    """Submit beta feedback. Stores in BetaEnrollment fields."""
+    enrollment = db.query(BetaEnrollment).filter(
+        BetaEnrollment.invite_token == token
+    ).first()
+
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="リンクが無効、または期限切れです")
+
+    if enrollment.status not in ("active", "accepted"):
+        raise HTTPException(
+            status_code=410,
+            detail="このリンクはご利用いただけません"
+        )
+
+    if req.feedback_score is not None:
+        enrollment.feedback_score = req.feedback_score
+    if req.willingness_to_pay:
+        enrollment.willingness_to_pay = req.willingness_to_pay
+    if req.testimonial:
+        enrollment.testimonial_text = req.testimonial
+
+    # Consolidate text feedback into notes
+    parts = []
+    if req.favorite_features:
+        parts.append(f"お気に入り機能: {req.favorite_features}")
+    if req.frustration:
+        parts.append(f"不満点: {req.frustration}")
+    if req.comments:
+        parts.append(f"コメント: {req.comments}")
+    if parts:
+        existing = enrollment.notes or ""
+        new_notes = "\n".join(parts)
+        enrollment.notes = f"{existing}\n---\n{new_notes}".strip() if existing else new_notes
+
+    db.commit()
+
+    logger.info("[BetaFeedback] Received from %s score=%s wtp=%s",
+                enrollment.shop_domain, req.feedback_score, req.willingness_to_pay)
+
+    return {
+        "success": True,
+        "message": "フィードバックをお寄せいただきありがとうございます！",
     }

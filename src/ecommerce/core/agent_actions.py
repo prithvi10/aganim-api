@@ -554,7 +554,18 @@ def price_scout_action(
     if not target_locale:
         target_locale = "en"
     
-    logger.info("[AgentAction] rid=%s action=price_scout product=%s target_locale=%s", rid, product_title[:50], target_locale)
+    logger.info("[AgentAction] rid=%s action=price_scout product=%s target_locale=%s category=%s", rid, product_title[:50], target_locale, category[:30])
+    
+    # Warn if category seems unrelated to product name
+    if category and category.lower() != "general":
+        cat_words = set(category.lower().split())
+        name_words = set(product_title.lower().split())
+        if not cat_words & name_words:
+            logger.warning(
+                "[AgentAction] rid=%s Price Scout category '%s' shares no words with product '%s' — "
+                "verify productType in Shopify",
+                rid, category, product_title[:50],
+            )
     
     _LOCALE_CURRENCY = {"ja": "¥", "ko": "₩", "zh-TW": "NT$", "zh-CN": "¥", "th": "฿", "pt": "R$"}
     currency_symbol = _LOCALE_CURRENCY.get(target_locale, "$")

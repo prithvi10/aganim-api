@@ -149,6 +149,26 @@ class PriceScoutAgent(BaseAgent):
             target_locale = state.target_locale or state.raw_input.get("target_locale", "en")
             serp_params = LOCALE_TO_SERP_PARAMS.get(target_locale, {})
 
+            logger.info(
+                "[PriceScout] SERP lookup locale=%s gl=%s product=%s category=%s",
+                target_locale,
+                serp_params.get("gl"),
+                product_name[:40],
+                category[:30],
+            )
+
+            # Warn if category seems unrelated to product name
+            if category and category.lower() != "general":
+                cat_words = set(category.lower().split())
+                name_words = set(product_name.lower().split())
+                if not cat_words & name_words:
+                    logger.warning(
+                        "[PriceScout] Category '%s' shares no words with product '%s' — "
+                        "verify productType in Shopify",
+                        category,
+                        product_name[:50],
+                    )
+
             competitors = await self.services.serp.get_competitor_prices(
                 product_name=product_name,
                 category=category,

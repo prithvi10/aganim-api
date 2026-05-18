@@ -491,9 +491,17 @@ def beta_welcome_email(merchant_name: str) -> tuple[str, str, str]:
     return subject, html_body, text_body
 
 
-def beta_checkin_email(merchant_name: str) -> tuple[str, str, str]:
+def beta_checkin_email(merchant_name: str, feedback_url: str = "") -> tuple[str, str, str]:
     """Weekly check-in nudge for beta merchants."""
     subject = "Aganimのご利用状況はいかがですか？"
+
+    feedback_cta = ""
+    if feedback_url:
+        feedback_cta = f"""
+<p style="margin:24px 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  ご体験をお聞かせください：
+</p>
+{_cta_button("ご感想をお聞かせください", feedback_url)}"""
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様</h1>
@@ -510,6 +518,7 @@ def beta_checkin_email(merchant_name: str) -> tuple[str, str, str]:
   不具合や改善のアイデアがございましたら、このメールにご返信ください。
   いただいたフィードバックは今後の開発に反映いたします。
 </p>
+{feedback_cta}
 {_cta_button("Aganimを開く", _LANDING_URL)}"""
 
     html_body = _base_layout(content)
@@ -518,14 +527,19 @@ def beta_checkin_email(merchant_name: str) -> tuple[str, str, str]:
         f"ベータ版のご利用状況を確認させていただいています。\n\n"
         f"ワンポイント: 売れ筋商品でSEOオプティマイザーをお試しください。\n\n"
         f"フィードバックやご質問がございましたら、このメールにご返信ください。\n"
-        f"Aganimを開く: {_LANDING_URL}\n"
+        + (f"フィードバックフォーム: {feedback_url}\n" if feedback_url else "")
+        + f"Aganimを開く: {_LANDING_URL}\n"
     )
     return subject, html_body, text_body
 
 
-def beta_feedback_request_email(merchant_name: str) -> tuple[str, str, str]:
+def beta_feedback_request_email(merchant_name: str, feedback_url: str = "") -> tuple[str, str, str]:
     """Structured feedback request for beta merchants."""
     subject = "Aganimについてのフィードバック（2分で完了）"
+
+    feedback_cta = ""
+    if feedback_url:
+        feedback_cta = _cta_button("フィードバックフォームに回答する", feedback_url)
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様</h1>
@@ -541,9 +555,9 @@ def beta_feedback_request_email(merchant_name: str) -> tuple[str, str, str]:
   <li>最も不満に感じた点は何ですか？</li>
   <li>ベータ終了後、このツールに料金をお支払いいただけますか？</li>
 </ol>
-<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
-  このメールにご返信いただくだけで構いません。一言でも大変参考になります。
-  ありがとうございます！
+{feedback_cta}
+<p style="margin:12px 0;font-size:14px;color:#6b7280;line-height:1.6;">
+  フォームが開けない場合は、このメールにご返信いただくだけでも構いません。
 </p>
 {_cta_button("サポートページ", _SUPPORT_URL)}"""
 
@@ -555,15 +569,24 @@ def beta_feedback_request_email(merchant_name: str) -> tuple[str, str, str]:
         f"1. 最も価値を感じた機能は何ですか？\n"
         f"2. 最も不満に感じた点は何ですか？\n"
         f"3. ベータ終了後、このツールに料金をお支払いいただけますか？\n\n"
-        f"このメールにご返信ください。\n"
+        + (f"フィードバックフォーム: {feedback_url}\n\n" if feedback_url else "")
+        + f"このメールにご返信ください。\n"
         f"サポート: {_SUPPORT_URL}\n"
     )
     return subject, html_body, text_body
 
 
-def beta_exit_email(merchant_name: str) -> tuple[str, str, str]:
+def beta_exit_email(merchant_name: str, feedback_url: str = "") -> tuple[str, str, str]:
     """Thank you / exit email at end of beta period."""
     subject = "Aganim ベータテストへのご参加、ありがとうございました！"
+
+    feedback_cta = ""
+    if feedback_url:
+        feedback_cta = f"""
+<p style="margin:24px 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  最後にご体験をお聞かせください：
+</p>
+{_cta_button("ご感想をお聞かせください", feedback_url)}"""
 
     content = f"""\
 <h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様、ありがとうございます！</h1>
@@ -580,6 +603,7 @@ def beta_exit_email(merchant_name: str) -> tuple[str, str, str]:
   <li>正式リリース時、ベータテスターは初月無料でご利用いただけます</li>
   <li>推薦コメントをいただける場合は、このメールにご返信ください</li>
 </ul>
+{feedback_cta}
 <p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
   素晴らしい製品を作るお手伝いをいただき、ありがとうございました。
   マーチャントの皆様のご協力なしには実現できませんでした。
@@ -594,7 +618,7 @@ def beta_exit_email(merchant_name: str) -> tuple[str, str, str]:
         f"- 現在のアクセスはそのまま継続されます\n"
         f"- 正式リリース時、ベータテスターは初月無料\n"
         f"- 推薦コメントはこのメールにご返信ください\n\n"
-        f"Aganimを開く: {_LANDING_URL}\n"
+        + (f"フィードバックフォーム: {feedback_url}\n\n" if feedback_url else "")
+        + f"Aganimを開く: {_LANDING_URL}\n"
     )
-    return subject, html_body, text_body
     return subject, html_body, text_body
