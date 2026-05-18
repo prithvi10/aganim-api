@@ -166,6 +166,14 @@ class ImageRefinementAgent(BaseAgent):
             brand_name=brand_name,
         )
 
+        logger.info(
+            "[ImageRefinementAgent] build_prompt theme=%s product=%s brand=%s prompt_len=%d",
+            refinement_theme,
+            product_name[:40],
+            brand_name[:30],
+            len(prompt),
+        )
+
         visual_assets: Dict[str, Optional[str]] = {
             "original_image_url": image_url,
             "refined_url": None,
@@ -178,8 +186,8 @@ class ImageRefinementAgent(BaseAgent):
             _progress("refining", 10, "Building refinement prompt...")
 
             logger.info(
-                "[ImageRefinementAgent] prompt=%s url=%s",
-                prompt[:200], image_url,
+                "[ImageRefinementAgent] fal_call model=%s url=%s prompt=%s",
+                NANO_BANANA_EDIT_MODEL, image_url[:80], prompt[:300],
             )
 
             _progress("refining", 20, "AI image refinement in progress...")

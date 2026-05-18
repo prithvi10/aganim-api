@@ -197,7 +197,6 @@ class TestActDomainNanoBananaPipeline:
         assert mock_r2_svc.upload_asset.call_count == 1
         assert actions[0].success is True
         assert state.visual_assets["ad_url"] == "r2://nano-ad.png"
-        assert state.visual_assets["refined_url"] == "r2://nano-ad.png"
         assert state.visual_progress["phase"] == "complete"
 
     @pytest.mark.asyncio

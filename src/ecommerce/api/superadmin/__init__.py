@@ -11,6 +11,7 @@ from .merchants import router as merchants_router
 from .missions import router as missions_router
 from .concerns import router as concerns_router
 from .outreach import router as outreach_router
+from .beta import router as beta_router
 
 superadmin_router = APIRouter()
 
@@ -20,5 +21,6 @@ superadmin_router.include_router(merchants_router)
 superadmin_router.include_router(missions_router)
 superadmin_router.include_router(concerns_router)
 superadmin_router.include_router(outreach_router)
+superadmin_router.include_router(beta_router)
 
 __all__ = ["superadmin_router"]

@@ -19,7 +19,7 @@ _BRAND_DARK = "#1E40AF"
 _UNSUBSCRIBE_EMAIL = "unsubscribe@aganim.com"
 _SUPPORT_EMAIL = "support@aganim.com"
 
-_UI_BASE_URL = os.getenv("SHOPIFY_UI_URL", "https://aganim-ui.onrender.com")
+_UI_BASE_URL = os.getenv("PUBLIC_SITE_URL", "https://aganim-ai.com")
 _LANDING_URL = _UI_BASE_URL
 _SUPPORT_URL = f"{_UI_BASE_URL}/support"
 
@@ -386,4 +386,239 @@ TEMPLATE_REGISTRY: dict[str, callable] = {
     "feedback": feedback_email,
     "rating": rating_email,
     "custom": custom_admin_email,
+    "beta_invite": lambda name, **kw: beta_invite_email(name),
+    "beta_welcome": lambda name, **kw: beta_welcome_email(name),
+    "beta_checkin": lambda name, **kw: beta_checkin_email(name),
+    "beta_feedback": lambda name, **kw: beta_feedback_request_email(name),
+    "beta_exit": lambda name, **kw: beta_exit_email(name),
 }
+
+
+# ── Beta Templates ────────────────────────────────────────────────
+
+_INSTALL_URL = "https://admin.shopify.com/oauth/install?client_id=315cfaf63c9baf27e4ba9a22b91b168e"
+
+
+def beta_invite_email(merchant_name: str, signup_url: str = "") -> tuple[str, str, str]:
+    """Cold outreach to invite a merchant into the closed beta."""
+    subject = "【特別ご招待】Aganim AI — 全Pro機能を6週間無料でお試しください"
+
+    cta_url = signup_url or _INSTALL_URL
+    cta_label = "無料で始める" if signup_url else "今すぐ試す"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  限定のマーチャント様に、<strong>Aganim AI</strong>の全機能を
+  <strong>6週間完全無料</strong>でご体験いただける特別プログラムへご招待いたします。
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  Aganim AIは、あなたのショップを次のレベルへ引き上げるAIツールです：
+</p>
+<ul style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>商品ページを海外市場向けに高品質なコピーへAIリライト</li>
+  <li>SEO最適化で検索順位アップ</li>
+  <li>プロ品質のマーケティング画像を自動生成</li>
+  <li>多言語対応でグローバル展開をサポート</li>
+</ul>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>Pro機能すべてが無料</strong> — クレジットカード不要、いつでも解約可能です。
+  セットアップは5分で完了します。
+</p>
+{_cta_button(cta_label, cta_url)}
+<p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
+  ご質問がございましたら、このメールにご返信ください。お待ちしております！
+</p>"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"{merchant_name} 様\n\n"
+        f"限定マーチャント様向けに、Aganim AIの全Pro機能を6週間無料でご体験いただける\n"
+        f"特別プログラムへご招待いたします。\n\n"
+        f"・商品ページのAIリライト\n"
+        f"・SEO最適化\n"
+        f"・マーケティング画像の自動生成\n"
+        f"・多言語対応\n\n"
+        f"無料で始める: {cta_url}\n\n"
+        f"ご質問がございましたら、このメールにご返信ください。\n"
+    )
+    return subject, html_body, text_body
+
+
+def beta_welcome_email(merchant_name: str) -> tuple[str, str, str]:
+    """Welcome email sent when a beta merchant installs the app."""
+    subject = "Aganim AI へようこそ！全Pro機能がご利用可能です"
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様、ようこそ！</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  Aganimの全Pro機能に<strong>無制限アクセス</strong>が有効になりました。
+  これからあなたのショップをグローバルに成長させるお手伝いをいたします。
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>ご利用いただける機能：</strong>
+</p>
+<ul style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>商品ページのAIリライト（無制限）</li>
+  <li>SEO最適化とキーワード分析</li>
+  <li>マーケティングコピーの自動生成</li>
+  <li>プロ品質の商品画像生成</li>
+</ul>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>おすすめの始め方：</strong>
+</p>
+<ol style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>Shopify管理画面からAganimを開く</li>
+  <li>ブランドソウルウィザードを完了する（2分）</li>
+  <li>売れ筋商品でリライトを試す</li>
+</ol>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  何かお困りのことがございましたら、いつでもこのメールにご返信ください。
+  全力でサポートいたします。
+</p>
+{_cta_button("Aganimを開く", _LANDING_URL)}"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"{merchant_name} 様、ようこそ！\n\n"
+        f"Aganimの全Pro機能に無制限アクセスが有効になりました。\n\n"
+        f"おすすめの始め方:\n"
+        f"1. Shopify管理画面からAganimを開く\n"
+        f"2. ブランドソウルウィザードを完了する\n"
+        f"3. 売れ筋商品でリライトを試す\n\n"
+        f"Aganimを開く: {_LANDING_URL}\n"
+    )
+    return subject, html_body, text_body
+
+
+def beta_checkin_email(merchant_name: str, feedback_url: str = "") -> tuple[str, str, str]:
+    """Weekly check-in nudge for beta merchants."""
+    subject = "Aganimのご利用状況はいかがですか？"
+
+    feedback_cta = ""
+    if feedback_url:
+        feedback_cta = f"""
+<p style="margin:24px 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  ご体験をお聞かせください：
+</p>
+{_cta_button("ご感想をお聞かせください", feedback_url)}"""
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  ベータ版のご利用状況を確認させていただいています。
+  AIリライター機能で商品ページをお試しいただけましたか？
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>ワンポイント：</strong>売れ筋商品でSEOオプティマイザーをお試しください。
+  ターゲット市場のGoogle検索データを分析し、オーガニックトラフィックを増やす
+  タイトル・メタ改善を提案します。
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  不具合や改善のアイデアがございましたら、このメールにご返信ください。
+  いただいたフィードバックは今後の開発に反映いたします。
+</p>
+{feedback_cta}
+{_cta_button("Aganimを開く", _LANDING_URL)}"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"{merchant_name} 様\n\n"
+        f"ベータ版のご利用状況を確認させていただいています。\n\n"
+        f"ワンポイント: 売れ筋商品でSEOオプティマイザーをお試しください。\n\n"
+        f"フィードバックやご質問がございましたら、このメールにご返信ください。\n"
+        + (f"フィードバックフォーム: {feedback_url}\n" if feedback_url else "")
+        + f"Aganimを開く: {_LANDING_URL}\n"
+    )
+    return subject, html_body, text_body
+
+
+def beta_feedback_request_email(merchant_name: str, feedback_url: str = "") -> tuple[str, str, str]:
+    """Structured feedback request for beta merchants."""
+    subject = "Aganimについてのフィードバック（2分で完了）"
+
+    feedback_cta = ""
+    if feedback_url:
+        feedback_cta = _cta_button("フィードバックフォームに回答する", feedback_url)
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  Aganimをご利用いただきありがとうございます。ぜひご感想をお聞かせください。
+  いただいたフィードバックは今後のロードマップに直接反映いたします。
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>3つの簡単な質問：</strong>
+</p>
+<ol style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>最も価値を感じた機能は何ですか？</li>
+  <li>最も不満に感じた点は何ですか？</li>
+  <li>ベータ終了後、このツールに料金をお支払いいただけますか？</li>
+</ol>
+{feedback_cta}
+<p style="margin:12px 0;font-size:14px;color:#6b7280;line-height:1.6;">
+  フォームが開けない場合は、このメールにご返信いただくだけでも構いません。
+</p>
+{_cta_button("サポートページ", _SUPPORT_URL)}"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"{merchant_name} 様\n\n"
+        f"Aganimについてのフィードバックをお聞かせください（2分で完了）。\n\n"
+        f"3つの簡単な質問:\n"
+        f"1. 最も価値を感じた機能は何ですか？\n"
+        f"2. 最も不満に感じた点は何ですか？\n"
+        f"3. ベータ終了後、このツールに料金をお支払いいただけますか？\n\n"
+        + (f"フィードバックフォーム: {feedback_url}\n\n" if feedback_url else "")
+        + f"このメールにご返信ください。\n"
+        f"サポート: {_SUPPORT_URL}\n"
+    )
+    return subject, html_body, text_body
+
+
+def beta_exit_email(merchant_name: str, feedback_url: str = "") -> tuple[str, str, str]:
+    """Thank you / exit email at end of beta period."""
+    subject = "Aganim ベータテストへのご参加、ありがとうございました！"
+
+    feedback_cta = ""
+    if feedback_url:
+        feedback_cta = f"""
+<p style="margin:24px 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  最後にご体験をお聞かせください：
+</p>
+{_cta_button("ご感想をお聞かせください", feedback_url)}"""
+
+    content = f"""\
+<h1 style="margin:0 0 16px;font-size:24px;color:#111827;">{merchant_name} 様、ありがとうございます！</h1>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  クローズドベータ期間が終了に近づいています。ご参加いただき、
+  心より感謝申し上げます。いただいたご利用データとフィードバックは、
+  Aganimをより良い製品に仕上げるために大変貴重なものでした。
+</p>
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  <strong>今後について：</strong>
+</p>
+<ul style="padding-left:20px;margin:12px 0;color:#374151;line-height:1.8;">
+  <li>現在のアクセスはそのまま継続されます</li>
+  <li>正式リリース時、ベータテスターは初月無料でご利用いただけます</li>
+  <li>推薦コメントをいただける場合は、このメールにご返信ください</li>
+</ul>
+{feedback_cta}
+<p style="margin:0 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  素晴らしい製品を作るお手伝いをいただき、ありがとうございました。
+  マーチャントの皆様のご協力なしには実現できませんでした。
+</p>
+{_cta_button("Aganimを開く", _LANDING_URL)}"""
+
+    html_body = _base_layout(content)
+    text_body = (
+        f"{merchant_name} 様、ありがとうございます！\n\n"
+        f"クローズドベータ期間が終了に近づいています。フィードバックは大変貴重でした。\n\n"
+        f"今後について:\n"
+        f"- 現在のアクセスはそのまま継続されます\n"
+        f"- 正式リリース時、ベータテスターは初月無料\n"
+        f"- 推薦コメントはこのメールにご返信ください\n\n"
+        + (f"フィードバックフォーム: {feedback_url}\n\n" if feedback_url else "")
+        + f"Aganimを開く: {_LANDING_URL}\n"
+    )
+    return subject, html_body, text_body

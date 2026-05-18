@@ -11,6 +11,7 @@ import uuid
 from src.ecommerce.config.configs import DATABASE_URL, ALLOWED_ORIGINS
 from src.shared.db.database import engine, Base, get_db
 from src.ecommerce.api.controller import router as api_router
+from src.ecommerce.api.beta_public import router as beta_public_router
 from src.shared.logging.logger import get_logger
 
 _sentry_dsn = os.getenv("SENTRY_DSN")
@@ -100,6 +101,9 @@ app.add_middleware(
 
 # Include the API router
 app.include_router(api_router)
+
+# Include public beta signup router (no auth)
+app.include_router(beta_public_router)
 
 # Health Check Endpoint
 @app.get("/health")
