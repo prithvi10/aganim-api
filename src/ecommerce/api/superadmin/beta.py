@@ -639,6 +639,8 @@ async def send_beta_email(req: BetaEmailRequest, db: Session = Depends(get_db)):
     if not template_fn:
         raise HTTPException(status_code=400, detail=f"Unknown beta template: {req.template}")
 
+    _FEEDBACK_TEMPLATES = {"checkin", "feedback", "exit"}
+
     results: list[dict] = []
     for idx, enrollment in enumerate(enrollments):
         email = _get_email_for_shop(db, enrollment.shop_domain)
@@ -646,7 +648,11 @@ async def send_beta_email(req: BetaEmailRequest, db: Session = Depends(get_db)):
             results.append({"domain": enrollment.shop_domain, "status": "skipped"})
             continue
 
-        subject, html_body, text_body = template_fn(enrollment.shop_domain)
+        if req.template in _FEEDBACK_TEMPLATES and enrollment.invite_token:
+            feedback_url = f"{_UI_BASE_URL}/beta/feedback?token={enrollment.invite_token}"
+            subject, html_body, text_body = template_fn(enrollment.shop_domain, feedback_url=feedback_url)
+        else:
+            subject, html_body, text_body = template_fn(enrollment.shop_domain)
         try:
             await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body)
             status = "sent"

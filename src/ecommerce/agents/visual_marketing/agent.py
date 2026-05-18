@@ -60,7 +60,19 @@ class VisualMarketingAgent(BaseAgent):
             or raw.get("image_src")
             or ""
         )
-        context.external_data["image_url"] = refined_url or fallback_url
+        chosen_url = refined_url or fallback_url
+        context.external_data["image_url"] = chosen_url
+
+        if refined_url:
+            logger.info(
+                "[VisualMarketingAgent] Using refined image as input: %s",
+                refined_url[:80],
+            )
+        else:
+            logger.info(
+                "[VisualMarketingAgent] No refined image available, using original: %s",
+                fallback_url[:80],
+            )
 
         brand_soul = ""
         if context.strategic_intelligence:
@@ -184,7 +196,6 @@ class VisualMarketingAgent(BaseAgent):
             ad_key = R2StorageService.build_key(state.shop_id, mission_id, "ad")
             ad_r2_url = await r2_svc.upload_asset(ad_bytes, ad_key)
             visual_assets["ad_url"] = ad_r2_url
-            visual_assets["refined_url"] = ad_r2_url
             state.visual_assets = visual_assets
 
             # Track image credit usage
