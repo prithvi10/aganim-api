@@ -18,6 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func as sa_func, case, distinct
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.shared.db.database import get_db
@@ -42,7 +43,7 @@ import os as _os
 router = APIRouter(prefix="/beta", dependencies=[Depends(verify_admin_token)])
 
 VALID_STATUSES = {"invited", "accepted", "active", "completed", "churned"}
-_UI_BASE_URL = _os.getenv("SHOPIFY_UI_URL", "https://aganim-ui.onrender.com")
+_UI_BASE_URL = _os.getenv("PUBLIC_SITE_URL", "https://aganim-ai.com")
 
 
 # ── Request models ────────────────────────────────────────────────
@@ -398,14 +399,16 @@ async def beta_merchant_metrics(domain: str, db: Session = Depends(get_db)):
     )
     total_missions = (
         db.query(sa_func.count(UsageEventLog.id))
-        .filter(UsageEventLog.shop_domain == domain, UsageEventLog.feature == "missions")
+        .filter(
+            UsageEventLog.shop_domain == domain,
+            UsageEventLog.feature == "rewriter",
+            UsageEventLog.mission_id.isnot(None),
+        )
         .scalar() or 0
     )
     total_images = (
         db.query(sa_func.count(UsageEventLog.id))
-        .filter(UsageEventLog.shop_domain == domain, UsageEventLog.feature.in_(
-            ["ad_image_generation", "image_refinement_adhoc"]
-        ))
+        .filter(UsageEventLog.shop_domain == domain, UsageEventLog.feature == "image_generation")
         .scalar() or 0
     )
     features_used = (
@@ -541,16 +544,24 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
     for email in req.raw_emails:
         # For raw emails, use email as placeholder domain
         placeholder_domain = email.split("@")[0] + ".myshopify.com"
-        token = _uuid.uuid4().hex
-        enrollment = BetaEnrollment(
-            shop_domain=placeholder_domain,
-            status="invited",
-            invite_token=token,
-            invited_at=now,
-            contact_email=email,
-            source="admin_invite",
-        )
-        db.add(enrollment)
+        existing = db.query(BetaEnrollment).filter(
+            BetaEnrollment.shop_domain == placeholder_domain
+        ).first()
+        if existing and existing.status != "churned":
+            token = existing.invite_token or _uuid.uuid4().hex
+            existing.invite_token = token
+            existing.contact_email = email
+        else:
+            token = _uuid.uuid4().hex
+            enrollment = BetaEnrollment(
+                shop_domain=placeholder_domain,
+                status="invited",
+                invite_token=token,
+                invited_at=now,
+                contact_email=email,
+                source="admin_invite",
+            )
+            db.add(enrollment)
 
         signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
         subject, html_body, text_body = beta_invite_email(email, signup_url=signup_url)
@@ -571,7 +582,14 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
         if len(req.raw_emails) > 1:
             await asyncio.sleep(1.0)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="One or more merchants are already enrolled in the beta program",
+        )
 
     sent = sum(1 for r in results if r["status"] == "sent")
     return {

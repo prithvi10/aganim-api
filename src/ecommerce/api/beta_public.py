@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.shared.db.database import get_db
@@ -89,6 +90,16 @@ async def submit_beta_signup(
         domain = req.shop_domain.strip()
         if not domain.endswith(".myshopify.com"):
             domain = f"{domain}.myshopify.com"
+        # Check if another enrollment already exists for this domain
+        existing = db.query(BetaEnrollment).filter(
+            BetaEnrollment.shop_domain == domain,
+            BetaEnrollment.id != enrollment.id,
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="このストアは既にベータプログラムに登録されています"
+            )
         enrollment.shop_domain = domain
 
     # Check if shop already exists (they installed before getting invited)
@@ -120,7 +131,14 @@ async def submit_beta_signup(
         enrollment.status = "accepted"
         logger.info("[BetaSignup] %s accepted, awaiting install", enrollment.shop_domain)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="このストアは既にベータプログラムに登録されています"
+        )
 
     return {
         "success": True,
