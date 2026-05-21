@@ -16,33 +16,60 @@ from .auth import verify_admin_token
 
 router = APIRouter(dependencies=[Depends(verify_admin_token)])
 
+# Domains matching this prefix are development/test stores and excluded from metrics
+_TEST_SHOP_PREFIX = "test-"
+
+
+def _is_real_shop(domain: str) -> bool:
+    """Return True if the shop domain is NOT a test/dev store."""
+    return not (domain or "").startswith(_TEST_SHOP_PREFIX)
+
 
 @router.get("/dashboard/overview")
 async def dashboard_overview(db: Session = Depends(get_db)):
-    total_merchants = db.query(func.count(Shop.id)).scalar() or 0
+    total_merchants = (
+        db.query(func.count(Shop.id))
+        .filter(~Shop.domain.startswith(_TEST_SHOP_PREFIX))
+        .scalar()
+    ) or 0
 
     thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
     active_merchants = (
         db.query(func.count(Shop.id))
-        .filter(Shop.updated_at >= thirty_days_ago, Shop.is_active == True)
+        .filter(
+            Shop.updated_at >= thirty_days_ago,
+            Shop.is_active == True,
+            ~Shop.domain.startswith(_TEST_SHOP_PREFIX),
+        )
         .scalar()
     ) or 0
 
     plan_breakdown = (
         db.query(Shop.current_plan_name, func.count(Shop.id))
+        .filter(~Shop.domain.startswith(_TEST_SHOP_PREFIX))
         .group_by(Shop.current_plan_name)
         .all()
     )
 
     total_rewrites = (
-        db.query(func.coalesce(func.sum(Shop.monthly_rewrites_used), 0)).scalar()
+        db.query(func.coalesce(func.sum(Shop.monthly_rewrites_used), 0))
+        .filter(~Shop.domain.startswith(_TEST_SHOP_PREFIX))
+        .scalar()
     )
-    total_missions = db.query(func.count(Mission.id)).scalar() or 0
+    total_missions = (
+        db.query(func.count(Mission.id))
+        .filter(~Mission.tenant_id.startswith(_TEST_SHOP_PREFIX))
+        .scalar()
+    ) or 0
     total_image_gens = (
-        db.query(func.coalesce(func.sum(Shop.monthly_image_generations_used), 0)).scalar()
+        db.query(func.coalesce(func.sum(Shop.monthly_image_generations_used), 0))
+        .filter(~Shop.domain.startswith(_TEST_SHOP_PREFIX))
+        .scalar()
     )
     total_cost = (
-        db.query(func.coalesce(func.sum(UsageEventLog.estimated_cost_usd), 0)).scalar()
+        db.query(func.coalesce(func.sum(UsageEventLog.estimated_cost_usd), 0))
+        .filter(~UsageEventLog.shop_domain.startswith(_TEST_SHOP_PREFIX))
+        .scalar()
     )
 
     return {
@@ -72,7 +99,10 @@ async def usage_timeseries(
             func.coalesce(func.sum(UsageEventLog.total_tokens), 0).label("tokens"),
             func.coalesce(func.sum(UsageEventLog.estimated_cost_usd), 0).label("cost"),
         )
-        .filter(UsageEventLog.created_at >= since)
+        .filter(
+            UsageEventLog.created_at >= since,
+            ~UsageEventLog.shop_domain.startswith(_TEST_SHOP_PREFIX),
+        )
         .group_by("day", UsageEventLog.feature)
         .order_by("day")
         .all()
@@ -104,6 +134,7 @@ async def token_usage(db: Session = Depends(get_db)):
             func.coalesce(func.sum(UsageEventLog.total_tokens), 0).label("total"),
             func.coalesce(func.sum(UsageEventLog.estimated_cost_usd), 0).label("cost"),
         )
+        .filter(~UsageEventLog.shop_domain.startswith(_TEST_SHOP_PREFIX))
         .group_by(UsageEventLog.shop_domain)
         .order_by(func.sum(UsageEventLog.total_tokens).desc())
         .all()
@@ -131,6 +162,7 @@ async def image_credits(db: Session = Depends(get_db)):
             Shop.monthly_image_generations_used,
             Shop.lifetime_image_credits_remaining,
         )
+        .filter(~Shop.domain.startswith(_TEST_SHOP_PREFIX))
         .order_by(Shop.monthly_image_generations_used.desc())
         .all()
     )
@@ -150,6 +182,7 @@ async def image_credits(db: Session = Depends(get_db)):
 async def plan_stats(db: Session = Depends(get_db)):
     enrollment = (
         db.query(Shop.current_plan_name, func.count(Shop.id))
+        .filter(~Shop.domain.startswith(_TEST_SHOP_PREFIX))
         .group_by(Shop.current_plan_name)
         .all()
     )
@@ -162,7 +195,10 @@ async def plan_stats(db: Session = Depends(get_db)):
             Shop.last_plan_change_type,
             Shop.last_plan_change_at,
         )
-        .filter(Shop.last_plan_change_at.isnot(None))
+        .filter(
+            Shop.last_plan_change_at.isnot(None),
+            ~Shop.domain.startswith(_TEST_SHOP_PREFIX),
+        )
         .order_by(Shop.last_plan_change_at.desc())
         .limit(50)
         .all()
@@ -170,7 +206,7 @@ async def plan_stats(db: Session = Depends(get_db)):
 
     churned = (
         db.query(func.count(Shop.id))
-        .filter(Shop.is_active == False)
+        .filter(Shop.is_active == False, ~Shop.domain.startswith(_TEST_SHOP_PREFIX))
         .scalar()
     ) or 0
 
@@ -227,7 +263,11 @@ async def revenue_breakdown(db: Session = Depends(get_db)):
 
     shops = (
         db.query(Shop.domain, Shop.current_plan_name)
-        .filter(Shop.is_active == True, Shop.current_plan_name.in_(paid_plans))
+        .filter(
+            Shop.is_active == True,
+            Shop.current_plan_name.in_(paid_plans),
+            ~Shop.domain.startswith(_TEST_SHOP_PREFIX),
+        )
         .all()
     )
 
@@ -269,6 +309,7 @@ async def attrition_stats(
         .filter(
             Shop.is_active == False,
             Shop.last_uninstalled_at >= since,
+            ~Shop.domain.startswith(_TEST_SHOP_PREFIX),
         )
         .order_by(Shop.last_uninstalled_at.desc())
         .all()
@@ -281,6 +322,7 @@ async def attrition_stats(
             Shop.last_shopify_subscription_status == "CANCELLED",
             Shop.last_plan_change_at >= since,
             Shop.last_plan_name.isnot(None),
+            ~Shop.domain.startswith(_TEST_SHOP_PREFIX),
         )
         .order_by(Shop.last_plan_change_at.desc())
         .all()
@@ -341,7 +383,10 @@ async def approaching_limits(
     db: Session = Depends(get_db),
 ):
     """Return merchants whose usage is at or above *threshold*% of any plan limit."""
-    shops = db.query(Shop).filter(Shop.is_active == True).all()
+    shops = db.query(Shop).filter(
+        Shop.is_active == True,
+        ~Shop.domain.startswith(_TEST_SHOP_PREFIX),
+    ).all()
 
     rewrite_limits: dict[str, int] = {}
     for plan in db.query(Plan).all():
