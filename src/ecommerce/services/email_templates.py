@@ -390,6 +390,7 @@ TEMPLATE_REGISTRY: dict[str, callable] = {
     "beta_welcome": lambda name, **kw: beta_welcome_email(name),
     "beta_checkin": lambda name, **kw: beta_checkin_email(name),
     "beta_feedback": lambda name, **kw: beta_feedback_request_email(name),
+    "beta_showcase": lambda name, **kw: beta_showcase_email(name, **kw),
     "beta_exit": lambda name, **kw: beta_exit_email(name),
 }
 
@@ -573,6 +574,164 @@ def beta_feedback_request_email(merchant_name: str, feedback_url: str = "") -> t
         + f"このメールにご返信ください。\n"
         f"サポート: {_SUPPORT_URL}\n"
     )
+    return subject, html_body, text_body
+
+
+_R2_BASE_URL = "https://pub-2d05fd38ba8549c0811a1e0bc9426e81.r2.dev"
+_BETA_OUTREACH_PATH = "beta_outreach"
+
+
+def beta_showcase_email(
+    merchant_name: str,
+    store_key: str = "",
+    brand_name: str = "",
+    image_filenames: list[str] | None = None,
+    image_urls: list[str] | None = None,
+    signup_url: str = "",
+) -> tuple[str, str, str]:
+    """
+    Japanese outreach email with before/after transformation showcase.
+
+    Image carousel picks up files from R2:
+        {R2_BASE_URL}/beta_outreach/{store_key}/{filename}
+
+    Parameters:
+        merchant_name: Formal name (e.g. "むす美（山田繊維株式会社）")
+        store_key: Folder name in R2 (e.g. "musubi" from test-aganim-musubi)
+        brand_name: Display brand name (e.g. "MUSUBI Furoshiki")
+        image_filenames: List of filenames in the R2 folder (e.g. ["01.png", "02.png"])
+        image_urls: Override with explicit full URLs if not using R2 convention
+        signup_url: Custom CTA link (defaults to Shopify OAuth install)
+    """
+    subject = "【特別ご招待】あなたの商品を12以上の海外市場向けに変革 — 6週間無料Pro体験"
+
+    cta_url = signup_url or _INSTALL_URL
+    display_brand = brand_name or merchant_name
+
+    # Build image URLs from R2 bucket or use explicit URLs
+    images: list[str] = []
+    if image_urls:
+        images = image_urls
+    elif image_filenames and store_key:
+        images = [
+            f"{_R2_BASE_URL}/{_BETA_OUTREACH_PATH}/{store_key}/{fname}"
+            for fname in image_filenames
+        ]
+
+    # Build image carousel
+    carousel_html = ""
+    if images:
+        slides = ""
+        for i, img_url in enumerate(images):
+            slides += (
+                f'<div style="display:inline-block;width:520px;min-width:520px;'
+                f'vertical-align:top;margin-right:12px;border-radius:8px;overflow:hidden;'
+                f'border:1px solid #e5e7eb;">'
+                f'<img src="{img_url}" alt="最適化サンプル {i+1}" '
+                f'style="width:520px;height:auto;display:block;border-radius:8px;" />'
+                f'</div>'
+            )
+        carousel_html = f"""\
+<div style="margin:24px 0;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:8px;">
+{slides}
+</div>
+<p style="margin:0 0 16px;font-size:12px;color:#9ca3af;text-align:center;">
+  ← 横にスクロールして全ての変換結果をご覧ください →
+</p>"""
+
+    content = f"""\
+<h1 style="margin:0 0 8px;font-size:24px;color:#111827;">
+  {merchant_name} 様
+</h1>
+<p style="margin:0 0 20px;font-size:14px;color:#6b7280;">
+  {display_brand} の商品で実際にAganim AIを使用した最適化結果をご覧ください
+</p>
+
+<div style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);border-radius:12px;padding:20px 24px;margin:0 0 24px;">
+  <h2 style="margin:0 0 8px;font-size:18px;color:#1E40AF;">
+    あなたの商品ページを海外市場向けに変革します
+  </h2>
+  <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">
+    Aganim AIを使って<strong>{display_brand}</strong>の商品を海外のお客様向けに
+    最適化しました。わずか数分でこれだけの成果が得られます：
+  </p>
+</div>
+
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 20px;">
+<tr>
+<td style="width:33%;text-align:center;padding:12px 8px;background:#f9fafb;border-radius:8px 0 0 8px;">
+  <div style="font-size:24px;font-weight:700;color:{_BRAND_COLOR};">12+</div>
+  <div style="font-size:11px;color:#6b7280;margin-top:4px;">対応市場</div>
+</td>
+<td style="width:34%;text-align:center;padding:12px 8px;background:#f9fafb;">
+  <div style="font-size:24px;font-weight:700;color:{_BRAND_COLOR};">AI</div>
+  <div style="font-size:11px;color:#6b7280;margin-top:4px;">ブランド対応コピー</div>
+</td>
+<td style="width:33%;text-align:center;padding:12px 8px;background:#f9fafb;border-radius:0 8px 8px 0;">
+  <div style="font-size:24px;font-weight:700;color:{_BRAND_COLOR};">5分</div>
+  <div style="font-size:11px;color:#6b7280;margin-top:4px;">1商品あたり</div>
+</td>
+</tr>
+</table>
+
+{carousel_html}
+
+<h3 style="margin:24px 0 12px;font-size:16px;color:#111827;">Aganim AIが{display_brand}に提供した最適化：</h3>
+<ul style="padding-left:20px;margin:0 0 20px;color:#374151;line-height:1.8;">
+  <li><strong>ブランドソウル分析</strong> — ブランドのアイデンティティ、トーン、価値観を深く理解</li>
+  <li><strong>商品コピーリライト</strong> — 文化に配慮した英語の商品説明文＋SEOキーワード最適化</li>
+  <li><strong>画像エンハンスメント</strong> — プロ品質の商品写真、背景のクリーンアップ</li>
+  <li><strong>価格インテリジェンス</strong> — ターゲット市場の競合価格分析</li>
+  <li><strong>SNS対応</strong> — Instagram/Facebook広告クリエイティブの自動生成</li>
+</ul>
+
+<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:16px 20px;margin:0 0 24px;">
+  <p style="margin:0;font-size:14px;color:#92400E;line-height:1.6;">
+    <strong>限定ベータオファー：</strong>通常月額$49のPro全機能を
+    <strong>6週間完全無料</strong>でご利用いただけます。クレジットカード不要、
+    いつでも解約可能。グローバル展開を目指す日本のマーチャント様限定のご招待です。
+  </p>
+</div>
+
+{_cta_button("6週間無料Proトライアルに参加する", cta_url)}
+
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0 0;width:100%;border-top:1px solid #e5e7eb;padding-top:20px;">
+<tr>
+<td style="padding:8px 0;">
+  <a href="https://aganim-ai.com" style="color:{_BRAND_COLOR};text-decoration:underline;font-size:13px;">Aganim AI ウェブサイト</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://apps.shopify.com/aganim" style="color:{_BRAND_COLOR};text-decoration:underline;font-size:13px;">Shopify App Store</a>
+  &nbsp;&middot;&nbsp;
+  <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;font-size:13px;">サポート</a>
+</td>
+</tr>
+</table>
+
+<p style="margin:16px 0 0;font-size:13px;color:#6b7280;line-height:1.5;">
+  これは{display_brand}様への個別ご招待です。実際の商品データでAganim AIを実行し、
+  デモではない本物の結果をお見せしています。ご興味がございましたら、このメールに
+  ご返信ください。
+</p>"""
+
+    html_body = _base_layout(content)
+
+    text_body = (
+        f"{merchant_name} 様\n\n"
+        f"Aganim AIを使って{display_brand}の商品を海外市場向けに最適化しました。\n\n"
+        f"実現した最適化：\n"
+        f"・ブランドソウル分析 — アイデンティティとトーンを深く理解\n"
+        f"・商品コピーリライト — 文化に配慮した英語＋SEO最適化\n"
+        f"・画像エンハンスメント — プロ品質の商品写真\n"
+        f"・価格インテリジェンス — 競合市場分析\n"
+        f"・SNS対応 — 広告クリエイティブ自動生成\n\n"
+        f"【限定ベータ】Pro全機能を6週間無料でご利用いただけます。\n"
+        f"クレジットカード不要。\n\n"
+        f"今すぐ参加: {cta_url}\n\n"
+        f"Aganim AI: https://aganim-ai.com\n"
+        f"Shopify App Store: https://apps.shopify.com/aganim\n"
+        f"サポート: {_SUPPORT_URL}\n"
+    )
+
     return subject, html_body, text_body
 
 
