@@ -172,6 +172,68 @@ class R2StorageService:
         )
         return local_path
 
+    async def list_objects_by_prefix(
+        self,
+        prefix: str,
+        bucket: str | None = None,
+    ) -> list[str]:
+        """
+        List object filenames under a given prefix in the bucket.
+
+        Args:
+            prefix: Key prefix (e.g. ``"beta_outreach/musubi/"``).
+            bucket: Override bucket name (defaults to the instance bucket).
+
+        Returns:
+            List of filenames (prefix stripped), e.g. ``["1_rewrite.png", "2_seo.png"]``.
+            Returns empty list if R2 is not configured or prefix has no objects.
+        """
+        if not self.is_configured:
+            return self._list_local_fallback(prefix)
+
+        import asyncio
+
+        client = self._get_client()
+        target_bucket = bucket or self._bucket
+
+        def _list():
+            results: list[str] = []
+            continuation_token = None
+            while True:
+                kwargs = {
+                    "Bucket": target_bucket,
+                    "Prefix": prefix,
+                    "MaxKeys": 1000,
+                }
+                if continuation_token:
+                    kwargs["ContinuationToken"] = continuation_token
+                resp = client.list_objects_v2(**kwargs)
+                for obj in resp.get("Contents", []):
+                    key = obj["Key"]
+                    filename = key[len(prefix):] if key.startswith(prefix) else key
+                    if filename:
+                        results.append(filename)
+                if not resp.get("IsTruncated"):
+                    break
+                continuation_token = resp.get("NextContinuationToken")
+            return results
+
+        loop = asyncio.get_running_loop()
+        filenames = await loop.run_in_executor(None, _list)
+
+        logger.info(
+            "[R2Storage] list prefix=%s bucket=%s found=%d files",
+            prefix, target_bucket, len(filenames),
+        )
+        return filenames
+
+    def _list_local_fallback(self, prefix: str) -> list[str]:
+        """List files from local fallback directory matching a prefix."""
+        base_dir = Path("tmp/visual_assets") / prefix
+        if not base_dir.exists():
+            return []
+        return [f.name for f in base_dir.iterdir() if f.is_file()]
+
     @staticmethod
     def build_key(
         shop_domain: str,

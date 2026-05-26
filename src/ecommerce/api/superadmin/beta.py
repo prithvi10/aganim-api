@@ -32,7 +32,9 @@ from src.ecommerce.services.email_templates import (
     beta_checkin_email,
     beta_feedback_request_email,
     beta_exit_email,
+    beta_showcase_email,
 )
+from src.ecommerce.services.r2_storage_service import R2StorageService
 from .auth import verify_admin_token
 from src.shared.logging.logger import get_logger
 
@@ -693,4 +695,117 @@ async def list_beta_email_templates():
             {"id": "feedback", "name": "Beta Feedback Request", "description": "Structured feedback collection"},
             {"id": "exit", "name": "Beta Exit / Thank You", "description": "Sent at end of beta period"},
         ]
+    }
+
+
+# ── Showcase Invite (preview + send) ─────────────────────────────
+
+class ShowcasePreviewRequest(BaseModel):
+    merchant_name: str
+    store_key: str
+    brand_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+class ShowcaseSendRequest(BaseModel):
+    merchant_name: str
+    store_key: str
+    brand_name: Optional[str] = None
+    email: str
+
+
+_r2_outreach = R2StorageService(
+    bucket=_os.getenv("R2_OUTREACH_BUCKET", "shopify-ai-visual-assets"),
+)
+
+
+@router.post("/showcase/preview")
+async def showcase_preview(req: ShowcasePreviewRequest):
+    """Render the beta showcase email and return HTML without sending."""
+    prefix = f"beta_outreach/{req.store_key}/"
+    filenames = await _r2_outreach.list_objects_by_prefix(prefix)
+
+    image_filenames = [
+        f for f in filenames
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+    ]
+
+    subject, html_body, text_body = beta_showcase_email(
+        merchant_name=req.merchant_name,
+        store_key=req.store_key,
+        brand_name=req.brand_name or "",
+        image_filenames=image_filenames,
+    )
+
+    return {
+        "subject": subject,
+        "html": html_body,
+        "text": text_body,
+        "image_count": len(image_filenames),
+        "image_filenames": image_filenames,
+    }
+
+
+@router.post("/showcase/send")
+async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db)):
+    """Render and send the beta showcase email, then log it."""
+    prefix = f"beta_outreach/{req.store_key}/"
+    filenames = await _r2_outreach.list_objects_by_prefix(prefix)
+
+    image_filenames = [
+        f for f in filenames
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+    ]
+
+    subject, html_body, text_body = beta_showcase_email(
+        merchant_name=req.merchant_name,
+        store_key=req.store_key,
+        brand_name=req.brand_name or "",
+        image_filenames=image_filenames,
+    )
+
+    try:
+        await send_email(
+            to=req.email,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+        )
+        status = "sent"
+    except Exception as exc:
+        logger.error("[Beta] showcase send failed for %s: %s", req.email, exc)
+        status = "failed"
+
+    log = OutreachLog(
+        recipient_email=req.email,
+        recipient_shop=f"test-aganim-{req.store_key}.myshopify.com",
+        subject=subject,
+        body=text_body[:500],
+        status=status,
+    )
+    db.add(log)
+
+    placeholder_domain = f"test-aganim-{req.store_key}.myshopify.com"
+    existing = db.query(BetaEnrollment).filter(
+        BetaEnrollment.shop_domain == placeholder_domain
+    ).first()
+    if not existing:
+        token = _uuid.uuid4().hex
+        enrollment = BetaEnrollment(
+            shop_domain=placeholder_domain,
+            status="invited",
+            invite_token=token,
+            invited_at=datetime.now(timezone.utc),
+            contact_email=req.email,
+            source="showcase_invite",
+        )
+        db.add(enrollment)
+
+    db.commit()
+
+    return {
+        "status": status,
+        "message": f"Showcase email {status} to {req.email}",
+        "subject": subject,
+        "image_count": len(image_filenames),
     }
