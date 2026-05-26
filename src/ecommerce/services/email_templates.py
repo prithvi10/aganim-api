@@ -90,6 +90,59 @@ def generate_base_email_template(content_html: str) -> str:
 _base_layout = generate_base_email_template
 
 
+def _showcase_layout(content_html: str) -> str:
+    """
+    Wider responsive wrapper for the showcase email.
+
+    Uses max-width:800px on desktop and collapses to 100% on mobile,
+    giving screenshots room to breathe on larger screens.
+    """
+    return f"""\
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>
+  @media only screen and (max-width: 640px) {{
+    .showcase-container {{ width: 100% !important; padding: 16px !important; }}
+    .showcase-body {{ padding: 24px 16px !important; }}
+  }}
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:32px 0;">
+<tr><td align="center">
+<table role="presentation" class="showcase-container" cellpadding="0" cellspacing="0" style="width:100%;max-width:800px;background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+
+<!-- Header -->
+<tr><td style="background-color:{_BRAND_COLOR};padding:28px 40px;text-align:center;">
+  <img src="{_LOGO_URL}" alt="Aganim" width="48" height="48" style="display:inline-block;vertical-align:middle;border-radius:8px;">
+  <span style="color:#ffffff;font-size:22px;font-weight:700;margin-left:12px;vertical-align:middle;">Aganim</span>
+</td></tr>
+
+<!-- Body -->
+<tr><td class="showcase-body" style="padding:36px 48px;">
+{content_html}
+</td></tr>
+
+<!-- Footer -->
+<tr><td style="background-color:#f9fafb;padding:24px 40px;border-top:1px solid #e5e7eb;">
+  <p style="margin:0 0 8px;font-size:12px;color:#6b7280;text-align:center;">
+    &copy; Aganim &middot;
+    <a href="{_LANDING_URL}" style="color:#6b7280;text-decoration:underline;">Aganim</a> &middot;
+    <a href="{_SUPPORT_URL}" style="color:#6b7280;text-decoration:underline;">Support</a> &middot;
+    <a href="mailto:{_UNSUBSCRIBE_EMAIL}?subject=Unsubscribe" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a>
+  </p>
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+
 def _cta_button(label: str, url: str) -> str:
     return (
         f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0;">'
@@ -624,34 +677,73 @@ def beta_showcase_email(
             caption = fname.rsplit(".", 1)[0].replace("_", " ").replace("-", " ")
             images.append((url, caption))
 
-    # Build image carousel with captions
+    # Build image grid — first image full-width, rest in 2-column table
+    # Each image links to its full-size version for zooming into text details
     carousel_html = ""
     if images:
-        slides = ""
-        for i, (img_url, caption) in enumerate(images):
-            caption_html = ""
-            if caption:
-                caption_html = (
-                    f'<div style="padding:10px 12px;background:#f9fafb;'
-                    f'font-size:13px;color:#374151;font-weight:600;'
-                    f'white-space:normal;text-align:center;">{caption}</div>'
-                )
-            slides += (
-                f'<div style="display:inline-block;width:520px;min-width:520px;'
-                f'vertical-align:top;margin-right:12px;border-radius:8px;overflow:hidden;'
-                f'border:1px solid #e5e7eb;">'
-                f'<img src="{img_url}" alt="{caption or f"最適化サンプル {i+1}"}" '
-                f'style="width:520px;height:auto;display:block;" />'
-                f'{caption_html}'
-                f'</div>'
+        # First image — hero, full width
+        hero_url, hero_caption = images[0]
+        hero_caption_html = ""
+        if hero_caption:
+            hero_caption_html = (
+                f'<p style="margin:8px 0 0;font-size:13px;color:#374151;'
+                f'font-weight:600;text-align:center;">{hero_caption}</p>'
             )
+        hero_html = (
+            f'<a href="{hero_url}" target="_blank" style="text-decoration:none;">'
+            f'<div style="border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">'
+            f'<img src="{hero_url}" alt="{hero_caption or "最適化サンプル 1"}" '
+            f'style="width:100%;height:auto;display:block;" />'
+            f'</div>'
+            f'</a>'
+            f'{hero_caption_html}'
+        )
+
+        # Remaining images — 2-column grid
+        grid_html = ""
+        remaining = images[1:]
+        if remaining:
+            rows_html = ""
+            for i in range(0, len(remaining), 2):
+                cells = ""
+                for j in range(2):
+                    idx = i + j
+                    if idx < len(remaining):
+                        img_url, caption = remaining[idx]
+                        caption_html = ""
+                        if caption:
+                            caption_html = (
+                                f'<p style="margin:8px 0 0;font-size:12px;color:#374151;'
+                                f'font-weight:600;text-align:center;">{caption}</p>'
+                            )
+                        cells += (
+                            f'<td style="width:50%;padding:8px;vertical-align:top;">'
+                            f'<a href="{img_url}" target="_blank" style="text-decoration:none;">'
+                            f'<div style="border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">'
+                            f'<img src="{img_url}" alt="{caption or f"最適化サンプル {idx+2}"}" '
+                            f'style="width:100%;height:auto;display:block;" />'
+                            f'</div>'
+                            f'</a>'
+                            f'{caption_html}'
+                            f'</td>'
+                        )
+                    else:
+                        cells += '<td style="width:50%;padding:8px;"></td>'
+                rows_html += f'<tr>{cells}</tr>'
+            grid_html = (
+                f'<table role="presentation" cellpadding="0" cellspacing="0" '
+                f'width="100%" style="margin-top:16px;">'
+                f'{rows_html}</table>'
+            )
+
         carousel_html = f"""\
-<div style="margin:24px 0;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:8px;">
-{slides}
-</div>
-<p style="margin:0 0 16px;font-size:12px;color:#9ca3af;text-align:center;">
-  ← 横にスクロールして全ての変換結果をご覧ください →
-</p>"""
+<div style="margin:24px 0;">
+{hero_html}
+{grid_html}
+  <p style="margin:12px 0 0;font-size:11px;color:#9ca3af;text-align:center;">
+    画像をクリックすると拡大表示されます（{len(images)}枚）
+  </p>
+</div>"""
 
     content = f"""\
 <h1 style="margin:0 0 8px;font-size:24px;color:#111827;">
@@ -764,7 +856,7 @@ def beta_showcase_email(
 </tr>
 </table>"""
 
-    html_body = _base_layout(content)
+    html_body = _showcase_layout(content)
 
     text_body = (
         f"{merchant_name} 様\n\n"
