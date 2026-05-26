@@ -757,11 +757,35 @@ async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db))
         if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
     ]
 
+    # Generate or retrieve invite token so the CTA links to the real signup form
+    placeholder_domain = f"test-aganim-{req.store_key}.myshopify.com"
+    existing = db.query(BetaEnrollment).filter(
+        BetaEnrollment.shop_domain == placeholder_domain
+    ).first()
+    if existing:
+        token = existing.invite_token or _uuid.uuid4().hex
+        existing.invite_token = token
+        existing.contact_email = req.email
+    else:
+        token = _uuid.uuid4().hex
+        enrollment = BetaEnrollment(
+            shop_domain=placeholder_domain,
+            status="invited",
+            invite_token=token,
+            invited_at=datetime.now(timezone.utc),
+            contact_email=req.email,
+            source="showcase_invite",
+        )
+        db.add(enrollment)
+
+    signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
+
     subject, html_body, text_body = beta_showcase_email(
         merchant_name=req.merchant_name,
         store_key=req.store_key,
         brand_name=req.brand_name or "",
         image_filenames=image_filenames,
+        signup_url=signup_url,
     )
 
     try:
@@ -778,29 +802,12 @@ async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db))
 
     log = OutreachLog(
         recipient_email=req.email,
-        recipient_shop=f"test-aganim-{req.store_key}.myshopify.com",
+        recipient_shop=placeholder_domain,
         subject=subject,
         body=text_body[:500],
         status=status,
     )
     db.add(log)
-
-    placeholder_domain = f"test-aganim-{req.store_key}.myshopify.com"
-    existing = db.query(BetaEnrollment).filter(
-        BetaEnrollment.shop_domain == placeholder_domain
-    ).first()
-    if not existing:
-        token = _uuid.uuid4().hex
-        enrollment = BetaEnrollment(
-            shop_domain=placeholder_domain,
-            status="invited",
-            invite_token=token,
-            invited_at=datetime.now(timezone.utc),
-            contact_email=req.email,
-            source="showcase_invite",
-        )
-        db.add(enrollment)
-
     db.commit()
 
     return {
