@@ -579,6 +579,9 @@ def beta_feedback_request_email(merchant_name: str, feedback_url: str = "") -> t
 
 _R2_BASE_URL = "https://pub-2d05fd38ba8549c0811a1e0bc9426e81.r2.dev"
 _BETA_OUTREACH_PATH = "beta_outreach"
+_SENDER_EMAIL = "prithviraj@aganim-ai.com"
+_LINKEDIN_URL = "https://www.linkedin.com/in/prithviraj-pawar-69058ab5/"
+_BETA_ENROLLMENT_URL = "https://aganim-ai.com/beta"
 
 
 def beta_showcase_email(
@@ -595,40 +598,51 @@ def beta_showcase_email(
     Image carousel picks up files from R2:
         {R2_BASE_URL}/beta_outreach/{store_key}/{filename}
 
+    Filenames are used as carousel captions (extension stripped, underscores
+    replaced with spaces).
+
     Parameters:
         merchant_name: Formal name (e.g. "むす美（山田繊維株式会社）")
         store_key: Folder name in R2 (e.g. "musubi" from test-aganim-musubi)
         brand_name: Display brand name (e.g. "MUSUBI Furoshiki")
-        image_filenames: List of filenames in the R2 folder (e.g. ["01.png", "02.png"])
+        image_filenames: List of filenames in the R2 folder (e.g. ["1. Rewrite in 12+ languages.png"])
         image_urls: Override with explicit full URLs if not using R2 convention
-        signup_url: Custom CTA link (defaults to Shopify OAuth install)
+        signup_url: Custom CTA link (defaults to beta enrollment form)
     """
     subject = "【特別ご招待】あなたの商品を12以上の海外市場向けに変革 — 6週間無料Pro体験"
 
-    cta_url = signup_url or _INSTALL_URL
+    cta_url = signup_url or _BETA_ENROLLMENT_URL
     display_brand = brand_name or merchant_name
 
-    # Build image URLs from R2 bucket or use explicit URLs
-    images: list[str] = []
+    # Build image URLs and captions from R2 bucket or use explicit URLs
+    images: list[tuple[str, str]] = []  # (url, caption)
     if image_urls:
-        images = image_urls
+        images = [(url, "") for url in image_urls]
     elif image_filenames and store_key:
-        images = [
-            f"{_R2_BASE_URL}/{_BETA_OUTREACH_PATH}/{store_key}/{fname}"
-            for fname in image_filenames
-        ]
+        for fname in image_filenames:
+            url = f"{_R2_BASE_URL}/{_BETA_OUTREACH_PATH}/{store_key}/{fname}"
+            caption = fname.rsplit(".", 1)[0].replace("_", " ").replace("-", " ")
+            images.append((url, caption))
 
-    # Build image carousel
+    # Build image carousel with captions
     carousel_html = ""
     if images:
         slides = ""
-        for i, img_url in enumerate(images):
+        for i, (img_url, caption) in enumerate(images):
+            caption_html = ""
+            if caption:
+                caption_html = (
+                    f'<div style="padding:10px 12px;background:#f9fafb;'
+                    f'font-size:13px;color:#374151;font-weight:600;'
+                    f'white-space:normal;text-align:center;">{caption}</div>'
+                )
             slides += (
                 f'<div style="display:inline-block;width:520px;min-width:520px;'
                 f'vertical-align:top;margin-right:12px;border-radius:8px;overflow:hidden;'
                 f'border:1px solid #e5e7eb;">'
-                f'<img src="{img_url}" alt="最適化サンプル {i+1}" '
-                f'style="width:520px;height:auto;display:block;border-radius:8px;" />'
+                f'<img src="{img_url}" alt="{caption or f"最適化サンプル {i+1}"}" '
+                f'style="width:520px;height:auto;display:block;" />'
+                f'{caption_html}'
                 f'</div>'
             )
         carousel_html = f"""\
@@ -685,15 +699,38 @@ def beta_showcase_email(
   <li><strong>SNS対応</strong> — Instagram/Facebook広告クリエイティブの自動生成</li>
 </ul>
 
-<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:16px 20px;margin:0 0 24px;">
+<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:16px 20px;margin:0 0 16px;">
   <p style="margin:0;font-size:14px;color:#92400E;line-height:1.6;">
-    <strong>限定ベータオファー：</strong>通常月額$49のPro全機能を
+    <strong>特別先行オファー：</strong>通常月額$49のPro全機能を
     <strong>6週間完全無料</strong>でご利用いただけます。クレジットカード不要、
     いつでも解約可能。グローバル展開を目指す日本のマーチャント様限定のご招待です。
   </p>
 </div>
 
-{_cta_button("6週間無料Proトライアルに参加する", cta_url)}
+<div style="background:#F9FAFB;border-left:4px solid {_BRAND_COLOR};border-radius:4px;padding:16px 20px;margin:0 0 24px;">
+  <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">
+    <strong>【パートナーシップ特典】</strong><br>
+    6週間のプログラム期間終了後、素晴らしい成果を上げられたブランド様を、当社の公式ウェブサイトや海外向け発信にて「注目の成功事例」としてご紹介させていただく枠をご用意しております。{display_brand}のさらなる認知度向上にぜひお役立てください。
+  </p>
+</div>
+
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:24px 0;">
+<tr>
+<td style="width:48%;text-align:center;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-block;">
+  <tr><td style="background-color:#ffffff;border:2px solid {_BRAND_COLOR};border-radius:8px;padding:14px 24px;">
+    <a href="https://aganim-ai.com" style="color:{_BRAND_COLOR};font-size:14px;font-weight:600;text-decoration:none;display:inline-block;">Aganim AI を見る</a>
+  </td></tr></table>
+</td>
+<td style="width:4%;"></td>
+<td style="width:48%;text-align:center;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-block;">
+  <tr><td style="background-color:{_BRAND_COLOR};border-radius:8px;padding:14px 24px;">
+    <a href="{cta_url}" style="color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;display:inline-block;">Pro特典を受け取る</a>
+  </td></tr></table>
+</td>
+</tr>
+</table>
 
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0 0;width:100%;border-top:1px solid #e5e7eb;padding-top:20px;">
 <tr>
@@ -711,7 +748,21 @@ def beta_showcase_email(
   これは{display_brand}様への個別ご招待です。実際の商品データでAganim AIを実行し、
   デモではない本物の結果をお見せしています。ご興味がございましたら、このメールに
   ご返信ください。
-</p>"""
+</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0 0;">
+<tr>
+<td style="padding:0;">
+  <p style="margin:0;font-size:13px;color:#374151;line-height:1.5;">
+    Prithviraj Pawar<br>
+    <span style="color:#6b7280;">Founder & CEO, Aganim AI</span><br>
+    <a href="mailto:{_SENDER_EMAIL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">{_SENDER_EMAIL}</a>
+    &nbsp;&middot;&nbsp;
+    <a href="{_LINKEDIN_URL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">LinkedIn</a>
+  </p>
+</td>
+</tr>
+</table>"""
 
     html_body = _base_layout(content)
 
@@ -724,12 +775,22 @@ def beta_showcase_email(
         f"・画像エンハンスメント — プロ品質の商品写真\n"
         f"・価格インテリジェンス — 競合市場分析\n"
         f"・SNS対応 — 広告クリエイティブ自動生成\n\n"
-        f"【限定ベータ】Pro全機能を6週間無料でご利用いただけます。\n"
+        f"【特別先行オファー】Pro全機能を6週間無料でご利用いただけます。\n"
         f"クレジットカード不要。\n\n"
+        f"【パートナーシップ特典】\n"
+        f"6週間のプログラム期間終了後、素晴らしい成果を上げられたブランド様を、"
+        f"当社の公式ウェブサイトや海外向け発信にて「注目の成功事例」として"
+        f"ご紹介させていただく枠をご用意しております。"
+        f"{display_brand}のさらなる認知度向上にぜひお役立てください。\n\n"
         f"今すぐ参加: {cta_url}\n\n"
-        f"Aganim AI: https://aganim-ai.com\n"
+        f"Aganim AI を見る: https://aganim-ai.com\n"
         f"Shopify App Store: https://apps.shopify.com/aganim\n"
-        f"サポート: {_SUPPORT_URL}\n"
+        f"サポート: {_SUPPORT_URL}\n\n"
+        f"---\n"
+        f"Prithviraj Pawar\n"
+        f"Founder & CEO, Aganim AI\n"
+        f"{_SENDER_EMAIL}\n"
+        f"LinkedIn: {_LINKEDIN_URL}\n"
     )
 
     return subject, html_body, text_body
