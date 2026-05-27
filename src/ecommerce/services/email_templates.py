@@ -668,12 +668,15 @@ def beta_showcase_email(
     display_brand = brand_name or merchant_name
 
     # Build image URLs and captions from R2 bucket or use explicit URLs
+    from urllib.parse import quote as _url_quote
+
     images: list[tuple[str, str]] = []  # (url, caption)
     if image_urls:
         images = [(url, "") for url in image_urls]
     elif image_filenames and store_key:
         for fname in image_filenames:
-            url = f"{_R2_BASE_URL}/{_BETA_OUTREACH_PATH}/{store_key}/{fname}"
+            encoded_fname = _url_quote(fname, safe="")
+            url = f"{_R2_BASE_URL}/{_BETA_OUTREACH_PATH}/{store_key}/{encoded_fname}"
             caption = fname.rsplit(".", 1)[0].replace("_", " ").replace("-", " ")
             images.append((url, caption))
 
