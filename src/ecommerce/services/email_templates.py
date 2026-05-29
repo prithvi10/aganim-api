@@ -827,6 +827,10 @@ def beta_showcase_email(
 </tr>
 </table>
 
+<p style="margin:0 0 20px;font-size:12px;color:#6b7280;text-align:center;line-height:1.5;">
+  ※ エラーが発生した場合は、<a href="https://apps.shopify.com/aganim" style="color:{_BRAND_COLOR};text-decoration:underline;">Shopifyアプリストア</a>から直接インストールしても、Pro特典は自動的に適用されます。
+</p>
+
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0 0;width:100%;border-top:1px solid #e5e7eb;padding-top:20px;">
 <tr>
 <td style="padding:8px 0;">
