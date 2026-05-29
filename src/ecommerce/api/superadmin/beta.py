@@ -46,6 +46,7 @@ router = APIRouter(prefix="/beta", dependencies=[Depends(verify_admin_token)])
 
 VALID_STATUSES = {"invited", "accepted", "active", "completed", "churned"}
 _UI_BASE_URL = _os.getenv("PUBLIC_SITE_URL", "https://aganim-ai.com")
+_BETA_REPLY_TO = "prithviraj@aganim-ai.com"
 
 
 # ── Request models ────────────────────────────────────────────────
@@ -535,7 +536,7 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
         signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
         subject, html_body, text_body = beta_invite_email(domain, signup_url=signup_url)
         try:
-            await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body)
+            await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body, reply_to=_BETA_REPLY_TO)
             status = "sent"
         except Exception as exc:
             logger.error("[Beta] invite failed for %s: %s", email, exc)
@@ -584,7 +585,7 @@ async def send_beta_invite(req: BetaInviteRequest, db: Session = Depends(get_db)
         signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
         subject, html_body, text_body = beta_invite_email(email, signup_url=signup_url)
         try:
-            await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body)
+            await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body, reply_to=_BETA_REPLY_TO)
             status = "sent"
         except Exception as exc:
             logger.error("[Beta] invite failed for %s: %s", email, exc)
@@ -656,7 +657,7 @@ async def send_beta_email(req: BetaEmailRequest, db: Session = Depends(get_db)):
         else:
             subject, html_body, text_body = template_fn(enrollment.shop_domain)
         try:
-            await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body)
+            await send_email(to=email, subject=subject, html_body=html_body, text_body=text_body, reply_to=_BETA_REPLY_TO)
             status = "sent"
         except Exception as exc:
             logger.error("[Beta] %s email failed for %s: %s", req.template, email, exc)
@@ -794,6 +795,7 @@ async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db))
             subject=subject,
             html_body=html_body,
             text_body=text_body,
+            reply_to=_BETA_REPLY_TO,
         )
         status = "sent"
     except Exception as exc:
