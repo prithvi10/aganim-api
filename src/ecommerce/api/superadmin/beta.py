@@ -33,6 +33,7 @@ from src.ecommerce.services.email_templates import (
     beta_feedback_request_email,
     beta_exit_email,
     beta_showcase_email,
+    agency_promotion_email,
 )
 from src.ecommerce.services.r2_storage_service import R2StorageService
 from .auth import verify_admin_token
@@ -706,6 +707,7 @@ class ShowcasePreviewRequest(BaseModel):
     store_key: str
     brand_name: Optional[str] = None
     email: Optional[str] = None
+    is_promotion: bool = False
 
 
 class ShowcaseSendRequest(BaseModel):
@@ -713,6 +715,7 @@ class ShowcaseSendRequest(BaseModel):
     store_key: str
     brand_name: Optional[str] = None
     email: str
+    is_promotion: bool = False
 
 
 _r2_outreach = R2StorageService(
@@ -722,7 +725,7 @@ _r2_outreach = R2StorageService(
 
 @router.post("/showcase/preview")
 async def showcase_preview(req: ShowcasePreviewRequest):
-    """Render the beta showcase email and return HTML without sending."""
+    """Render the showcase email (beta invite or promotion) and return HTML without sending."""
     prefix = f"beta_outreach/{req.store_key}/"
     filenames = await _r2_outreach.list_objects_by_prefix(prefix)
 
@@ -731,12 +734,20 @@ async def showcase_preview(req: ShowcasePreviewRequest):
         if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
     ]
 
-    subject, html_body, text_body = beta_showcase_email(
-        merchant_name=req.merchant_name,
-        store_key=req.store_key,
-        brand_name=req.brand_name or "",
-        image_filenames=image_filenames,
-    )
+    if req.is_promotion:
+        subject, html_body, text_body = agency_promotion_email(
+            merchant_name=req.merchant_name,
+            store_key=req.store_key,
+            brand_name=req.brand_name or "",
+            image_filenames=image_filenames,
+        )
+    else:
+        subject, html_body, text_body = beta_showcase_email(
+            merchant_name=req.merchant_name,
+            store_key=req.store_key,
+            brand_name=req.brand_name or "",
+            image_filenames=image_filenames,
+        )
 
     return {
         "subject": subject,
@@ -744,12 +755,13 @@ async def showcase_preview(req: ShowcasePreviewRequest):
         "text": text_body,
         "image_count": len(image_filenames),
         "image_filenames": image_filenames,
+        "mode": "promotion" if req.is_promotion else "beta_invite",
     }
 
 
 @router.post("/showcase/send")
 async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db)):
-    """Render and send the beta showcase email, then log it."""
+    """Render and send the showcase email (beta invite or promotion), then log it."""
     prefix = f"beta_outreach/{req.store_key}/"
     filenames = await _r2_outreach.list_objects_by_prefix(prefix)
 
@@ -758,36 +770,47 @@ async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db))
         if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
     ]
 
-    # Generate or retrieve invite token so the CTA links to the real signup form
-    placeholder_domain = f"test-aganim-{req.store_key}.myshopify.com"
-    existing = db.query(BetaEnrollment).filter(
-        BetaEnrollment.shop_domain == placeholder_domain
-    ).first()
-    if existing:
-        token = existing.invite_token or _uuid.uuid4().hex
-        existing.invite_token = token
-        existing.contact_email = req.email
-    else:
-        token = _uuid.uuid4().hex
-        enrollment = BetaEnrollment(
-            shop_domain=placeholder_domain,
-            status="invited",
-            invite_token=token,
-            invited_at=datetime.now(timezone.utc),
-            contact_email=req.email,
-            source="showcase_invite",
+    if req.is_promotion:
+        # Promotion mode: no enrollment record, just send the promo email
+        subject, html_body, text_body = agency_promotion_email(
+            merchant_name=req.merchant_name,
+            store_key=req.store_key,
+            brand_name=req.brand_name or "",
+            image_filenames=image_filenames,
         )
-        db.add(enrollment)
+        log_shop = f"promo-{req.store_key}"
+    else:
+        # Beta invite mode: create/update enrollment and send showcase email
+        placeholder_domain = f"test-aganim-{req.store_key}.myshopify.com"
+        existing = db.query(BetaEnrollment).filter(
+            BetaEnrollment.shop_domain == placeholder_domain
+        ).first()
+        if existing:
+            token = existing.invite_token or _uuid.uuid4().hex
+            existing.invite_token = token
+            existing.contact_email = req.email
+        else:
+            token = _uuid.uuid4().hex
+            enrollment = BetaEnrollment(
+                shop_domain=placeholder_domain,
+                status="invited",
+                invite_token=token,
+                invited_at=datetime.now(timezone.utc),
+                contact_email=req.email,
+                source="showcase_invite",
+            )
+            db.add(enrollment)
 
-    signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
+        signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
 
-    subject, html_body, text_body = beta_showcase_email(
-        merchant_name=req.merchant_name,
-        store_key=req.store_key,
-        brand_name=req.brand_name or "",
-        image_filenames=image_filenames,
-        signup_url=signup_url,
-    )
+        subject, html_body, text_body = beta_showcase_email(
+            merchant_name=req.merchant_name,
+            store_key=req.store_key,
+            brand_name=req.brand_name or "",
+            image_filenames=image_filenames,
+            signup_url=signup_url,
+        )
+        log_shop = placeholder_domain
 
     try:
         await send_email(
@@ -804,7 +827,7 @@ async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db))
 
     log = OutreachLog(
         recipient_email=req.email,
-        recipient_shop=placeholder_domain,
+        recipient_shop=log_shop,
         subject=subject,
         body=text_body[:500],
         status=status,
@@ -814,7 +837,8 @@ async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db))
 
     return {
         "status": status,
-        "message": f"Showcase email {status} to {req.email}",
+        "message": f"{'Promotion' if req.is_promotion else 'Showcase'} email {status} to {req.email}",
         "subject": subject,
         "image_count": len(image_filenames),
+        "mode": "promotion" if req.is_promotion else "beta_invite",
     }

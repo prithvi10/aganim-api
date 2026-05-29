@@ -895,6 +895,253 @@ def beta_showcase_email(
     return subject, html_body, text_body
 
 
+_SHOPIFY_APP_URL = "https://apps.shopify.com/aganim"
+
+
+def agency_promotion_email(
+    merchant_name: str,
+    store_key: str = "",
+    brand_name: str = "",
+    image_filenames: list[str] | None = None,
+    image_urls: list[str] | None = None,
+) -> tuple[str, str, str]:
+    """
+    Agency/partner outreach email promoting Aganim AI app.
+
+    Unlike beta_showcase_email, this does NOT offer free Pro credits.
+    Instead it appeals to agencies to check out the app and install it
+    for their merchants.
+
+    Uses the same image carousel layout as the showcase email.
+    """
+    subject = "【ご提案】貴社クライアントの越境EC売上を飛躍的に向上 — Aganim AI"
+
+    display_brand = brand_name or merchant_name
+
+    from urllib.parse import quote as _url_quote
+
+    images: list[tuple[str, str]] = []
+    if image_urls:
+        images = [(url, "") for url in image_urls]
+    elif image_filenames and store_key:
+        for fname in image_filenames:
+            encoded_fname = _url_quote(fname, safe="")
+            url = f"{_R2_BASE_URL}/{_BETA_OUTREACH_PATH}/{store_key}/{encoded_fname}"
+            caption = fname.rsplit(".", 1)[0].replace("_", " ").replace("-", " ")
+            images.append((url, caption))
+
+    # Build image grid (same layout as showcase: hero + 2-col grid)
+    carousel_html = ""
+    if images:
+        hero_url, hero_caption = images[0]
+        hero_caption_html = ""
+        if hero_caption:
+            hero_caption_html = (
+                f'<p style="margin:8px 0 0;font-size:13px;color:#374151;'
+                f'font-weight:600;text-align:center;">{hero_caption}</p>'
+            )
+        hero_html = (
+            f'<a href="{hero_url}" target="_blank" style="text-decoration:none;">'
+            f'<div style="border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">'
+            f'<img src="{hero_url}" alt="{hero_caption or "Aganim AI サンプル 1"}" '
+            f'style="width:100%;height:auto;display:block;" />'
+            f'</div>'
+            f'</a>'
+            f'{hero_caption_html}'
+        )
+
+        grid_html = ""
+        remaining = images[1:]
+        if remaining:
+            rows_html = ""
+            for i in range(0, len(remaining), 2):
+                cells = ""
+                for j in range(2):
+                    idx = i + j
+                    if idx < len(remaining):
+                        img_url, caption = remaining[idx]
+                        caption_html = ""
+                        if caption:
+                            caption_html = (
+                                f'<p style="margin:8px 0 0;font-size:12px;color:#374151;'
+                                f'font-weight:600;text-align:center;">{caption}</p>'
+                            )
+                        cells += (
+                            f'<td style="width:50%;padding:8px;vertical-align:top;">'
+                            f'<a href="{img_url}" target="_blank" style="text-decoration:none;">'
+                            f'<div style="border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">'
+                            f'<img src="{img_url}" alt="{caption or f"サンプル {idx+2}"}" '
+                            f'style="width:100%;height:auto;display:block;" />'
+                            f'</div>'
+                            f'</a>'
+                            f'{caption_html}'
+                            f'</td>'
+                        )
+                    else:
+                        cells += '<td style="width:50%;padding:8px;"></td>'
+                rows_html += f'<tr>{cells}</tr>'
+            grid_html = (
+                f'<table role="presentation" cellpadding="0" cellspacing="0" '
+                f'width="100%" style="margin-top:16px;">'
+                f'{rows_html}</table>'
+            )
+
+        carousel_html = f"""\
+<div style="margin:24px 0;">
+{hero_html}
+{grid_html}
+  <p style="margin:12px 0 0;font-size:11px;color:#9ca3af;text-align:center;">
+    画像をクリックすると拡大表示されます（{len(images)}枚）
+  </p>
+</div>"""
+
+    content = f"""\
+<h1 style="margin:0 0 8px;font-size:24px;color:#111827;">
+  {merchant_name} 様
+</h1>
+<p style="margin:0 0 20px;font-size:14px;color:#6b7280;">
+  貴社クライアントの越境EC支援に — Aganim AI をご紹介させてください
+</p>
+
+<div style="background:linear-gradient(135deg,#EEF2FF,#E0E7FF);border-radius:12px;padding:20px 24px;margin:0 0 24px;">
+  <h2 style="margin:0 0 8px;font-size:18px;color:#1E40AF;">
+    クライアントの商品ページを海外市場向けに自動変革
+  </h2>
+  <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">
+    Aganim AIは、Shopifyストアの商品コンテンツを<strong>12以上の海外市場</strong>向けに
+    最適化するAIアプリです。翻訳だけでなく、SEO・文化対応・ブランドトーン維持を
+    一括で実現します。
+  </p>
+</div>
+
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 20px;">
+<tr>
+<td style="width:33%;text-align:center;padding:12px 8px;background:#f9fafb;border-radius:8px 0 0 8px;">
+  <div style="font-size:24px;font-weight:700;color:{_BRAND_COLOR};">12+</div>
+  <div style="font-size:11px;color:#6b7280;margin-top:4px;">対応市場</div>
+</td>
+<td style="width:34%;text-align:center;padding:12px 8px;background:#f9fafb;">
+  <div style="font-size:24px;font-weight:700;color:{_BRAND_COLOR};">AI</div>
+  <div style="font-size:11px;color:#6b7280;margin-top:4px;">ブランド対応コピー</div>
+</td>
+<td style="width:33%;text-align:center;padding:12px 8px;background:#f9fafb;border-radius:0 8px 8px 0;">
+  <div style="font-size:24px;font-weight:700;color:{_BRAND_COLOR};">5分</div>
+  <div style="font-size:11px;color:#6b7280;margin-top:4px;">1商品あたり</div>
+</td>
+</tr>
+</table>
+
+{carousel_html}
+
+<h3 style="margin:24px 0 12px;font-size:16px;color:#111827;">Aganim AIの主な機能：</h3>
+<ul style="padding-left:20px;margin:0 0 20px;color:#374151;line-height:1.8;">
+  <li><strong>ブランドソウル分析</strong> — ブランドのアイデンティティ、トーン、価値観を深く理解し一貫した多言語コンテンツを生成</li>
+  <li><strong>商品コピーリライト</strong> — 文化に配慮した多言語の商品説明文＋SEOキーワード最適化</li>
+  <li><strong>画像エンハンスメント</strong> — AI商品写真生成、背景処理、広告クリエイティブ対応</li>
+  <li><strong>価格インテリジェンス</strong> — ターゲット市場の競合価格データ分析</li>
+  <li><strong>マーケティング自動化</strong> — Instagram/Facebook広告コピー＋SNSクリエイティブの自動生成</li>
+</ul>
+
+<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:16px 20px;margin:0 0 16px;">
+  <p style="margin:0;font-size:14px;color:#166534;line-height:1.6;">
+    <strong>エージェンシー・パートナー様へ：</strong><br>
+    貴社がサポートされている越境EC・多言語対応・SEO案件において、
+    Aganim AIを導入いただくことで、クライアントの海外売上向上と
+    貴社の付加価値サービス拡充を同時に実現できます。
+    まずはアプリをご確認いただき、ぜひお気軽にご連絡ください。
+  </p>
+</div>
+
+<div style="background:#F9FAFB;border-left:4px solid {_BRAND_COLOR};border-radius:4px;padding:16px 20px;margin:0 0 24px;">
+  <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">
+    <strong>【連携のご提案】</strong><br>
+    デモ、共同ウェビナー、またはクライアント案件でのトライアル導入など、
+    柔軟にご対応いたします。ご興味がございましたらこのメールにご返信ください。
+  </p>
+</div>
+
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:24px 0;">
+<tr>
+<td style="width:48%;text-align:center;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-block;">
+  <tr><td style="background-color:#ffffff;border:2px solid {_BRAND_COLOR};border-radius:8px;padding:14px 24px;">
+    <a href="https://aganim-ai.com" style="color:{_BRAND_COLOR};font-size:14px;font-weight:600;text-decoration:none;display:inline-block;">Aganim AI を見る</a>
+  </td></tr></table>
+</td>
+<td style="width:4%;"></td>
+<td style="width:48%;text-align:center;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-block;">
+  <tr><td style="background-color:{_BRAND_COLOR};border-radius:8px;padding:14px 24px;">
+    <a href="{_SHOPIFY_APP_URL}" style="color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;display:inline-block;">Shopify App Store で見る</a>
+  </td></tr></table>
+</td>
+</tr>
+</table>
+
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0 0;width:100%;border-top:1px solid #e5e7eb;padding-top:20px;">
+<tr>
+<td style="padding:8px 0;">
+  <a href="https://aganim-ai.com" style="color:{_BRAND_COLOR};text-decoration:underline;font-size:13px;">Aganim AI ウェブサイト</a>
+  &nbsp;&middot;&nbsp;
+  <a href="{_SHOPIFY_APP_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;font-size:13px;">Shopify App Store</a>
+  &nbsp;&middot;&nbsp;
+  <a href="{_SUPPORT_URL}" style="color:{_BRAND_COLOR};text-decoration:underline;font-size:13px;">サポート</a>
+</td>
+</tr>
+</table>
+
+<p style="margin:16px 0 0;font-size:13px;color:#6b7280;line-height:1.5;">
+  {display_brand}様の越境EC事業のさらなる成長にお役立ていただけましたら幸いです。
+  ご興味がございましたら、このメールにご返信ください。
+</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0 0;">
+<tr>
+<td style="padding:0;">
+  <p style="margin:0;font-size:13px;color:#374151;line-height:1.5;">
+    Prithviraj Pawar<br>
+    <span style="color:#6b7280;">Founder & CEO, Aganim AI</span><br>
+    <a href="mailto:{_SENDER_EMAIL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">{_SENDER_EMAIL}</a>
+    &nbsp;&middot;&nbsp;
+    <a href="{_LINKEDIN_URL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">LinkedIn</a>
+  </p>
+</td>
+</tr>
+</table>"""
+
+    html_body = _showcase_layout(content)
+
+    text_body = (
+        f"{merchant_name} 様\n\n"
+        f"貴社クライアントの越境EC支援に — Aganim AI をご紹介させてください。\n\n"
+        f"Aganim AIは、Shopifyストアの商品コンテンツを12以上の海外市場向けに\n"
+        f"最適化するAIアプリです。\n\n"
+        f"主な機能：\n"
+        f"・ブランドソウル分析 — アイデンティティとトーンを深く理解\n"
+        f"・商品コピーリライト — 文化に配慮した多言語＋SEO最適化\n"
+        f"・画像エンハンスメント — AI商品写真生成\n"
+        f"・価格インテリジェンス — 競合市場分析\n"
+        f"・マーケティング自動化 — 広告クリエイティブ自動生成\n\n"
+        f"【エージェンシー・パートナー様へ】\n"
+        f"貴社がサポートされている越境EC・多言語対応・SEO案件において、\n"
+        f"Aganim AIを導入いただくことで、クライアントの海外売上向上と\n"
+        f"貴社の付加価値サービス拡充を同時に実現できます。\n\n"
+        f"【連携のご提案】\n"
+        f"デモ、共同ウェビナー、またはクライアント案件でのトライアル導入など、\n"
+        f"柔軟にご対応いたします。\n\n"
+        f"Aganim AI を見る: https://aganim-ai.com\n"
+        f"Shopify App Store: {_SHOPIFY_APP_URL}\n"
+        f"サポート: {_SUPPORT_URL}\n\n"
+        f"---\n"
+        f"Prithviraj Pawar\n"
+        f"Founder & CEO, Aganim AI\n"
+        f"{_SENDER_EMAIL}\n"
+        f"LinkedIn: {_LINKEDIN_URL}\n"
+    )
+
+    return subject, html_body, text_body
+
+
 def beta_exit_email(merchant_name: str, feedback_url: str = "") -> tuple[str, str, str]:
     """Thank you / exit email at end of beta period."""
     subject = "Aganim ベータテストへのご参加、ありがとうございました！"
