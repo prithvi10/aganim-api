@@ -159,3 +159,54 @@ async def send_rate_limited_bulk_email(
     )
 
     return results
+
+
+async def send_threaded_email(
+    to: str,
+    subject: str,
+    html_body: str,
+    text_body: str,
+    in_reply_to: str | None = None,
+    references: str | None = None,
+    reply_to: Optional[str] = None,
+) -> dict:
+    """
+    Send an email with In-Reply-To/References headers for threading.
+    Uses SES send_raw_email to inject custom headers.
+    """
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    from_address = os.getenv(
+        "SES_FROM_ADDRESS", '"Aganim" <architect@aganim-ai.com>'
+    )
+    client = _get_ses_client()
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_address
+    msg["To"] = to
+
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    if in_reply_to:
+        msg["In-Reply-To"] = f"<{in_reply_to}>"
+    if references:
+        msg["References"] = f"<{references}>"
+
+    msg.attach(MIMEText(text_body, "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    loop = asyncio.get_running_loop()
+    response = await loop.run_in_executor(
+        None,
+        lambda: client.send_raw_email(
+            Source=from_address,
+            Destinations=[to],
+            RawMessage={"Data": msg.as_string()},
+        ),
+    )
+
+    message_id = response.get("MessageId", "")
+    logger.info("[SES] threaded send to=%s subject=%r message_id=%s in_reply_to=%s", to, subject, message_id, in_reply_to)
+    return {"message_id": message_id}

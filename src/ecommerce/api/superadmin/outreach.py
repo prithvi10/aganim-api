@@ -24,6 +24,7 @@ from src.ecommerce.services.email_service import (
     send_email,
     send_bulk_email,
     send_rate_limited_bulk_email,
+    send_threaded_email,
 )
 from src.ecommerce.services.email_templates import (
     TEMPLATE_REGISTRY,
@@ -35,7 +36,10 @@ from src.ecommerce.services.email_templates import (
     feedback_email,
     rating_email,
     custom_admin_email,
+    agency_promotion_email,
+    agency_followup_email,
 )
+from src.ecommerce.services.r2_storage_service import R2StorageService
 from .auth import verify_admin_token
 from src.shared.logging.logger import get_logger
 
@@ -622,4 +626,219 @@ async def outreach_history(
         ],
         "total": total,
         "page": page,
+    }
+
+
+# ── Agency Outreach: Bulk Send & Follow-up ───────────────────────
+
+import os as _os
+
+_r2_outreach = R2StorageService(bucket=_os.getenv("R2_OUTREACH_BUCKET", "shopify-ai-visual-assets"))
+_AGENCY_REPLY_TO = "prithviraj@aganim-ai.com"
+
+
+class AgencyRecipient(BaseModel):
+    merchant_name: str
+    email: str
+    brand_name: Optional[str] = None
+
+
+class AgencyBulkSendRequest(BaseModel):
+    store_key: str = "general"
+    recipients: list[AgencyRecipient]
+
+
+class AgencyBulkFollowUpRequest(BaseModel):
+    recipients: list[AgencyRecipient]
+
+
+@router.post("/outreach/agency/bulk-send")
+async def agency_bulk_send(req: AgencyBulkSendRequest, db: Session = Depends(get_db)):
+    """Batch send agency promotion emails (with images from R2)."""
+    if not req.recipients:
+        raise HTTPException(status_code=400, detail="No recipients provided")
+
+    prefix = f"beta_outreach/{req.store_key}/"
+    filenames = await _r2_outreach.list_objects_by_prefix(prefix)
+    image_filenames = [
+        f for f in filenames
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+    ]
+
+    results: list[dict] = []
+    for item in req.recipients:
+        subject, html_body, text_body = agency_promotion_email(
+            merchant_name=item.merchant_name,
+            store_key=req.store_key,
+            brand_name=item.brand_name or "",
+            image_filenames=image_filenames,
+        )
+
+        message_id = ""
+        try:
+            resp = await send_email(
+                to=item.email,
+                subject=subject,
+                html_body=html_body,
+                text_body=text_body,
+                reply_to=_AGENCY_REPLY_TO,
+            )
+            status = "sent"
+            message_id = resp.get("message_id", "")
+        except Exception as exc:
+            logger.error("[Agency] bulk send failed for %s: %s", item.email, exc)
+            status = "failed"
+
+        log = OutreachLog(
+            recipient_email=item.email,
+            recipient_shop=f"agency-{req.store_key}",
+            subject=subject,
+            body=text_body[:500],
+            status=status,
+            message_id=message_id,
+        )
+        db.add(log)
+        results.append({"email": item.email, "merchant_name": item.merchant_name, "status": status})
+
+        if len(req.recipients) > 1:
+            await asyncio.sleep(1.0)
+
+    db.commit()
+
+    sent_count = sum(1 for r in results if r["status"] == "sent")
+    failed_count = sum(1 for r in results if r["status"] == "failed")
+    return {
+        "total": len(results),
+        "sent": sent_count,
+        "failed": failed_count,
+        "results": results,
+    }
+
+
+@router.post("/outreach/agency/bulk-follow-up")
+async def agency_bulk_follow_up(req: AgencyBulkFollowUpRequest, db: Session = Depends(get_db)):
+    """
+    Send short follow-up emails to previously contacted agencies.
+    Threads with the original email using In-Reply-To headers.
+    """
+    if not req.recipients:
+        raise HTTPException(status_code=400, detail="No recipients provided")
+
+    results: list[dict] = []
+    for item in req.recipients:
+        original_log = (
+            db.query(OutreachLog)
+            .filter(
+                OutreachLog.recipient_email == item.email,
+                OutreachLog.status == "sent",
+                OutreachLog.recipient_shop.like("agency-%"),
+            )
+            .order_by(OutreachLog.sent_at.desc())
+            .first()
+        )
+
+        subject, html_body, text_body = agency_followup_email(
+            merchant_name=item.merchant_name,
+            brand_name=item.brand_name or "",
+        )
+
+        original_message_id = original_log.message_id if original_log else None
+
+        message_id = ""
+        try:
+            if original_message_id:
+                resp = await send_threaded_email(
+                    to=item.email,
+                    subject=subject,
+                    html_body=html_body,
+                    text_body=text_body,
+                    in_reply_to=original_message_id,
+                    references=original_message_id,
+                    reply_to=_AGENCY_REPLY_TO,
+                )
+            else:
+                resp = await send_email(
+                    to=item.email,
+                    subject=subject,
+                    html_body=html_body,
+                    text_body=text_body,
+                    reply_to=_AGENCY_REPLY_TO,
+                )
+            status = "sent"
+            message_id = resp.get("message_id", "")
+        except Exception as exc:
+            logger.error("[Agency] follow-up failed for %s: %s", item.email, exc)
+            status = "failed"
+
+        log = OutreachLog(
+            recipient_email=item.email,
+            recipient_shop="agency-followup",
+            subject=subject,
+            body=text_body[:500],
+            status=status,
+            message_id=message_id,
+        )
+        db.add(log)
+        results.append({
+            "email": item.email,
+            "merchant_name": item.merchant_name,
+            "status": status,
+            "threaded": bool(original_message_id),
+        })
+
+        if len(req.recipients) > 1:
+            await asyncio.sleep(1.0)
+
+    db.commit()
+
+    sent_count = sum(1 for r in results if r["status"] == "sent")
+    failed_count = sum(1 for r in results if r["status"] == "failed")
+    return {
+        "total": len(results),
+        "sent": sent_count,
+        "failed": failed_count,
+        "results": results,
+    }
+
+
+@router.get("/outreach/agency/sent-recipients")
+async def agency_sent_recipients(db: Session = Depends(get_db)):
+    """
+    Return all previously sent agency emails (for follow-up targeting).
+    Only returns the most recent send per email address.
+    """
+    from sqlalchemy import func as sqla_func
+
+    subq = (
+        db.query(
+            OutreachLog.recipient_email,
+            sqla_func.max(OutreachLog.sent_at).label("last_sent"),
+        )
+        .filter(
+            OutreachLog.status == "sent",
+            OutreachLog.recipient_shop.like("agency-%"),
+            ~OutreachLog.recipient_shop.like("agency-followup%"),
+        )
+        .group_by(OutreachLog.recipient_email)
+        .subquery()
+    )
+
+    logs = (
+        db.query(OutreachLog)
+        .join(subq, (OutreachLog.recipient_email == subq.c.recipient_email) & (OutreachLog.sent_at == subq.c.last_sent))
+        .order_by(OutreachLog.sent_at.desc())
+        .all()
+    )
+
+    return {
+        "recipients": [
+            {
+                "email": l.recipient_email,
+                "subject": l.subject,
+                "sent_at": str(l.sent_at) if l.sent_at else None,
+                "message_id": l.message_id,
+            }
+            for l in logs
+        ],
+        "total": len(logs),
     }

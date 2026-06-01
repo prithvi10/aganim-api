@@ -854,7 +854,7 @@ def beta_showcase_email(
 <td style="padding:0;">
   <p style="margin:0;font-size:13px;color:#374151;line-height:1.5;">
     Prithviraj Pawar<br>
-    <span style="color:#6b7280;">Founder & CEO, Aganim AI</span><br>
+    <span style="color:#6b7280;">Aganim AI</span><br>
     <a href="mailto:{_SENDER_EMAIL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">{_SENDER_EMAIL}</a>
     &nbsp;&middot;&nbsp;
     <a href="{_LINKEDIN_URL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">LinkedIn</a>
@@ -887,7 +887,7 @@ def beta_showcase_email(
         f"サポート: {_SUPPORT_URL}\n\n"
         f"---\n"
         f"Prithviraj Pawar\n"
-        f"Founder & CEO, Aganim AI\n"
+        f"Aganim AI\n"
         f"{_SENDER_EMAIL}\n"
         f"LinkedIn: {_LINKEDIN_URL}\n"
     )
@@ -1100,7 +1100,7 @@ def agency_promotion_email(
 <td style="padding:0;">
   <p style="margin:0;font-size:13px;color:#374151;line-height:1.5;">
     Prithviraj Pawar<br>
-    <span style="color:#6b7280;">Founder & CEO, Aganim AI</span><br>
+    <span style="color:#6b7280;">Aganim AI</span><br>
     <a href="mailto:{_SENDER_EMAIL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">{_SENDER_EMAIL}</a>
     &nbsp;&middot;&nbsp;
     <a href="{_LINKEDIN_URL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">LinkedIn</a>
@@ -1134,7 +1134,89 @@ def agency_promotion_email(
         f"サポート: {_SUPPORT_URL}\n\n"
         f"---\n"
         f"Prithviraj Pawar\n"
-        f"Founder & CEO, Aganim AI\n"
+        f"Aganim AI\n"
+        f"{_SENDER_EMAIL}\n"
+        f"LinkedIn: {_LINKEDIN_URL}\n"
+    )
+
+    return subject, html_body, text_body
+
+
+def agency_followup_email(
+    merchant_name: str,
+    brand_name: str = "",
+) -> tuple[str, str, str]:
+    """
+    Short follow-up reminder to a previously contacted agency.
+    No images — just a brief nudge with app link.
+    Uses the same subject as the original for threading.
+    """
+    subject = "Re: 【ご提案】貴社クライアントの越境EC売上を飛躍的に向上 — Aganim AI"
+
+    display_brand = brand_name or merchant_name
+
+    content = f"""\
+<h1 style="margin:0 0 8px;font-size:20px;color:#111827;">
+  {merchant_name} 様
+</h1>
+<p style="margin:0 0 20px;font-size:14px;color:#6b7280;">
+  先日のご案内の続きです
+</p>
+
+<p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.7;">
+  先日、Aganim AIについてご案内させていただきましたが、<br>
+  その後ご確認いただけましたでしょうか？
+</p>
+
+<p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.7;">
+  Shopifyストアの商品コンテンツを<strong>12以上の海外市場</strong>向けに最適化し、
+  貴社クライアントの越境EC売上を向上させるAIアプリです。
+</p>
+
+<p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.7;">
+  お忙しいところ恐縮ですが、ぜひ一度アプリをご覧いただけますと幸いです。<br>
+  ご質問やデモのご希望がありましたら、お気軽にこのメールにご返信ください。
+</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:24px 0;">
+<tr>
+<td style="text-align:center;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-block;">
+  <tr><td style="background-color:{_BRAND_COLOR};border-radius:8px;padding:14px 32px;">
+    <a href="{_SHOPIFY_APP_URL}" style="color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;display:inline-block;">Shopify App Store でアプリを見る →</a>
+  </td></tr></table>
+</td>
+</tr>
+</table>
+
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0 0;">
+<tr>
+<td style="padding:0;">
+  <p style="margin:0;font-size:13px;color:#374151;line-height:1.5;">
+    Prithviraj Pawar<br>
+    <span style="color:#6b7280;">Aganim AI</span><br>
+    <a href="mailto:{_SENDER_EMAIL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">{_SENDER_EMAIL}</a>
+    &nbsp;&middot;&nbsp;
+    <a href="{_LINKEDIN_URL}" style="color:{_BRAND_COLOR};text-decoration:none;font-size:12px;">LinkedIn</a>
+  </p>
+</td>
+</tr>
+</table>"""
+
+    html_body = _base_layout(content)
+
+    text_body = (
+        f"{merchant_name} 様\n\n"
+        f"先日、Aganim AIについてご案内させていただきましたが、\n"
+        f"その後ご確認いただけましたでしょうか？\n\n"
+        f"Shopifyストアの商品コンテンツを12以上の海外市場向けに最適化し、\n"
+        f"貴社クライアントの越境EC売上を向上させるAIアプリです。\n\n"
+        f"お忙しいところ恐縮ですが、ぜひ一度アプリをご覧いただけますと幸いです。\n"
+        f"ご質問やデモのご希望がありましたら、お気軽にこのメールにご返信ください。\n\n"
+        f"Shopify App Store: {_SHOPIFY_APP_URL}\n\n"
+        f"---\n"
+        f"Prithviraj Pawar\n"
+        f"Aganim AI\n"
         f"{_SENDER_EMAIL}\n"
         f"LinkedIn: {_LINKEDIN_URL}\n"
     )

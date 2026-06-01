@@ -842,3 +842,110 @@ async def showcase_send(req: ShowcaseSendRequest, db: Session = Depends(get_db))
         "image_count": len(image_filenames),
         "mode": "promotion" if req.is_promotion else "beta_invite",
     }
+
+
+# ── Bulk Showcase/Promotion Send ─────────────────────────────────
+
+class ShowcaseBulkItem(BaseModel):
+    merchant_name: str
+    email: str
+    brand_name: Optional[str] = None
+
+
+class ShowcaseBulkSendRequest(BaseModel):
+    store_key: str = "general"
+    is_promotion: bool = False
+    recipients: list[ShowcaseBulkItem]
+
+
+@router.post("/showcase/bulk-send")
+async def showcase_bulk_send(req: ShowcaseBulkSendRequest, db: Session = Depends(get_db)):
+    """Batch send showcase/promotion emails to multiple recipients."""
+    if not req.recipients:
+        raise HTTPException(status_code=400, detail="No recipients provided")
+
+    prefix = f"beta_outreach/{req.store_key}/"
+    filenames = await _r2_outreach.list_objects_by_prefix(prefix)
+    image_filenames = [
+        f for f in filenames
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+    ]
+
+    results: list[dict] = []
+    for idx, item in enumerate(req.recipients):
+        if req.is_promotion:
+            subject, html_body, text_body = agency_promotion_email(
+                merchant_name=item.merchant_name,
+                store_key=req.store_key,
+                brand_name=item.brand_name or "",
+                image_filenames=image_filenames,
+            )
+            log_shop = f"promo-{req.store_key}"
+        else:
+            placeholder_domain = f"test-aganim-{req.store_key}.myshopify.com"
+            existing = db.query(BetaEnrollment).filter(
+                BetaEnrollment.shop_domain == placeholder_domain,
+                BetaEnrollment.contact_email == item.email,
+            ).first()
+            if existing:
+                token = existing.invite_token or _uuid.uuid4().hex
+                existing.invite_token = token
+            else:
+                token = _uuid.uuid4().hex
+                enrollment = BetaEnrollment(
+                    shop_domain=placeholder_domain,
+                    status="invited",
+                    invite_token=token,
+                    invited_at=datetime.now(timezone.utc),
+                    contact_email=item.email,
+                    source="showcase_invite",
+                )
+                db.add(enrollment)
+
+            signup_url = f"{_UI_BASE_URL}/beta/signup?token={token}"
+            subject, html_body, text_body = beta_showcase_email(
+                merchant_name=item.merchant_name,
+                store_key=req.store_key,
+                brand_name=item.brand_name or "",
+                image_filenames=image_filenames,
+                signup_url=signup_url,
+            )
+            log_shop = placeholder_domain
+
+        try:
+            await send_email(
+                to=item.email,
+                subject=subject,
+                html_body=html_body,
+                text_body=text_body,
+                reply_to=_BETA_REPLY_TO,
+            )
+            status = "sent"
+        except Exception as exc:
+            logger.error("[Beta] bulk send failed for %s: %s", item.email, exc)
+            status = "failed"
+
+        log = OutreachLog(
+            recipient_email=item.email,
+            recipient_shop=log_shop,
+            subject=subject,
+            body=text_body[:500],
+            status=status,
+        )
+        db.add(log)
+        results.append({"email": item.email, "merchant_name": item.merchant_name, "status": status})
+
+        if len(req.recipients) > 1:
+            await asyncio.sleep(1.0)
+
+    db.commit()
+
+    sent_count = sum(1 for r in results if r["status"] == "sent")
+    failed_count = sum(1 for r in results if r["status"] == "failed")
+    return {
+        "total": len(results),
+        "sent": sent_count,
+        "failed": failed_count,
+        "mode": "promotion" if req.is_promotion else "beta_invite",
+        "results": results,
+    }

@@ -221,6 +221,7 @@ class OutreachLog(Base):
     subject = Column(String, nullable=False)
     body = Column(Text, nullable=False)
     status = Column(String, default="sent")
+    message_id = Column(String, nullable=True)
     sent_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

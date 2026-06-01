@@ -454,6 +454,7 @@ class TestAuth:
             ("POST", "/api/superadmin/beta/email/send"),
             ("POST", "/api/superadmin/beta/showcase/preview"),
             ("POST", "/api/superadmin/beta/showcase/send"),
+            ("POST", "/api/superadmin/beta/showcase/bulk-send"),
         ]
         for method, url in endpoints:
             if method == "GET":
