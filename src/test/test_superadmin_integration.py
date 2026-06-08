@@ -621,9 +621,9 @@ class TestRevenueTracking:
         token = _get_token(client)
         db = TestingSessionLocal()
 
-        db.add(Plan(name="Basic", price_usd_monthly=9.99, monthly_rewrite_limit=100, max_request_rate=10, is_active=True))
-        db.add(Plan(name="Standard", price_usd_monthly=19.99, monthly_rewrite_limit=500, max_request_rate=50, is_active=True))
-        db.add(Plan(name="Pro", price_usd_monthly=29.99, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
+        db.add(Plan(name="Basic", price_usd_monthly=20.0, monthly_rewrite_limit=100, max_request_rate=10, is_active=True))
+        db.add(Plan(name="Standard", price_usd_monthly=33.0, monthly_rewrite_limit=500, max_request_rate=50, is_active=True))
+        db.add(Plan(name="Pro", price_usd_monthly=65.0, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
 
         db.add(Shop(domain="rev-basic.myshopify.com", access_token="t", current_plan_name="Basic", is_active=True))
         db.add(Shop(domain="rev-std1.myshopify.com", access_token="t", current_plan_name="Standard", is_active=True))
@@ -669,8 +669,8 @@ class TestAttritionFlow:
         db = TestingSessionLocal()
         now = datetime.now(timezone.utc)
 
-        db.add(Plan(name="Basic", price_usd_monthly=9.99, monthly_rewrite_limit=100, max_request_rate=10, is_active=True))
-        db.add(Plan(name="Pro", price_usd_monthly=29.99, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
+        db.add(Plan(name="Basic", price_usd_monthly=20.0, monthly_rewrite_limit=100, max_request_rate=10, is_active=True))
+        db.add(Plan(name="Pro", price_usd_monthly=65.0, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
 
         # Uninstalled Pro merchant (5 days ago)
         db.add(Shop(
@@ -783,7 +783,7 @@ class TestApproachingLimitsFlow:
             lifetime_image_credits_remaining=5,
         ))
         # Pro merchant with high image usage (entitlement: 100)
-        db.add(Plan(name="Pro", price_usd_monthly=29.99, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
+        db.add(Plan(name="Pro", price_usd_monthly=65.0, monthly_rewrite_limit=1000, max_request_rate=100, is_active=True))
         db.add(Shop(
             domain="pro-img-high.myshopify.com", access_token="t",
             current_plan_name="Pro", is_active=True,

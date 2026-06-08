@@ -46,7 +46,7 @@ Build a Japan-first AI Shopify app that turns Japanese product data into polishe
 - Visual Pipeline: background removal (rembg), AI image generation (FLUX 2.0 Pro via fal.ai), marketing typography (Ideogram 3.0), image refinement (Nano Banana)
 - Brand Soul: URL scraping, file upload with GPT-4o vision extraction, brand archetype wizard, RAG vector store with pgvector
 - Multi-agent missions with SSE streaming, state persistence, and user corrections
-- 4-tier billing (Free / Basic $39 / Standard $89 / Pro $199) with 7-day free trial
+- 4-tier billing (Free / Basic $20 / Standard $33 / Pro $65) with 7-day free trial
 - SuperAdmin portal (merchant management, outreach, support triage)
 - Lifecycle emails via Amazon SES (welcome, upgrade confirmation, credit limit nudge, feedback requests)
 - i18n UI (English + Japanese)
@@ -120,7 +120,7 @@ Use batching + token limits + fair-use cost cap ($150/shop) to control per-merch
 
 ### Recommended bundled tiers ($)
 
-| Feature | Free | Basic ($39/mo) | Standard ($89/mo) | Pro ($199/mo) |
+| Feature | Free | Basic ($20/mo) | Standard ($33/mo) | Pro ($65/mo) |
 |---|---|---|---|---|
 | Product Limit | 10 lifetime | 50/mo | Unlimited | Unlimited |
 | Missions | 3 lifetime | 1/mo (text-only) | 3/mo (text+full) | Unlimited |
@@ -139,7 +139,7 @@ Use batching + token limits + fair-use cost cap ($150/shop) to control per-merch
 
 ### Pricing rationale
 
-Translation + SEO + competitive pricing + marketing content + AI visuals is high value for merchants; $39–$199/mo for multi-channel automation is reasonable compared to hiring freelance translators, SEO consultants, or agencies.
+Translation + SEO + competitive pricing + marketing content + AI visuals is high value for merchants; $20–$65/mo for multi-channel automation is reasonable compared to hiring freelance translators, SEO consultants, or agencies.
 
 ### Revenue scenarios (Tentative)
 

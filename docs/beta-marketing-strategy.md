@@ -287,8 +287,8 @@ Link: `https://forms.gle/aganim-feedback` (already referenced in codebase)
 3. Features used (multi-select): Rewriter, SEO Optimizer, Price Scout, Marketing Studio, Visual Pipeline, Missions, Brand Soul
 4. "Which feature was most valuable to you?" (single select)
 5. "What was your biggest frustration?" (open text)
-6. "Would you pay $39/month for this?" (Yes / Maybe / No)
-7. "What price feels fair?" ($19 / $39 / $59 / $89 / Other)
+6. "Would you pay $20/month for this?" (Yes / Maybe / No)
+7. "What price feels fair?" ($10 / $20 / $33 / $65 / Other)
 8. "What feature is missing?" (open text)
 9. "How did you handle this before Aganim?" (open text)
 10. Permission to use their quote as a testimonial (Yes / No)
@@ -527,7 +527,7 @@ Pull from your database (SuperAdmin dashboard):
 
 1. "What did you like most?"
 2. "What almost made you stop using it?"
-3. "Would you pay $39/month? $89?"
+3. "Would you pay $20/month? $33?"
 4. "Would you recommend this to another merchant?"
 5. "Can I quote you for our App Store listing?"
 

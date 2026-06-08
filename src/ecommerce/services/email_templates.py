@@ -796,7 +796,7 @@ def beta_showcase_email(
 
 <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:16px 20px;margin:0 0 16px;">
   <p style="margin:0;font-size:14px;color:#92400E;line-height:1.6;">
-    <strong>特別先行オファー：</strong>通常月額$49のPro全機能を
+    <strong>特別先行オファー：</strong>Pro全機能を
     <strong>6週間完全無料</strong>でご利用いただけます。クレジットカード不要、
     いつでも解約可能。グローバル展開を目指す日本のマーチャント様限定のご招待です。
   </p>

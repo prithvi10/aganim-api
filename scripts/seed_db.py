@@ -33,7 +33,7 @@ def seed_data():
             },
             {
                 "name": "Basic",
-                "price": 39.0,
+                "price": 20.0,
                 "product_limit": 50,
                 "max_locales": 1,
                 "billing_cycle_type": "recurring",
@@ -43,7 +43,7 @@ def seed_data():
             },
             {
                 "name": "Standard",
-                "price": 89.0,
+                "price": 33.0,
                 "product_limit": -1,
                 "max_locales": -1,
                 "billing_cycle_type": "recurring",
@@ -53,7 +53,7 @@ def seed_data():
             },
             {
                 "name": "Pro",
-                "price": 199.0,
+                "price": 65.0,
                 "product_limit": -1,
                 "max_locales": -1,
                 "billing_cycle_type": "recurring",

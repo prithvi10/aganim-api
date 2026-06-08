@@ -151,7 +151,7 @@ def _seed_usage_event(db_session, shop_domain="test-shop.myshopify.com", **kwarg
     return e
 
 
-def _seed_plan(db_session, name="Pro", price_usd_monthly=29.99, **kwargs):
+def _seed_plan(db_session, name="Pro", price_usd_monthly=65.0, **kwargs):
     defaults = dict(
         name=name,
         price_usd_monthly=price_usd_monthly,
