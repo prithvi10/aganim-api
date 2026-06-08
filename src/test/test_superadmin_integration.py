@@ -639,12 +639,12 @@ class TestRevenueTracking:
         assert resp.status_code == 200
         data = resp.json()
 
-        expected_mrr = round(9.99 + 19.99 * 2 + 29.99, 2)
+        expected_mrr = round(20.0 + 33.0 * 2 + 65.0, 2)
         assert data["total_mrr"] == expected_mrr
         assert data["by_plan"]["Basic"]["count"] == 1
-        assert data["by_plan"]["Basic"]["revenue"] == 9.99
+        assert data["by_plan"]["Basic"]["revenue"] == 20.0
         assert data["by_plan"]["Standard"]["count"] == 2
-        assert data["by_plan"]["Standard"]["revenue"] == round(19.99 * 2, 2)
+        assert data["by_plan"]["Standard"]["revenue"] == round(33.0 * 2, 2)
         assert data["by_plan"]["Pro"]["count"] == 1
         assert "Free" not in data["by_plan"]
         assert len(data["merchants"]) == 4
@@ -725,22 +725,22 @@ class TestAttritionFlow:
         assert "old-uninstall.myshopify.com" not in domains
         assert "active-healthy.myshopify.com" not in domains
 
-        assert data["total_lost_revenue"] == round(29.99 + 9.99, 2)
+        assert data["total_lost_revenue"] == round(65.0 + 20.0, 2)
 
         pro_entry = next(m for m in data["merchants"] if m["domain"] == "uninstalled-pro.myshopify.com")
         assert pro_entry["type"] == "uninstalled"
-        assert pro_entry["lost_revenue"] == 29.99
+        assert pro_entry["lost_revenue"] == 65.0
 
         basic_entry = next(m for m in data["merchants"] if m["domain"] == "cancelled-basic.myshopify.com")
         assert basic_entry["type"] == "cancelled"
-        assert basic_entry["lost_revenue"] == 9.99
+        assert basic_entry["lost_revenue"] == 20.0
 
         free_entry = next(m for m in data["merchants"] if m["domain"] == "uninstalled-free.myshopify.com")
         assert free_entry["lost_revenue"] == 0
 
         assert "Pro" in data["by_plan"]
         assert data["by_plan"]["Pro"]["count"] == 1
-        assert data["by_plan"]["Pro"]["revenue"] == 29.99
+        assert data["by_plan"]["Pro"]["revenue"] == 65.0
 
         # Verify 7-day window excludes the 10-day-old cancellation
         resp7 = client.get("/api/superadmin/dashboard/attrition?days=7", headers=_auth(token))
